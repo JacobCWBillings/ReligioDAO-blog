@@ -5,6 +5,7 @@ import { save } from '../Saver'
 import { GlobalState } from '../libetherjot'
 import './AssetBrowser.css'
 import { Thumbnail } from './Thumbnail'
+import React from 'react'
 
 interface Props {
     globalState: GlobalState

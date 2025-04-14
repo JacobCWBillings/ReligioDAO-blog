@@ -1,75 +1,80 @@
-import { Bee } from '@ethersphere/bee-js'
-import { Dates, Optional, Strings } from 'cafe-utility'
-import { useEffect, useState } from 'react'
-import './App.css'
-import { DEFAULT_CONTENT } from './Constants'
-import { GlobalSettingsPage } from './GlobalSettingsPage'
-import { NewPostPage } from './NewPostPage'
-import { OptionsBar } from './OptionsBar'
-import { Sidebar } from './Sidebar'
-import { Topbar } from './Topbar'
-import { WelcomePage } from './WelcomePage'
-import { AssetBrowser } from './asset-browser/AssetBrowser'
-import { AssetPicker } from './asset-browser/AssetPicker'
-import { Article, Asset, GlobalState, getGlobalState } from './libetherjot'
+import { Bee } from '@ethersphere/bee-js';
+import { Dates, Optional, Strings } from 'cafe-utility';
+import { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import './App.css';
+import { WalletProvider } from './contexts/WalletContext';
+import { GlobalStateProvider } from './contexts/GlobalStateContext';
+import { Article, Asset, GlobalState, getGlobalState } from './libetherjot';
+
+// Layout Components
+import { Layout } from './components/Layout';
+
+// Pages
+import { HomePage } from './pages/HomePage';
+import { BlogEditorPage } from './pages/BlogEditorPage';
+import { BlogListPage } from './pages/viewer/BlogListPage';
+import { BlogDetailPage } from './pages/viewer/BlogDetailPage';
+import { GlobalSettingsPage } from './pages/GlobalSettingsPage';
+import { WelcomePage } from './WelcomePage';
+import React from 'react';
 
 function App() {
-    const [globalState, setGlobalState] = useState<GlobalState | null>(null)
-    const [isBeeRunning, setBeeRunning] = useState(false)
-    const [hasPostageStamp, setHasPostageStamp] = useState(false)
-    const [tab, setTab] = useState('new-post')
-    const [articleTitle, setArticleTitle] = useState('')
-    const [articleContent, setArticleContent] = useState(DEFAULT_CONTENT)
-    const [articleBanner, setArticleBanner] = useState<string | null>(null)
-    const [articleCategory, setArticleCategory] = useState<string>('')
-    const [articleTags, setArticleTags] = useState<string>('')
-    const [articleType, setArticleType] = useState<'regular' | 'h1' | 'h2'>('regular')
-    const [articleDate, setArticleDate] = useState(Dates.isoDate())
-    const [editing, setEditing] = useState<Article | false>(false)
-    const [commentsFeed, setCommentsFeed] = useState<string>(Strings.randomHex(40))
-    const [showAssetBrowser, setShowAssetBrowser] = useState(false)
-    const [showAssetPicker, setShowAssetPicker] = useState(false)
-    const [assetPickerCallback, setAssetPickerCallback] = useState<(asset: Optional<Asset>) => void>(() => () => {})
+    const [globalState, setGlobalState] = useState<GlobalState | null>(null);
+    const [isBeeRunning, setBeeRunning] = useState(false);
+    const [hasPostageStamp, setHasPostageStamp] = useState(false);
+    const [initialized, setInitialized] = useState(false);
 
     useEffect(() => {
-        const storedState = localStorage.getItem('state')
+        const storedState = localStorage.getItem('state');
         if (storedState) {
-            const parsedState = JSON.parse(storedState)
-            getGlobalState(parsedState).then(setGlobalState)
-            setTab('new-post')
+            const parsedState = JSON.parse(storedState);
+            getGlobalState(parsedState).then(state => {
+                setGlobalState(state);
+                setInitialized(true);
+            });
+        } else {
+            setInitialized(true);
         }
-    }, [])
+    }, []);
 
+    // Check Bee node connectivity
     async function checkBee() {
         fetch('http://localhost:1633/addresses')
             .then(async () => {
                 if (!isBeeRunning) {
-                    setBeeRunning(true)
+                    setBeeRunning(true);
                 }
-                const bee = new Bee('http://localhost:1633')
-                const stamps = await bee.getAllPostageBatch()
+                const bee = new Bee('http://localhost:1633');
+                const stamps = await bee.getAllPostageBatch();
                 if (stamps.some(x => x.usable)) {
                     if (!hasPostageStamp) {
-                        setHasPostageStamp(true)
+                        setHasPostageStamp(true);
                     }
                 } else {
-                    setHasPostageStamp(false)
+                    setHasPostageStamp(false);
                 }
             })
             .catch(() => {
-                setBeeRunning(false)
-                setHasPostageStamp(false)
-            })
+                setBeeRunning(false);
+                setHasPostageStamp(false);
+            });
     }
 
     useEffect(() => {
-        checkBee()
+        checkBee();
         const interval = setInterval(() => {
-            checkBee()
-        }, Dates.seconds(5))
-        return () => clearInterval(interval)
-    }, [])
+            checkBee();
+        }, Dates.seconds(5));
+        return () => clearInterval(interval);
+    }, []);
 
+    // Show loading state while checking global state
+    if (!initialized) {
+        return <div>Loading...</div>;
+    }
+    
+    // If no global state exists, show the welcome page
     if (!globalState) {
         return (
             <WelcomePage
@@ -77,85 +82,41 @@ function App() {
                 isBeeRunning={isBeeRunning}
                 hasPostageStamp={hasPostageStamp}
             />
-        )
+        );
     }
 
-    function insertAsset(reference: string) {
-        setArticleContent((y: string) => `${y}\n\n![img alt here](http://localhost:1633/bytes/${reference})`)
-        setShowAssetBrowser(false)
-    }
-
+    // Main application with routing
     return (
-        <>
-            {showAssetBrowser && (
-                <AssetBrowser
-                    globalState={globalState}
-                    setGlobalState={setGlobalState}
-                    setShowAssetBrowser={setShowAssetBrowser}
-                    insertAsset={insertAsset}
-                />
-            )}
-            {showAssetPicker && <AssetPicker globalState={globalState} callback={assetPickerCallback} />}
-            <Topbar
-                setTab={setTab}
-                articleContent={articleContent}
-                globalState={globalState}
-                isBeeRunning={isBeeRunning}
-                hasPostageStamp={hasPostageStamp}
-            />
-            <main>
-                <Sidebar
-                    globalState={globalState}
-                    setTab={setTab}
-                    editing={editing}
-                    setEditing={setEditing}
-                    articleContent={articleContent}
-                    setArticleContent={setArticleContent}
-                    setArticleTitle={setArticleTitle}
-                    setArticleBanner={setArticleBanner}
-                    setArticleCategory={setArticleCategory}
-                    setShowAssetBrowser={setShowAssetBrowser}
-                    setArticleTags={setArticleTags}
-                    setArticleCommentsFeed={setCommentsFeed}
-                    setArticleType={setArticleType}
-                />
-                {tab === 'new-post' && (
-                    <NewPostPage articleContent={articleContent} setArticleContent={setArticleContent} />
-                )}
-                {tab === 'global-settings' && (
-                    <GlobalSettingsPage
-                        globalState={globalState}
-                        setGlobalState={setGlobalState}
-                        setAssetPickerCallback={setAssetPickerCallback}
-                        setShowAssetPicker={setShowAssetPicker}
-                    />
-                )}
-                {tab === 'new-post' && (
-                    <OptionsBar
-                        globalState={globalState}
-                        articleContent={articleContent}
-                        articleTitle={articleTitle}
-                        setArticleTitle={setArticleTitle}
-                        articleBanner={articleBanner}
-                        setArticleBanner={setArticleBanner}
-                        articleCategory={articleCategory}
-                        setArticleCategory={setArticleCategory}
-                        articleTags={articleTags}
-                        setArticleTags={setArticleTags}
-                        editing={editing}
-                        setEditing={setEditing}
-                        commentsFeed={commentsFeed}
-                        articleType={articleType}
-                        setArticleType={setArticleType}
-                        articleDate={articleDate}
-                        setArticleDate={setArticleDate}
-                        setShowAssetPicker={setShowAssetPicker}
-                        setAssetPickerCallback={setAssetPickerCallback}
-                    />
-                )}
-            </main>
-        </>
-    )
+        <BrowserRouter>
+            <WalletProvider>
+                <GlobalStateProvider initialState={globalState} setGlobalState={setGlobalState}>
+                    <Routes>
+                        <Route
+                            path="/"
+                            element={
+                                <Layout 
+                                    isBeeRunning={isBeeRunning} 
+                                    hasPostageStamp={hasPostageStamp} 
+                                />
+                            }
+                        >
+                            <Route index element={<HomePage />} />
+                            <Route path="editor">
+                                <Route index element={<BlogEditorPage />} />
+                                <Route path=":blogId" element={<BlogEditorPage />} />
+                            </Route>
+                            <Route path="blogs">
+                                <Route index element={<BlogListPage />} />
+                                <Route path=":blogId" element={<BlogDetailPage />} />
+                            </Route>
+                            <Route path="settings" element={<GlobalSettingsPage />} />
+                            <Route path="*" element={<Navigate to="/" replace />} />
+                        </Route>
+                    </Routes>
+                </GlobalStateProvider>
+            </WalletProvider>
+        </BrowserRouter>
+    );
 }
 
-export default App
+export default App;
