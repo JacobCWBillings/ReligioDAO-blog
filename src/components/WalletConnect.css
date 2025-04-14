@@ -1,0 +1,138 @@
+.wallet-connect-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+/* Connect button styles */
+.connect-button {
+    background-color: #ff8a00;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.connect-button:hover {
+    background-color: #ff9e2e;
+}
+
+.connect-button:disabled {
+    background-color: #ffb970;
+    cursor: not-allowed;
+}
+
+/* Wallet address button styles */
+.wallet-connected {
+    position: relative;
+}
+
+.wallet-address-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: 'space-grotesk', monospace;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.wallet-address-button:hover {
+    background-color: #e8e8e8;
+}
+
+.wallet-icon {
+    width: 12px;
+    height: 12px;
+    background-color: #4cd964;
+    border-radius: 50%;
+    margin-right: 4px;
+    position: relative;
+}
+
+/* Different colors for different wallet providers */
+.wallet-connected[data-provider="metamask"] .wallet-icon {
+    background-color: #f6851b; /* MetaMask orange */
+}
+
+.wallet-connected[data-provider="walletconnect"] .wallet-icon {
+    background-color: #3b99fc; /* WalletConnect blue */
+}
+
+.dropdown-arrow {
+    font-size: 10px;
+    margin-left: 4px;
+}
+
+/* Dropdown styles */
+.wallet-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 12px;
+    min-width: 220px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+}
+
+.dropdown-address, .dropdown-network, .dropdown-wallet {
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.dropdown-label {
+    color: #666;
+    font-size: 0.85rem;
+}
+
+.dropdown-value {
+    font-family: 'space-grotesk', monospace;
+    font-weight: 600;
+}
+
+.disconnect-button {
+    width: 100%;
+    background-color: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px;
+    margin-top: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.disconnect-button:hover {
+    background-color: #ff8a00;
+    color: white;
+    border-color: #ff8a00;
+}
+
+/* Error message styles */
+.wallet-error {
+    color: #e74c3c;
+    margin-top: 8px;
+    font-size: 0.85rem;
+    background-color: rgba(231, 76, 60, 0.1);
+    padding: 6px 10px;
+    border-radius: 4px;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    max-width: 250px;
+}

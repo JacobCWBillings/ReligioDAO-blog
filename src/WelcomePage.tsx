@@ -4,6 +4,7 @@ import { save } from './Saver'
 import { SquareImage } from './SquareImage'
 import './WelcomePage.css'
 import { GlobalState, createDefaultGlobalState, getGlobalState } from './libetherjot'
+import React from 'react'
 
 interface Props {
     setGlobalState: (state: GlobalState) => void

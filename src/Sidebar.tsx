@@ -5,10 +5,11 @@ import { ExistingArticle } from './ExistingArticle'
 import { Row } from './Row'
 import './Sidebar.css'
 import { Article, GlobalState } from './libetherjot'
+import React from 'react'
 
 interface Props {
     globalState: GlobalState
-    setTab: (tab: string) => void
+    setTab?: (tab: string) => void
     editing: Article | false
     setEditing: (editing: Article | false) => void
     articleContent: string
@@ -24,7 +25,7 @@ interface Props {
 
 export function Sidebar({
     globalState,
-    setTab,
+    setTab = () => {},
     editing,
     setEditing,
     articleContent,
