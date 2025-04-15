@@ -1,48 +1,58 @@
+// src/blockchain/hooks/useProposal.ts
 import { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { useWallet } from '../../contexts/WalletContext';
-import { Proposal, ProposalStatus, BlockchainErrorType, BlockchainError, TransactionStatus } from '../../types/blockchain';
-import { getContractAddresses } from '../../config';
-import QGovAbi from '../abis/QGov.json';
+import { 
+  BlogProposal, 
+  Proposal, 
+  ProposalStatus, 
+  BlockchainErrorType, 
+  BlockchainError, 
+  TransactionStatus 
+} from '../../types/blockchain';
+import { ProposalService } from '../services/ProposalService';
 
 /**
- * Hook for interacting with the qGov contract for proposal management
+ * Hook for interacting with the DAO's proposal system for blog minting
  */
 export const useProposal = () => {
   const { provider, signer, account, chainId, isConnected } = useWallet();
-  const [contract, setContract] = useState<ethers.Contract | null>(null);
+  const [proposalService, setProposalService] = useState<ProposalService | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<BlockchainError | null>(null);
 
-  // Initialize contract when provider and signer are available
+  // Initialize ProposalService when provider and signer are available
   useEffect(() => {
     if (!provider || !signer || !isConnected) return;
 
     try {
-      const addresses = getContractAddresses(chainId);
-      const qGovContract = new ethers.Contract(
-        addresses.qGov,
-        QGovAbi,
-        signer
-      );
-      setContract(qGovContract);
-      setError(null);
+      const service = new ProposalService(provider, signer);
+      
+      const initService = async () => {
+        await service.init(chainId);
+        setProposalService(service);
+        setError(null);
+      };
+      
+      initService();
     } catch (err) {
-      console.error('Error initializing qGov contract:', err);
+      console.error('Error initializing ProposalService:', err);
       setError(new BlockchainError(
-        'Failed to initialize qGov contract',
+        'Failed to initialize ProposalService',
         BlockchainErrorType.ContractError,
         err instanceof Error ? err : new Error(String(err))
       ));
     }
   }, [provider, signer, chainId, isConnected]);
 
-  // Get all proposals from the contract
+  /**
+   * Fetch all proposals
+   */
   const getAllProposals = useCallback(async (): Promise<Proposal[]> => {
-    if (!contract) {
+    if (!proposalService) {
       throw new BlockchainError(
-        'Contract not initialized',
+        'ProposalService not initialized',
         BlockchainErrorType.ContractError
       );
     }
@@ -51,20 +61,20 @@ export const useProposal = () => {
     setError(null);
 
     try {
-      // Get proposal count from the contract
-      const proposalCount = await contract.getProposalCount();
+      // Get all proposal IDs
+      const proposalIds = await proposalService.getAllProposalIds();
       
-      const proposalPromises = [];
-      for (let i = 0; i < proposalCount.toNumber(); i++) {
-        proposalPromises.push(getProposalById(i));
-      }
+      // Fetch details for each proposal
+      const proposalPromises = proposalIds.map(id => getProposalById(id));
+      const fetchedProposals = await Promise.all(proposalPromises);
       
-      const proposalResults = await Promise.all(proposalPromises);
-      const validProposals = proposalResults.filter(Boolean) as Proposal[];
+      // Filter out null values
+      const validProposals = fetchedProposals.filter(Boolean) as Proposal[];
+      
       setProposals(validProposals);
       return validProposals;
     } catch (err) {
-      console.error('Error fetching proposals:', err);
+      console.error('Error fetching all proposals:', err);
       const blockchainError = new BlockchainError(
         'Failed to fetch proposals',
         BlockchainErrorType.ContractError,
@@ -75,61 +85,69 @@ export const useProposal = () => {
     } finally {
       setLoading(false);
     }
-  }, [contract]);
+  }, [proposalService]);
 
-  // Get a specific proposal by ID
-  const getProposalById = useCallback(async (proposalId: number | string): Promise<Proposal | null> => {
-    if (!contract) return null;
+  /**
+   * Get proposal by ID
+   */
+  const getProposalById = useCallback(async (proposalId: string): Promise<Proposal | null> => {
+    if (!proposalService) return null;
 
     try {
-      // Call the contract to get proposal data
-      const proposalData = await contract.getProposal(proposalId);
+      const proposal = await proposalService.getProposal(proposalId);
       
-      // Convert the returned data to our Proposal interface
+      // Map status to enum
+      let status = ProposalStatus.Pending;
+      switch (Number(proposal.status)) {
+        case 0:
+          status = ProposalStatus.Pending;
+          break;
+        case 1:
+          status = ProposalStatus.Active;
+          break;
+        case 2:
+          status = ProposalStatus.Approved;
+          break;
+        case 3:
+          status = ProposalStatus.Rejected;
+          break;
+        case 4:
+          status = ProposalStatus.Executed;
+          break;
+        case 5:
+          status = ProposalStatus.Canceled;
+          break;
+      }
+      
       return {
-        id: proposalId.toString(),
-        title: proposalData.title,
-        description: proposalData.description,
-        proposer: proposalData.proposer,
-        contentReference: proposalData.contentReference,
-        category: proposalData.category,
-        status: mapStatusToEnum(proposalData.status),
-        createdAt: proposalData.createdAt.toNumber() * 1000, // Convert to milliseconds
-        votingEnds: proposalData.votingEnds.toNumber() * 1000, // Convert to milliseconds
-        votesFor: proposalData.votesFor.toNumber(),
-        votesAgainst: proposalData.votesAgainst.toNumber(),
-        executed: proposalData.executed,
-        nftId: proposalData.nftId ? proposalData.nftId.toString() : undefined
+        id: proposal.id,
+        title: proposal.title,
+        description: proposal.description,
+        proposer: proposal.proposer,
+        status,
+        createdAt: Number(proposal.createdAt) * 1000, // Convert to milliseconds
+        votingEnds: Number(proposal.votingEnds) * 1000, // Convert to milliseconds
+        votesFor: Number(proposal.votesFor),
+        votesAgainst: Number(proposal.votesAgainst),
+        executed: proposal.executed,
+        // Try to parse the callData to extract content reference
+        contentReference: extractContentReference(proposal.callData)
       };
     } catch (err) {
       console.error(`Error fetching proposal ${proposalId}:`, err);
       return null;
     }
-  }, [contract]);
+  }, [proposalService]);
 
-  // Map numeric status from contract to our enum
-  const mapStatusToEnum = (statusNum: number): ProposalStatus => {
-    const statusMap: Record<number, ProposalStatus> = {
-      0: ProposalStatus.Pending,
-      1: ProposalStatus.Active,
-      2: ProposalStatus.Approved,
-      3: ProposalStatus.Rejected,
-      4: ProposalStatus.Executed,
-      5: ProposalStatus.Canceled
-    };
-    return statusMap[statusNum] || ProposalStatus.Pending;
-  };
-
-  // Create a new proposal
-  const createProposal = useCallback(async (
-    title: string,
-    description: string,
-    contentReference: string,
-    category: string
+  /**
+   * Create a blog minting proposal
+   */
+  const createBlogProposal = useCallback(async (
+    proposal: BlogProposal
   ): Promise<TransactionStatus> => {
-    if (!contract || !account) {
+    if (!proposalService || !account) {
       throw new BlockchainError(
-        'Contract not initialized or wallet not connected',
+        'ProposalService not initialized or wallet not connected',
         BlockchainErrorType.ContractError
       );
     }
@@ -138,30 +156,9 @@ export const useProposal = () => {
     setError(null);
 
     try {
-      // Call the createProposal function on the contract
-      const tx = await contract.createProposal(
-        title,
-        description,
-        contentReference,
-        category
-      );
+      const status = await proposalService.createBlogMintingProposal(proposal);
       
-      // Initial transaction status
-      const status: TransactionStatus = {
-        hash: tx.hash,
-        status: 'pending',
-        confirmations: 0
-      };
-      
-      // Wait for transaction confirmation
-      const receipt = await tx.wait();
-      
-      // Update status with confirmation details
-      status.status = receipt.status === 1 ? 'confirmed' : 'failed';
-      status.confirmations = 1;
-      status.receipt = receipt;
-      
-      // If successful, update proposals list
+      // Refresh proposals list if successful
       if (status.status === 'confirmed') {
         await getAllProposals();
       }
@@ -192,16 +189,18 @@ export const useProposal = () => {
     } finally {
       setLoading(false);
     }
-  }, [contract, account, getAllProposals]);
+  }, [proposalService, account, getAllProposals]);
 
-  // Vote on a proposal
+  /**
+   * Vote on a proposal
+   */
   const voteOnProposal = useCallback(async (
     proposalId: string,
     support: boolean
   ): Promise<TransactionStatus> => {
-    if (!contract || !account) {
+    if (!proposalService || !account) {
       throw new BlockchainError(
-        'Contract not initialized or wallet not connected',
+        'ProposalService not initialized or wallet not connected',
         BlockchainErrorType.ContractError
       );
     }
@@ -210,25 +209,9 @@ export const useProposal = () => {
     setError(null);
 
     try {
-      // Call the vote function on the contract
-      const tx = await contract.vote(proposalId, support);
+      const status = await proposalService.voteOnProposal(proposalId, support);
       
-      // Initial transaction status
-      const status: TransactionStatus = {
-        hash: tx.hash,
-        status: 'pending',
-        confirmations: 0
-      };
-      
-      // Wait for transaction confirmation
-      const receipt = await tx.wait();
-      
-      // Update status with confirmation details
-      status.status = receipt.status === 1 ? 'confirmed' : 'failed';
-      status.confirmations = 1;
-      status.receipt = receipt;
-      
-      // If successful, refresh the proposal
+      // Refresh the proposal if successful
       if (status.status === 'confirmed') {
         const updatedProposal = await getProposalById(proposalId);
         if (updatedProposal) {
@@ -264,15 +247,17 @@ export const useProposal = () => {
     } finally {
       setLoading(false);
     }
-  }, [contract, account, getProposalById]);
+  }, [proposalService, account, getProposalById]);
 
-  // Execute a proposal (e.g., mint NFT for approved blog)
+  /**
+   * Execute a proposal to mint the NFT
+   */
   const executeProposal = useCallback(async (
     proposalId: string
   ): Promise<TransactionStatus> => {
-    if (!contract || !account) {
+    if (!proposalService || !account) {
       throw new BlockchainError(
-        'Contract not initialized or wallet not connected',
+        'ProposalService not initialized or wallet not connected',
         BlockchainErrorType.ContractError
       );
     }
@@ -281,25 +266,9 @@ export const useProposal = () => {
     setError(null);
 
     try {
-      // Call the execute function on the contract
-      const tx = await contract.executeProposal(proposalId);
+      const status = await proposalService.executeProposal(proposalId);
       
-      // Initial transaction status
-      const status: TransactionStatus = {
-        hash: tx.hash,
-        status: 'pending',
-        confirmations: 0
-      };
-      
-      // Wait for transaction confirmation
-      const receipt = await tx.wait();
-      
-      // Update status with confirmation details
-      status.status = receipt.status === 1 ? 'confirmed' : 'failed';
-      status.confirmations = 1;
-      status.receipt = receipt;
-      
-      // If successful, refresh the proposal
+      // Refresh the proposal if successful
       if (status.status === 'confirmed') {
         const updatedProposal = await getProposalById(proposalId);
         if (updatedProposal) {
@@ -335,27 +304,57 @@ export const useProposal = () => {
     } finally {
       setLoading(false);
     }
-  }, [contract, account, getProposalById]);
+  }, [proposalService, account, getProposalById]);
 
-  // Check if user has voted on a specific proposal
+  /**
+   * Check if a user has voted on a specific proposal
+   */
   const hasVoted = useCallback(async (
     proposalId: string
-  ): Promise<{ hasVoted: boolean; support: boolean }> => {
-    if (!contract || !account) {
-      return { hasVoted: false, support: false };
+  ): Promise<boolean> => {
+    if (!proposalService || !account) {
+      return false;
     }
 
     try {
-      const voterStatus = await contract.getVoterStatus(proposalId, account);
-      return {
-        hasVoted: voterStatus.hasVoted,
-        support: voterStatus.support
-      };
+      return await proposalService.hasVoted(proposalId, account);
     } catch (err) {
       console.error('Error checking vote status:', err);
-      return { hasVoted: false, support: false };
+      return false;
     }
-  }, [contract, account]);
+  }, [proposalService, account]);
+
+  /**
+   * Extract content reference from calldata
+   * This is a helper function to try and parse the contentReference from the calldata
+   */
+  const extractContentReference = (callData: string): string => {
+    try {
+      // This is a very simplified approach - in practice, you'd need to properly decode the ABI
+      // assuming mintTo(address, string) format
+      if (!callData || !callData.startsWith('0x')) return '';
+      
+      // Try to find the string data part - this is a simplification
+      const dataWithoutFunctionSelector = callData.slice(10);
+      
+      // The string data typically comes after the address (which is 32 bytes/64 hex chars)
+      // This is very approximate and might need adjustments based on actual contract encoding
+      const stringDataStart = 128; // Skip function selector (8 chars) + address param (64 chars) + offset (64 chars)
+      if (dataWithoutFunctionSelector.length < stringDataStart) return '';
+      
+      // Try to extract what might be the Swarm reference
+      const potentialReference = dataWithoutFunctionSelector.slice(stringDataStart, stringDataStart + 128);
+      
+      // Convert hex to UTF-8 string, filtering out non-printable characters
+      const bytes = ethers.toUtf8Bytes(`0x${potentialReference}`);
+      const reference = ethers.toUtf8String(bytes).replace(/[^\x20-\x7E]/g, '');
+      
+      return reference;
+    } catch (err) {
+      console.error('Error extracting content reference:', err);
+      return '';
+    }
+  };
 
   return {
     proposals,
@@ -363,7 +362,7 @@ export const useProposal = () => {
     error,
     getAllProposals,
     getProposalById,
-    createProposal,
+    createBlogProposal,
     voteOnProposal,
     executeProposal,
     hasVoted

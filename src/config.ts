@@ -1,3 +1,4 @@
+// src/config.ts
 /**
  * ReligioDAO Configuration
  * 
@@ -12,7 +13,8 @@ interface NetworkConfig {
     blockExplorer: string;
     contracts: {
       blogNFT: string;
-      qGov: string;
+      generalDAOVoting: string;
+      nftMintingModule: string;
     };
   }
   
@@ -34,9 +36,23 @@ interface NetworkConfig {
   // Main configuration object
   const config: AppConfig = {
     name: 'ReligioDAO',
-    defaultNetworkId: 1, // Ethereum Mainnet, change as needed
+    defaultNetworkId: 100, // xDai Chain (Gnosis Chain)
     
     networks: {
+      // Gnosis Chain (formerly xDai)
+      100: {
+        chainId: 100,
+        name: 'Gnosis Chain',
+        rpcUrl: 'https://rpc.gnosischain.com',
+        blockExplorer: 'https://gnosisscan.io',
+        contracts: {
+          // Replace these with your actual deployed contract addresses
+          blogNFT: '0x0000000000000000000000000000000000000000', // QRC721Plus contract address
+          generalDAOVoting: '0x0905589827e3860f22ab6d689572dd5ada90f642', // GeneralDAOVoting contract address
+          nftMintingModule: '0x0000000000000000000000000000000000000000', // NFTMintingModulePlus contract address
+        },
+      },
+      
       // Ethereum Mainnet
       1: {
         chainId: 1,
@@ -44,24 +60,13 @@ interface NetworkConfig {
         rpcUrl: 'https://mainnet.infura.io/v3/YOUR_INFURA_KEY', // Replace with your Infura key
         blockExplorer: 'https://etherscan.io',
         contracts: {
-          blogNFT: '0x0000000000000000000000000000000000000000', // Replace with actual contract address
-          qGov: '0x0000000000000000000000000000000000000000', // Replace with actual contract address
+          blogNFT: '0x0000000000000000000000000000000000000000',
+          generalDAOVoting: '0x0000000000000000000000000000000000000000',
+          nftMintingModule: '0x0000000000000000000000000000000000000000',
         },
       },
       
-      // Goerli Testnet
-      5: {
-        chainId: 5,
-        name: 'Goerli Testnet',
-        rpcUrl: 'https://goerli.infura.io/v3/YOUR_INFURA_KEY', // Replace with your Infura key
-        blockExplorer: 'https://goerli.etherscan.io',
-        contracts: {
-          blogNFT: '0x0000000000000000000000000000000000000000', // Replace with actual contract address
-          qGov: '0x0000000000000000000000000000000000000000', // Replace with actual contract address
-        },
-      },
-      
-      // Local development (hardhat)
+      // Local development
       31337: {
         chainId: 31337,
         name: 'Localhost',
@@ -69,7 +74,8 @@ interface NetworkConfig {
         blockExplorer: '',
         contracts: {
           blogNFT: '0x0000000000000000000000000000000000000000', // Replace with local deployment
-          qGov: '0x0000000000000000000000000000000000000000', // Replace with local deployment
+          generalDAOVoting: '0x0000000000000000000000000000000000000000', // Replace with local deployment
+          nftMintingModule: '0x0000000000000000000000000000000000000000', // Replace with local deployment
         },
       },
     },

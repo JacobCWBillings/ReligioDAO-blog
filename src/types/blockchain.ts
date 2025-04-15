@@ -1,3 +1,5 @@
+// src/types/blockchain.ts
+
 import { ethers } from 'ethers';
 
 /**
@@ -17,52 +19,24 @@ export interface NFTAttribute {
 }
 
 export interface BlogProperties {
-  contentReference: string;
-  proposalId: string;
-  approvalDate: string;
-  category?: string;
-  tags?: string[];
-  authorAddress: string;
-}
-
-/**
- * Represents a proposal in the qgov system
- */
-export interface Proposal {
-  id: string;
-  title: string;
-  description: string;
-  proposer: string;
-  contentReference: string;
-  category: string;
-  status: ProposalStatus;
-  createdAt: number;
-  votingEnds: number;
-  votesFor: number;
-  votesAgainst: number;
-  executed: boolean;
-  nftId?: string;
-}
-
-export enum ProposalStatus {
-  Pending = 'Pending',
-  Active = 'Active',
-  Approved = 'Approved',
-  Rejected = 'Rejected',
-  Executed = 'Executed',
-  Canceled = 'Canceled'
+  contentReference: string;    // Swarm reference to the blog content
+  proposalId: string;          // ID of the governance proposal that approved this blog
+  approvalDate: string;        // ISO date string when the blog was approved
+  category?: string;           // Blog category
+  tags?: string[];             // Array of tags associated with the blog
+  authorAddress: string;       // Ethereum address of the author
 }
 
 /**
  * Blog NFT entity representing an approved blog
  */
 export interface BlogNFT {
-  tokenId: string;
-  owner: string;
-  metadata: BlogNFTMetadata;
-  contentReference: string;
-  proposalId: string;
-  createdAt: number;
+  tokenId: string;                  // The NFT token ID
+  owner: string;                    // Current owner of the NFT
+  metadata: BlogNFTMetadata;        // The metadata associated with the NFT
+  contentReference: string;         // Swarm reference to the blog content
+  proposalId: string;               // ID of the governance proposal
+  createdAt: number;                // Timestamp when the blog was created/approved
 }
 
 /**
@@ -77,28 +51,35 @@ export interface TransactionStatus {
 }
 
 /**
- * Interface for interacting with the BlogNFT contract
+ * Interface for blog filtering operations
  */
-export interface BlogNFTContract {
-  getMintedTokens(): Promise<string[]>;
-  getTokenMetadata(tokenId: string): Promise<BlogNFTMetadata>;
-  mintToken(proposalId: string, contentReference: string, metadata: BlogNFTMetadata): Promise<TransactionStatus>;
-  getTokensByOwner(ownerAddress: string): Promise<string[]>;
-  ownerOf(tokenId: string): Promise<string>;
-  getTokenURI(tokenId: string): Promise<string>;
+export interface BlogFilter {
+  category?: string;
+  tag?: string;
+  author?: string;
+  status?: string;
+  searchTerm?: string;
+  fromDate?: number;
+  toDate?: number;
 }
 
 /**
- * Interface for interacting with the qGov contract
+ * Interface for blog sorting operations
  */
-export interface QGovContract {
-  createProposal(title: string, description: string, contentReference: string, category: string): Promise<TransactionStatus>;
-  getProposal(proposalId: string): Promise<Proposal>;
-  listProposals(): Promise<Proposal[]>;
-  vote(proposalId: string, support: boolean): Promise<TransactionStatus>;
-  executeProposal(proposalId: string): Promise<TransactionStatus>;
-  getProposalVotes(proposalId: string): Promise<{for: number, against: number}>;
-  getVoterStatus(proposalId: string, voter: string): Promise<{hasVoted: boolean, support: boolean}>;
+export interface BlogSort {
+  field: 'createdAt' | 'title' | 'category' | 'votes';
+  direction: 'asc' | 'desc';
+}
+
+/**
+ * Interface for paginated blog results
+ */
+export interface PaginatedBlogs {
+  items: BlogNFT[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 }
 
 /**

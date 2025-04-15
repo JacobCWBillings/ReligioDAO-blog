@@ -17,7 +17,17 @@ import { BlogListPage } from './pages/viewer/BlogListPage';
 import { BlogDetailPage } from './pages/viewer/BlogDetailPage';
 import { GlobalSettingsPage } from './pages/GlobalSettingsPage';
 import { WelcomePage } from './WelcomePage';
+import { ProposalListPage } from './pages/proposal/ProposalListPage';
+import { ProposalDetailPage } from './pages/proposal/ProposalDetailPage';
+import { ProposalSubmissionPage } from './pages/proposal/ProposalSubmissionPage';
 import React from 'react';
+
+// Define supported chain IDs for the dApp
+const SUPPORTED_CHAIN_IDS = [
+  1,     // Ethereum Mainnet
+  100,   // Gnosis Chain
+  31337, // Local development chain
+];
 
 function App() {
     const [globalState, setGlobalState] = useState<GlobalState | null>(null);
@@ -71,7 +81,7 @@ function App() {
 
     // Show loading state while checking global state
     if (!initialized) {
-        return <div>Loading...</div>;
+        return <div className="app-loading">Loading ReligioDAO...</div>;
     }
     
     // If no global state exists, show the welcome page
@@ -88,7 +98,8 @@ function App() {
     // Main application with routing
     return (
         <BrowserRouter>
-            <WalletProvider>
+            {/* Wrap application with enhanced WalletProvider with supported chain IDs */}
+            <WalletProvider supportedChainIds={SUPPORTED_CHAIN_IDS}>
                 <GlobalStateProvider initialState={globalState} setGlobalState={setGlobalState}>
                     <Routes>
                         <Route
@@ -100,16 +111,32 @@ function App() {
                                 />
                             }
                         >
+                            {/* Home Page */}
                             <Route index element={<HomePage />} />
+                            
+                            {/* Blog Editor Routes */}
                             <Route path="editor">
                                 <Route index element={<BlogEditorPage />} />
                                 <Route path=":blogId" element={<BlogEditorPage />} />
                             </Route>
+                            
+                            {/* Blog Viewer Routes */}
                             <Route path="blogs">
                                 <Route index element={<BlogListPage />} />
                                 <Route path=":blogId" element={<BlogDetailPage />} />
                             </Route>
+                            
+                            {/* Proposal Routes */}
+                            <Route path="proposals">
+                                <Route index element={<ProposalListPage />} />
+                                <Route path=":proposalId" element={<ProposalDetailPage />} />
+                            </Route>
+                            <Route path="submit-proposal" element={<ProposalSubmissionPage />} />
+                            
+                            {/* Settings */}
                             <Route path="settings" element={<GlobalSettingsPage />} />
+                            
+                            {/* 404 Fallback */}
                             <Route path="*" element={<Navigate to="/" replace />} />
                         </Route>
                     </Routes>
@@ -118,5 +145,3 @@ function App() {
         </BrowserRouter>
     );
 }
-
-export default App;
