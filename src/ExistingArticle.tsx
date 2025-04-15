@@ -6,6 +6,7 @@ import { Row } from './Row'
 import { save } from './Saver'
 import { Vertical } from './Vertical'
 import { Article, GlobalState } from './libetherjot'
+import React from 'react'
 
 interface Props {
     article: Article

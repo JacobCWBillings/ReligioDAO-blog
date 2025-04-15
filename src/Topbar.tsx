@@ -4,6 +4,7 @@ import { Row } from './Row'
 import { SquareImage } from './SquareImage'
 import './Topbar.css'
 import { GlobalState } from './libetherjot'
+import React from 'react'
 
 interface Props {
     setTab: (tab: string) => void

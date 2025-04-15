@@ -5,6 +5,7 @@ import { Article, Asset, GlobalState, createArticlePage, parseMarkdown } from '.
 import { save } from './Saver'
 import './Sidebar.css'
 import { Vertical } from './Vertical'
+import React from 'react'
 
 interface Props {
     globalState: GlobalState

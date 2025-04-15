@@ -262,7 +262,7 @@ export const ProposalDetailPage: React.FC = () => {
               proposalId={proposal.id}
               title={blogInfo.blogTitle}
               description={proposal.description}
-              contentReference={proposal.contentReference}
+              contentReference={proposal.contentReference || '' }
               category={blogInfo.category}
               tags={blogInfo.tags}
               authorAddress={blogInfo.authorAddress}

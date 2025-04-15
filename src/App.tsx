@@ -29,7 +29,7 @@ const SUPPORTED_CHAIN_IDS = [
   31337, // Local development chain
 ];
 
-function App() {
+export function App() {
     const [globalState, setGlobalState] = useState<GlobalState | null>(null);
     const [isBeeRunning, setBeeRunning] = useState(false);
     const [hasPostageStamp, setHasPostageStamp] = useState(false);

@@ -42,7 +42,8 @@ export const useBlogNFT = () => {
     if (!provider) return;
 
     try {
-      const addresses = getContractAddresses(chainId);
+      // Fix: Convert chainId which could be null to undefined
+      const addresses = getContractAddresses(chainId ?? undefined);
       
       // For read-only operations, we can use the provider directly
       // For operations that require signing, we'll use the signer if available
@@ -84,17 +85,18 @@ export const useBlogNFT = () => {
       // Get the total supply of NFTs
       const totalSupply = await contract.totalSupply();
       
-      // Fetch all token IDs and their data
-      const tokenPromises = [];
+      // Create array of promises (parallel execution)
+      const tokenPromises: Promise<BlogNFT | null>[] = [];
       for (let i = 0; i < totalSupply.toNumber(); i++) {
         const tokenId = await contract.tokenByIndex(i);
         tokenPromises.push(getNFTById(tokenId.toString()));
       }
       
-      const allNfts = await Promise.all(tokenPromises);
+      // Wait for all promises to resolve
+      const allResults = await Promise.all(tokenPromises);
       
-      // Filter out any nulls (in case of errors fetching individual NFTs)
-      const validNfts = allNfts.filter(Boolean) as BlogNFT[];
+      // Filter out null values with type predicate
+      const validNfts = allResults.filter((nft): nft is BlogNFT => nft !== null);
       
       setNfts(validNfts);
       return validNfts;
@@ -155,15 +157,21 @@ export const useBlogNFT = () => {
       // Get the number of NFTs owned by this address
       const balance = await contract.balanceOf(ownerAddress);
       
-      // Fetch all tokens owned by this address
-      const tokenPromises = [];
+      // Get all token IDs first (this needs to be sequential)
+      const tokenIds: string[] = [];
       for (let i = 0; i < balance.toNumber(); i++) {
         const tokenId = await contract.tokenOfOwnerByIndex(ownerAddress, i);
-        tokenPromises.push(getNFTById(tokenId.toString()));
+        tokenIds.push(tokenId.toString());
       }
       
-      const ownerNfts = await Promise.all(tokenPromises);
-      return ownerNfts.filter(Boolean) as BlogNFT[];
+      // Create array of promises for parallel execution
+      const nftPromises = tokenIds.map(id => getNFTById(id));
+      
+      // Wait for all promises to resolve
+      const allResults = await Promise.all(nftPromises);
+      
+      // Filter out null values with type predicate
+      return allResults.filter((nft): nft is BlogNFT => nft !== null);
     } catch (err) {
       console.error(`Error fetching NFTs for owner ${ownerAddress}:`, err);
       const blockchainError = new BlockchainError(

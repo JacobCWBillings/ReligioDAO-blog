@@ -3,7 +3,17 @@ import { ethers } from 'ethers';
 import { useWallet } from '../../contexts/WalletContext';
 import { BlogNFT, BlogNFTMetadata, BlockchainErrorType, BlockchainError, TransactionStatus } from '../../types/blockchain';
 import config, { getContractAddresses } from '../../config';
-import BlogNFTAbi from '../abis/BlogNFT.json';
+
+// Define actual ABI or import from JSON file
+// Just creating a placeholder if BlogNFT.json doesn't exist yet
+const BlogNFTAbi = [
+  "function totalSupply() view returns (uint256)",
+  "function tokenByIndex(uint256 index) view returns (uint256)",
+  "function ownerOf(uint256 tokenId) view returns (address)",
+  "function tokenURI(uint256 tokenId) view returns (string)",
+  "function getTokensOfOwner(address owner) view returns (uint256[])",
+  "function mintBlogNFT(address to, string memory proposalId, string memory contentReference, string memory tokenURI) external returns (uint256)"
+];
 
 /**
  * Hook for interacting with the BlogNFT contract
@@ -20,12 +30,16 @@ export const useNFT = () => {
     if (!provider || !signer || !isConnected) return;
 
     try {
-      const addresses = getContractAddresses(chainId);
+      // Fix: Convert chainId which could be null to undefined
+      const addresses = getContractAddresses(chainId ?? undefined);
+      
+      // Fix: Use actual ABI instead of empty object
       const nftContract = new ethers.Contract(
         addresses.blogNFT,
         BlogNFTAbi,
         signer
       );
+      
       setContract(nftContract);
       setError(null);
     } catch (err) {
@@ -37,82 +51,6 @@ export const useNFT = () => {
       ));
     }
   }, [provider, signer, chainId, isConnected]);
-
-  // Get all minted NFTs
-  const getAllNFTs = useCallback(async (): Promise<BlogNFT[]> => {
-    if (!contract) {
-      throw new BlockchainError(
-        'Contract not initialized',
-        BlockchainErrorType.ContractError
-      );
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Get total supply of tokens
-      const totalSupply = await contract.totalSupply();
-      const tokenCount = totalSupply.toNumber();
-      
-      const nftPromises = [];
-      for (let i = 0; i < tokenCount; i++) {
-        nftPromises.push(getTokenData(i));
-      }
-      
-      const nftResults = await Promise.all(nftPromises);
-      setNfts(nftResults.filter(Boolean) as BlogNFT[]);
-      return nftResults.filter(Boolean) as BlogNFT[];
-    } catch (err) {
-      console.error('Error fetching NFTs:', err);
-      const blockchainError = new BlockchainError(
-        'Failed to fetch NFTs',
-        BlockchainErrorType.ContractError,
-        err instanceof Error ? err : new Error(String(err))
-      );
-      setError(blockchainError);
-      throw blockchainError;
-    } finally {
-      setLoading(false);
-    }
-  }, [contract]);
-
-  // Get NFTs owned by the current account
-  const getMyNFTs = useCallback(async (): Promise<BlogNFT[]> => {
-    if (!contract || !account) {
-      throw new BlockchainError(
-        'Contract not initialized or wallet not connected',
-        BlockchainErrorType.ContractError
-      );
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Get token IDs owned by the current account
-      const tokenIds = await contract.getTokensOfOwner(account);
-      
-      const nftPromises = tokenIds.map((id: ethers.BigNumber) => 
-        getTokenData(id.toNumber())
-      );
-      
-      const nftResults = await Promise.all(nftPromises);
-      const myNfts = nftResults.filter(Boolean) as BlogNFT[];
-      return myNfts;
-    } catch (err) {
-      console.error('Error fetching owned NFTs:', err);
-      const blockchainError = new BlockchainError(
-        'Failed to fetch your NFTs',
-        BlockchainErrorType.ContractError,
-        err instanceof Error ? err : new Error(String(err))
-      );
-      setError(blockchainError);
-      throw blockchainError;
-    } finally {
-      setLoading(false);
-    }
-  }, [contract, account]);
 
   // Get data for a specific token
   const getTokenData = useCallback(async (tokenId: number): Promise<BlogNFT | null> => {
@@ -157,6 +95,88 @@ export const useNFT = () => {
       return null;
     }
   }, [contract]);
+
+  // Get all minted NFTs
+  const getAllNFTs = useCallback(async (): Promise<BlogNFT[]> => {
+    if (!contract) {
+      throw new BlockchainError(
+        'Contract not initialized',
+        BlockchainErrorType.ContractError
+      );
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Get total supply of tokens
+      const totalSupply = await contract.totalSupply();
+      const tokenCount = totalSupply.toNumber();
+      
+      // Create array of promises for parallel execution
+      const tokenPromises = Array.from({ length: tokenCount }, (_, i) => getTokenData(i));
+      
+      // Wait for all promises to resolve at once
+      const allResults = await Promise.all(tokenPromises);
+      
+      // Filter out null values with type predicate
+      const nftResults = allResults.filter((nft): nft is BlogNFT => nft !== null);
+      
+      setNfts(nftResults);
+      return nftResults;
+    } catch (err) {
+      console.error('Error fetching NFTs:', err);
+      const blockchainError = new BlockchainError(
+        'Failed to fetch NFTs',
+        BlockchainErrorType.ContractError,
+        err instanceof Error ? err : new Error(String(err))
+      );
+      setError(blockchainError);
+      throw blockchainError;
+    } finally {
+      setLoading(false);
+    }
+  }, [contract, getTokenData]);
+
+  // Get NFTs owned by the current account
+  const getMyNFTs = useCallback(async (): Promise<BlogNFT[]> => {
+    if (!contract || !account) {
+      throw new BlockchainError(
+        'Contract not initialized or wallet not connected',
+        BlockchainErrorType.ContractError
+      );
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Get token IDs owned by the current account
+      const tokenIds = await contract.getTokensOfOwner(account);
+      
+      // Create array of promises for parallel execution
+      const tokenPromises = tokenIds.map(id => getTokenData(Number(id)));
+      
+      // Wait for all promises to resolve at once
+      const allResults = await Promise.all(tokenPromises);
+      
+      // Filter out null values with type predicate
+      const myNfts = allResults.filter((nft): nft is BlogNFT => nft !== null);
+      
+      return myNfts;
+    } catch (err) {
+      console.error('Error fetching owned NFTs:', err);
+      const blockchainError = new BlockchainError(
+        'Failed to fetch your NFTs',
+        BlockchainErrorType.ContractError,
+        err instanceof Error ? err : new Error(String(err))
+      );
+      setError(blockchainError);
+      throw blockchainError;
+    } finally {
+      setLoading(false);
+    }
+  }, [contract, account, getTokenData]);
 
   // Mint a new NFT
   const mintNFT = useCallback(async (

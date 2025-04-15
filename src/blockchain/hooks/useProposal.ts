@@ -30,7 +30,8 @@ export const useProposal = () => {
       const service = new ProposalService(provider, signer);
       
       const initService = async () => {
-        await service.init(chainId);
+        // Fix: Convert chainId which could be null to undefined
+        await service.init(chainId ?? undefined);
         setProposalService(service);
         setError(null);
       };
@@ -45,47 +46,6 @@ export const useProposal = () => {
       ));
     }
   }, [provider, signer, chainId, isConnected]);
-
-  /**
-   * Fetch all proposals
-   */
-  const getAllProposals = useCallback(async (): Promise<Proposal[]> => {
-    if (!proposalService) {
-      throw new BlockchainError(
-        'ProposalService not initialized',
-        BlockchainErrorType.ContractError
-      );
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Get all proposal IDs
-      const proposalIds = await proposalService.getAllProposalIds();
-      
-      // Fetch details for each proposal
-      const proposalPromises = proposalIds.map(id => getProposalById(id));
-      const fetchedProposals = await Promise.all(proposalPromises);
-      
-      // Filter out null values
-      const validProposals = fetchedProposals.filter(Boolean) as Proposal[];
-      
-      setProposals(validProposals);
-      return validProposals;
-    } catch (err) {
-      console.error('Error fetching all proposals:', err);
-      const blockchainError = new BlockchainError(
-        'Failed to fetch proposals',
-        BlockchainErrorType.ContractError,
-        err instanceof Error ? err : new Error(String(err))
-      );
-      setError(blockchainError);
-      throw blockchainError;
-    } finally {
-      setLoading(false);
-    }
-  }, [proposalService]);
 
   /**
    * Get proposal by ID
@@ -138,6 +98,49 @@ export const useProposal = () => {
       return null;
     }
   }, [proposalService]);
+
+  /**
+   * Fetch all proposals
+   */
+  const getAllProposals = useCallback(async (): Promise<Proposal[]> => {
+    if (!proposalService) {
+      throw new BlockchainError(
+        'ProposalService not initialized',
+        BlockchainErrorType.ContractError
+      );
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Get all proposal IDs
+      const proposalIds = await proposalService.getAllProposalIds();
+      
+      // Create array of promises for parallel execution
+      const proposalPromises = proposalIds.map(id => getProposalById(id));
+      
+      // Wait for all promises to resolve at once
+      const allResults = await Promise.all(proposalPromises);
+      
+      // Filter out null values with type predicate
+      const validProposals = allResults.filter((proposal): proposal is Proposal => proposal !== null);
+      
+      setProposals(validProposals);
+      return validProposals;
+    } catch (err) {
+      console.error('Error fetching all proposals:', err);
+      const blockchainError = new BlockchainError(
+        'Failed to fetch proposals',
+        BlockchainErrorType.ContractError,
+        err instanceof Error ? err : new Error(String(err))
+      );
+      setError(blockchainError);
+      throw blockchainError;
+    } finally {
+      setLoading(false);
+    }
+  }, [proposalService, getProposalById]);
 
   /**
    * Create a blog minting proposal

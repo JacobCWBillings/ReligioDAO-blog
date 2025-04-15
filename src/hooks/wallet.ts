@@ -1,7 +1,9 @@
-// This file exports all wallet-related hooks for easier imports
+export {}
 
-export { useWalletProvider } from './useWalletProvider';
-export { useWallet } from '../contexts/WalletContext';
+// // This file exports all wallet-related hooks for easier imports
 
-// Re-export wallet types
-export type { WalletProvider } from './useWalletProvider';
+// export { useWalletProvider } from './useWalletProvider';
+// export { useWallet } from '../contexts/WalletContext';
+
+// // Re-export wallet types
+// export type { WalletProvider } from './useWalletProvider';

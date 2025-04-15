@@ -2,6 +2,26 @@ import { useState, useEffect } from 'react';
 
 export type WalletProvider = 'metamask' | 'walletconnect' | 'coinbase' | 'brave' | 'trust' | 'none';
 
+// Define extended ethereum provider interface
+export interface ExtendedEthereumProvider {
+  isMetaMask?: boolean;
+  isCoinbaseWallet?: boolean;
+  isTrust?: boolean;
+  isBraveWallet?: boolean;
+  isWalletConnect?: boolean;
+  providers?: ExtendedEthereumProvider[];
+  request: (args: { method: string; params?: any[] }) => Promise<any>;
+  on: (event: string, listener: (...args: any[]) => void) => void;
+  removeListener: (event: string, listener: (...args: any[]) => void) => void;
+}
+
+// Augment the Window interface to include ethereum property
+declare global {
+  interface Window {
+    ethereum?: ExtendedEthereumProvider;
+  }
+}
+
 /**
  * Hook for detecting the type of wallet provider available in the browser
  */

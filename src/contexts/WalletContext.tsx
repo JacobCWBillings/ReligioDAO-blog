@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ethers } from 'ethers';
-import { useWalletProvider, WalletProvider as ProviderType } from '../hooks/wallet';
+import { useWalletProvider, WalletProvider as ProviderType, ExtendedEthereumProvider } from '../hooks/useWalletProvider';
 
 // Define wallet error types
 export enum WalletErrorType {
@@ -312,7 +312,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({
     try {
       const wasAdded = await window.ethereum.request({
         method: 'wallet_watchAsset',
-        params: {
+        params: [{
           type: 'ERC20',
           options: {
             address: tokenAddress,
@@ -320,7 +320,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({
             decimals: tokenDecimals,
             image: tokenImage,
           },
-        },
+        }],
       });
       
       return wasAdded;
@@ -368,16 +368,3 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({
     </WalletContext.Provider>
   );
 };
-
-// Add type definition for window.ethereum
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: any[] }) => Promise<any>;
-      on: (event: string, listener: (...args: any[]) => void) => void;
-      removeListener: (event: string, listener: (...args: any[]) => void) => void;
-      isMetaMask?: boolean;
-      providers?: any[];
-    };
-  }
-}
