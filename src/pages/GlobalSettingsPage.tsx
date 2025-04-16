@@ -133,7 +133,7 @@ export function GlobalSettingsPage() {
                 } catch (error) {
                     Swal.fire({
                         title: 'Import Failed',
-                        text: `Error: ${error.message}`,
+                        text: `Error: ${error instanceof Error ? error.message : String(error)}`,
                         icon: 'error'
                     });
                 }

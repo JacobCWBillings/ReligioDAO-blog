@@ -155,7 +155,7 @@ export const useNFT = () => {
       const tokenIds = await contract.getTokensOfOwner(account);
       
       // Create array of promises for parallel execution
-      const tokenPromises = tokenIds.map(id => getTokenData(Number(id)));
+      const tokenPromises = tokenIds.map((id: string | number) => getTokenData(Number(id)));
       
       // Wait for all promises to resolve at once
       const allResults = await Promise.all(tokenPromises);

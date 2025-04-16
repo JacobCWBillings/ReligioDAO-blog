@@ -275,7 +275,7 @@ export class ProposalService {
     
     try {
       const proposalIds = await this.votingContract!.getAllProposals();
-      return proposalIds.map(id => id.toString());
+      return proposalIds.map((id: string | number) => id.toString());
     } catch (err) {
       console.error('Error getting all proposal IDs:', err);
       throw new BlockchainError(
