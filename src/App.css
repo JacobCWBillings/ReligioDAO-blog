@@ -335,3 +335,89 @@ img {
     display: flex;
     gap: 8px;
 }
+
+.platform-init-error {
+    max-width: 600px;
+    margin: 100px auto;
+    padding: 30px;
+    text-align: center;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.platform-init-error h2 {
+    color: #ff8a00;
+    margin-bottom: 20px;
+}
+
+.platform-init-error ul {
+    list-style: none;
+    padding: 0;
+    margin: 20px 0;
+    text-align: left;
+    display: inline-block;
+}
+
+.platform-init-error li {
+    margin-bottom: 10px;
+}
+
+.status-ok {
+    color: #4caf50;
+    font-weight: bold;
+}
+
+.status-error {
+    color: #f44336;
+    font-weight: bold;
+}
+
+.platform-init-error button {
+    background-color: #ff8a00;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-top: 20px;
+}
+
+.platform-init-error button:hover {
+    background-color: #ff9e2e;
+}
+
+.bee-requirements-banner {
+    background-color: #fff3e0;
+    padding: 10px;
+    text-align: center;
+}
+
+.bee-warning {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 10px;
+}
+
+.bee-warning h3 {
+    color: #ff8a00;
+    margin: 0 0 10px 0;
+}
+
+.bee-warning ul {
+    list-style: none;
+    padding: 0;
+    display: inline-block;
+    text-align: left;
+    margin: 10px 0;
+}
+
+.bee-warning li {
+    margin-bottom: 5px;
+}
+
+.bee-warning a {
+    color: #ff8a00;
+    text-decoration: underline;
+}

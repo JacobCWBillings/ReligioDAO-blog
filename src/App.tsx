@@ -6,6 +6,8 @@ import './App.css';
 import { WalletProvider } from './contexts/WalletContext';
 import { GlobalStateProvider } from './contexts/GlobalStateContext';
 import { Article, Asset, GlobalState, getGlobalState } from './libetherjot';
+import { save } from './Saver';
+import { createReligioDAOState } from './utils/platformInitializer';
 
 // Layout Components
 import { Layout } from './components/Layout';
@@ -27,6 +29,9 @@ const SUPPORTED_CHAIN_IDS = [
   1,     // Ethereum Mainnet
   100,   // Gnosis Chain
   31337, // Local development chain
+  35441, // Q mainnet
+  35442, // Q devnet
+  35443, // Q testnet
 ];
 
 export function App() {
@@ -34,7 +39,10 @@ export function App() {
     const [isBeeRunning, setBeeRunning] = useState(false);
     const [hasPostageStamp, setHasPostageStamp] = useState(false);
     const [initialized, setInitialized] = useState(false);
+    const [initializingPlatform, setInitializingPlatform] = useState(false);
+    const [initError, setInitError] = useState<string | null>(null);
 
+    // Load existing state from localStorage
     useEffect(() => {
         const storedState = localStorage.getItem('state');
         if (storedState) {
@@ -47,6 +55,68 @@ export function App() {
             setInitialized(true);
         }
     }, []);
+
+    // Initialize platform if no global state exists
+    useEffect(() => {
+        // Only run this effect if we're initialized and there's no global state
+        if (initialized && !globalState) {
+            setInitializingPlatform(true);
+            
+            const initializeReligioDAOPlatform = async () => {
+                try {
+                    // Check if we can use local Bee
+                    const useLocalBee = isBeeRunning && hasPostageStamp;
+                    
+                    // Create a default global state for the ReligioDAO platform
+                    const platformState = await createReligioDAOState("ReligioDAO Blog Platform", {
+                        useLocalBee,
+                        beeApi: useLocalBee ? 'http://localhost:1633' : 'https://download.gateway.ethswarm.org',
+                        postageBatchId: useLocalBee ? await fetchPostageStamp() : ''
+                    });
+                    
+                    // Customize the default state for ReligioDAO
+                    platformState.configuration.header.description = 
+                        "A decentralized blogging platform governed by the ReligioDAO community";
+                    platformState.configuration.footer.description = 
+                        "Content on this platform is approved by ReligioDAO governance and stored on Swarm";
+                    
+                    // Use public gateway for content retrieval if not using local Bee
+                    if (!useLocalBee) {
+                        platformState.beeApi = 'https://download.gateway.ethswarm.org';
+                    }
+                    
+                    // Convert to GlobalState and save
+                    const state = await getGlobalState(platformState);
+                    await save(state);
+                    setGlobalState(state);
+                    
+                } catch (error) {
+                    console.error("Failed to initialize ReligioDAO platform:", error);
+                    setInitError("Failed to initialize the platform. Please refresh to try again.");
+                } finally {
+                    setInitializingPlatform(false);
+                }
+            };
+            
+            // Helper to fetch a usable postage stamp if available
+            const fetchPostageStamp = async () => {
+                if (isBeeRunning) {
+                    try {
+                        const bee = new Bee('http://localhost:1633');
+                        const stamps = await bee.getAllPostageBatch();
+                        const usableStamp = stamps.find(stamp => stamp.usable);
+                        return usableStamp?.batchID || '';
+                    } catch (error) {
+                        console.warn("Error fetching postage stamp:", error);
+                        return '';
+                    }
+                }
+                return '';
+            };
+            
+            initializeReligioDAOPlatform();
+        }
+    }, [initialized, globalState, isBeeRunning, hasPostageStamp]);
 
     // Check Bee node connectivity
     async function checkBee() {
@@ -84,15 +154,23 @@ export function App() {
         return <div className="app-loading">Loading ReligioDAO...</div>;
     }
     
-    // If no global state exists, show the welcome page
+    // Show loading or error states during platform initialization
     if (!globalState) {
-        return (
-            <WelcomePage
-                setGlobalState={setGlobalState}
-                isBeeRunning={isBeeRunning}
-                hasPostageStamp={hasPostageStamp}
-            />
-        );
+        if (initializingPlatform) {
+            return <div className="app-loading">Initializing ReligioDAO Platform...</div>;
+        }
+        
+        if (initError) {
+            return (
+                <div className="platform-init-error">
+                    <h2>Platform Initialization Error</h2>
+                    <p>{initError}</p>
+                    <button onClick={() => window.location.reload()}>Retry</button>
+                </div>
+            );
+        }
+        
+        return <div className="app-loading">Preparing ReligioDAO Platform...</div>;
     }
 
     // Main application with routing
