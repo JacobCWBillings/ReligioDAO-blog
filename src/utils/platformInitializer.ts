@@ -38,8 +38,12 @@ export async function createReligioDAOState(
     
     // Create a deterministic wallet for the platform (instead of random)
     // This ensures all users get the same feed address
-    const PLATFORM_SEED = "religiodao-platform-v1";
-    const wallet = ethers.Wallet.fromPhrase(PLATFORM_SEED);
+    const PLATFORM_SEED = "ReligioDAO blog. Default seed.";
+    // Generate a private key using keccak256 hash of the seed
+    const privateKeyBytes = ethers.keccak256(ethers.toUtf8Bytes(PLATFORM_SEED));
+    // Remove 0x prefix and ensure it's 64 chars (32 bytes) for a valid private key
+    const privateKey = privateKeyBytes.substring(2);
+    const wallet = new ethers.Wallet(privateKey);
     
     try {
         // Create and initialize the collection

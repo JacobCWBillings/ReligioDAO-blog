@@ -1,8 +1,8 @@
 {
-    "name": "etherjot-web",
+    "name": "religiodao-blogger",
     "version": "0.1.0",
     "private": true,
-    "homepage": "etherjot",
+    "homepage": "ReligioDAO",
     "dependencies": {
         "@ethersphere/bee-js": "^7.1.0",
         "@uiw/react-md-editor": "^3.23.5",

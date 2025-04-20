@@ -13,17 +13,7 @@ import {
 } from '../../types/blockchain';
 import { getContractAddresses } from '../../config';
 
-// ABI for QRC721Plus contract
-const QRC721PlusABI = [
-  "function totalSupply() view returns (uint256)",
-  "function tokenByIndex(uint256 index) view returns (uint256)",
-  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
-  "function balanceOf(address owner) view returns (uint256)",
-  "function ownerOf(uint256 tokenId) view returns (address)",
-  "function tokenURI(uint256 tokenId) view returns (string)",
-  "function isApprovedForAll(address owner, address operator) view returns (bool)",
-  "function getApproved(uint256 tokenId) view returns (address)"
-];
+import QRC721PlusABI from '../abis/QRC721Plus.json';
 
 /**
  * Hook for interacting with the Blog NFT contract.
@@ -51,7 +41,7 @@ export const useBlogNFT = () => {
       
       const nftContract = new ethers.Contract(
         addresses.blogNFT,
-        QRC721PlusABI,
+        QRC721PlusABI.abi,
         contractProvider
       );
       

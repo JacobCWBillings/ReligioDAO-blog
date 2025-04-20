@@ -77,7 +77,7 @@ const config: AppConfig = {
       rpcUrl: 'https://rpc.qtestnet.org',
       blockExplorer: 'https://explorer.qtestnet.org',
       contracts: {
-        blogNFT: '0x0000000000000000000000000000000000000000', // Replace with actual QRC721Plus contract address
+        blogNFT: '0x2cd51Ea55E4B10AD0A75CCfe44974e05ED881B87', // Replace with actual QRC721Plus contract address
         generalDAOVoting: '0x9b1Ab43e9d948358c93C6B89BEBD84434f112Af5', // Q Testnet voting contract
         nftMintingModule: '0x5d897fF501a9d322ae6c0d37a6b267B7bdaF719f', // NFT minting module on Q Testnet
       },

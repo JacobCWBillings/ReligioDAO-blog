@@ -1,15 +1,17 @@
-import { Bee } from '@ethersphere/bee-js';
-import { Dates, Optional, Strings } from 'cafe-utility';
+import React from 'react';
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import './App.css';
-import { WalletProvider } from './contexts/WalletContext';
-import { GlobalStateProvider } from './contexts/GlobalStateContext';
+
+import { Bee } from '@ethersphere/bee-js';
 import { Article, Asset, GlobalState, getGlobalState } from './libetherjot';
+import { GlobalStateProvider } from './contexts/GlobalStateContext';
 import { save } from './Saver';
+import { Dates, Optional, Strings } from 'cafe-utility';
+import { WalletProvider } from './contexts/WalletContext';
 import { createReligioDAOState } from './utils/platformInitializer';
 
 // Layout Components
+import './App.css';
 import { Layout } from './components/Layout';
 
 // Pages
@@ -22,7 +24,6 @@ import { WelcomePage } from './WelcomePage';
 import { ProposalListPage } from './pages/proposal/ProposalListPage';
 import { ProposalDetailPage } from './pages/proposal/ProposalDetailPage';
 import { ProposalSubmissionPage } from './pages/proposal/ProposalSubmissionPage';
-import React from 'react';
 
 // Define supported chain IDs for the dApp
 const SUPPORTED_CHAIN_IDS = [

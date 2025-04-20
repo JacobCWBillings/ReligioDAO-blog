@@ -6,15 +6,7 @@ import config, { getContractAddresses } from '../../config';
 
 // Define actual ABI or import from JSON file
 // Just creating a placeholder if BlogNFT.json doesn't exist yet
-const BlogNFTAbi = [
-  "function totalSupply() view returns (uint256)",
-  "function tokenByIndex(uint256 index) view returns (uint256)",
-  "function ownerOf(uint256 tokenId) view returns (address)",
-  "function tokenURI(uint256 tokenId) view returns (string)",
-  "function getTokensOfOwner(address owner) view returns (uint256[])",
-  "function mintBlogNFT(address to, string memory proposalId, string memory contentReference, string memory tokenURI) external returns (uint256)"
-];
-
+import BlogNFTAbi from '../abis/QRC721Plus.json';
 /**
  * Hook for interacting with the BlogNFT contract
  */
@@ -36,7 +28,7 @@ export const useNFT = () => {
       // Fix: Use actual ABI instead of empty object
       const nftContract = new ethers.Contract(
         addresses.blogNFT,
-        BlogNFTAbi,
+        BlogNFTAbi.abi,
         signer
       );
       

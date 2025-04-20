@@ -40,12 +40,12 @@ export const BlogEditorPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [assetInsertionHandler, setAssetInsertionHandler] = useState<((reference: string) => void) | null>(null);
 
-    // Redirect if not connected
-    useEffect(() => {
-        if (!isConnected) {
-            navigate('/');
-        }
-    }, [isConnected, navigate]);
+    // // Redirect if not connected
+    // useEffect(() => {
+    //     if (!isConnected) {
+    //         navigate('/');
+    //     }
+    // }, [isConnected, navigate]);
 
     // Load article if editing existing one
     useEffect(() => {

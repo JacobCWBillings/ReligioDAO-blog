@@ -3,22 +3,8 @@ import { ethers } from 'ethers';
 import { getContractAddresses } from '../../config';
 import { BlogProposal, TransactionStatus, BlockchainError, BlockchainErrorType } from '../../types/blockchain';
 
-// ABI for GeneralDAOVoting contract (simplified for readability)
-const GeneralDAOVotingABI = [
-  "function createProposal(string memory title, string memory description, bytes memory callData) public returns (uint256)",
-  "function vote(uint256 proposalId, bool support) public",
-  "function executeProposal(uint256 proposalId) public",
-  "function getProposal(uint256 proposalId) public view returns (tuple(uint256 id, string title, string description, address proposer, uint256 createdAt, uint256 votingEnds, uint256 votesFor, uint256 votesAgainst, uint8 status, bool executed))",
-  "function getProposalCallData(uint256 proposalId) public view returns (bytes memory)",
-  "function getProposalVotes(uint256 proposalId) public view returns (uint256 votesFor, uint256 votesAgainst)",
-  "function hasVoted(uint256 proposalId, address voter) public view returns (bool)",
-  "function getAllProposals() public view returns (uint256[] memory)"
-];
-
-// ABI for NFTMintingModulePlus contract
-const NFTMintingModuleABI = [
-  "function mintTo(address to, string memory tokenURI) public"
-];
+import GeneralDAOVotingABI from '../abis/GeneralDAOVoting.json';
+import NFTMintingModulePlusABI from '../abis/NFTMintingModulePlus.json';
 
 /**
  * Service for interacting with the DAO's proposal system for blog NFT minting
@@ -50,14 +36,14 @@ export class ProposalService {
     // Initialize voting contract
     this.votingContract = new ethers.Contract(
       addresses.generalDAOVoting,
-      GeneralDAOVotingABI,
+      GeneralDAOVotingABI.abi,
       this.signer
     );
     
     // Initialize NFT minting module
     this.nftMintingModule = new ethers.Contract(
       addresses.nftMintingModule,
-      NFTMintingModuleABI,
+      NFTMintingModulePlusABI.abi,
       this.signer
     );
   }
