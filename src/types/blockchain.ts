@@ -10,7 +10,7 @@ export enum ProposalStatus {
   Active = 'Active',      // Voting is active
   Approved = 'Approved',  // Voting finished with approval
   Rejected = 'Rejected',  // Voting finished with rejection
-  Executed = 'Executed',  // Proposal has been executed (NFT minted)
+  Executed = 'Executed',  // Proposal has been executed
   Canceled = 'Canceled'   // Proposal was canceled
 }
 
@@ -153,6 +153,9 @@ export enum BlockchainErrorType {
   ContractError = 'ContractError',
   UnsupportedNetwork = 'UnsupportedNetwork',
   InsufficientFunds = 'InsufficientFunds',
+  GasLimitExceeded = 'GasLimitExceeded',  // Added for gas limit errors
+  NonceError = 'NonceError',              // Added for nonce-related errors
+  Timeout = 'Timeout',                    // Added for transaction timeout
   Unknown = 'Unknown'
 }
 

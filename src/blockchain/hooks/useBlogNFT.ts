@@ -46,6 +46,8 @@ export const useBlogNFT = () => {
       );
       
       setContract(nftContract);
+      console.log(contract)
+      console.log(nftContract)
       setError(null);
     } catch (err) {
       console.error('Error initializing NFT contract:', err);
@@ -61,23 +63,32 @@ export const useBlogNFT = () => {
    * Fetch all minted blog NFTs
    */
   const getAllNFTs = useCallback(async (): Promise<BlogNFT[]> => {
+    // First check if we have a valid contract
     if (!contract) {
-      throw new BlockchainError(
-        'Contract not initialized',
-        BlockchainErrorType.ContractError
-      );
+      // Don't throw an error here, just return empty array
+      console.warn('Contract not initialized yet');
+      return [];
     }
 
     setLoading(true);
     setError(null);
 
     try {
+      // First, let's check if we can connect to the contract
+      const code = await provider?.getCode(contract.target);
+      if (code === '0x') {
+        console.warn('Contract not deployed on this network');
+        return [];
+      }
+
       // Get the total supply of NFTs
-      const totalSupply = await contract.totalSupply();
+      const totalSupplyBig = await contract.totalSupply();
+      // Handle ethers v6 BigNumber conversion
+      const totalSupply = Number(totalSupplyBig);
       
       // Create array of promises (parallel execution)
       const tokenPromises: Promise<BlogNFT | null>[] = [];
-      for (let i = 0; i < totalSupply.toNumber(); i++) {
+      for (let i = 0; i < totalSupply; i++) {
         const tokenId = await contract.tokenByIndex(i);
         tokenPromises.push(getNFTById(tokenId.toString()));
       }
@@ -92,17 +103,12 @@ export const useBlogNFT = () => {
       return validNfts;
     } catch (err) {
       console.error('Error fetching all NFTs:', err);
-      const blockchainError = new BlockchainError(
-        'Failed to fetch NFTs',
-        BlockchainErrorType.ContractError,
-        err instanceof Error ? err : new Error(String(err))
-      );
-      setError(blockchainError);
-      throw blockchainError;
+      // Don't throw error, just log it and return empty array
+      return [];
     } finally {
       setLoading(false);
     }
-  }, [contract]);
+  }, [contract, provider]);
 
   /**
    * Get a specific NFT by token ID
@@ -123,7 +129,7 @@ export const useBlogNFT = () => {
         owner,
         metadata,
         contentReference: metadata.properties.contentReference,
-        proposalId: metadata.properties.proposalId,
+        proposalId: metadata.properties.proposalId ,
         createdAt: new Date(metadata.properties.approvalDate).getTime()
       };
     } catch (err) {
@@ -190,9 +196,20 @@ export const useBlogNFT = () => {
         const ipfsHash = tokenURI.replace('ipfs://', '');
         const response = await fetch(`${ipfsGateway}${ipfsHash}`);
         return await response.json();
+      } else if (tokenURI.startsWith('bzz://')) {
+        // Swarm URI
+        const swarmGateway = 'http://localhost:1633';
+        const swarmRef = tokenURI.replace('bzz://', '');
+        const response = await fetch(`${swarmGateway}/bzz/${swarmRef}`);
+        return await response.json();
       } else if (tokenURI.startsWith('http')) {
         // HTTP URI
         const response = await fetch(tokenURI);
+        return await response.json();
+      } else if (/^[a-fA-F0-9]{64}$/.test(tokenURI)) {
+        // Looks like a raw Swarm hash
+        const swarmGateway = 'http://localhost:1633';
+        const response = await fetch(`${swarmGateway}/bytes/${tokenURI}`);
         return await response.json();
       } else {
         // Assume it's direct JSON (unlikely but possible)

@@ -352,7 +352,7 @@ export const ProposalSubmissionPage: React.FC = () => {
                 />
                 {contentReference && (
                   <div className="content-reference-note">
-                    <p>Your content has been uploaded to Swarm with reference: {contentReference.substring(0, 10)}...{contentReference.substring(contentReference.length - 6)}</p>
+                    <p>Your content has been uploaded to Swarm with reference: {contentReference}</p>
                   </div>
                 )}
                 {formErrors.content && <div className="error-message">{formErrors.content}</div>}

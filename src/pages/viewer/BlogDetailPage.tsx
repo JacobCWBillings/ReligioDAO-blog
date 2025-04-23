@@ -20,6 +20,8 @@ export const BlogDetailPage: React.FC = () => {
 
   // Fetch blog data when the component mounts
   useEffect(() => {
+    let mounted = true; // For cleanup
+    
     const fetchBlog = async () => {
       if (!blogId) {
         setError('Blog ID not provided');
@@ -29,6 +31,8 @@ export const BlogDetailPage: React.FC = () => {
 
       try {
         const blogData = await getNFTById(blogId);
+        
+        if (!mounted) return; // Component unmounted, skip updating state
         
         if (!blogData) {
           setError('Blog not found');
@@ -40,12 +44,28 @@ export const BlogDetailPage: React.FC = () => {
         await fetchBlogContent(blogData.contentReference);
       } catch (err) {
         console.error('Error fetching blog:', err);
-        setError('Failed to load blog');
-        setLoading(false);
+        
+        if (!mounted) return; // Component unmounted
+        
+        if (err instanceof Error && err.message.includes('Contract not initialized')) {
+          // Try again in a bit if contract isn't ready
+          setTimeout(fetchBlog, 1000);
+        } else if (err instanceof Error && err.message.includes('token does not exist')) {
+          setError('Blog not found');
+          setLoading(false);
+        } else {
+          setError('Failed to load blog');
+          setLoading(false);
+        }
       }
     };
 
-    fetchBlog();
+    // Initial delay to ensure contract is initialized
+    setTimeout(fetchBlog, 500);
+    
+    return () => {
+      mounted = false; // Cleanup
+    };
   }, [blogId, getNFTById]);
 
   // Fetch the actual blog content from Swarm
