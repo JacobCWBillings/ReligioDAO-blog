@@ -130,6 +130,7 @@ export const BlogDetailPage: React.FC = () => {
   }, [blogId, getNFTById, getProposalById]);
 
   // Fetch the blog content from Swarm using our service
+  // Updated fetchBlogContent function for BlogDetailPage.tsx
   const fetchBlogContent = async (contentReference: string) => {
     if (!contentReference || contentReference.trim() === '') {
       setError('Blog content reference not found');
@@ -145,7 +146,7 @@ export const BlogDetailPage: React.FC = () => {
       setContentLoading(true);
       console.log(`Fetching blog content for reference: ${contentReference}`);
       
-      // Use our SwarmContentService for reliable retrieval with caching
+      // Use our standardized SwarmContentService
       const html = await swarmContentService.getContentAsHtml(contentReference);
       
       if (!html || html.trim() === '') {

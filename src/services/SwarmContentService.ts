@@ -1,4 +1,4 @@
-// src/services/SwarmContentService.ts
+// src/services/SwarmContentService.ts - standardized approach
 import { Bee } from '@ethersphere/bee-js';
 import { getContentUrl } from '../config';
 import { marked } from 'marked';
@@ -18,38 +18,21 @@ const BACKUP_GATEWAYS = [
   'https://download.gateway.ethswarm.org'
 ];
 
-/**
- * Determines if a reference is likely a collection or file reference
- * (Heuristic approach based on common patterns)
- */
-function isLikelyCollection(reference: string): boolean {
-  // This is a simple heuristic - might need refinement based on your data
-  if (reference.includes('bzz://')) return true;
-  
-  // More sophisticated checks could be added here
-  return false;
-}
+// Standard file name for all markdown content
+export const STANDARD_CONTENT_FILENAME = '';
 
 /**
  * Service for retrieving and caching content from Swarm
- * Provides reliable content retrieval with local caching and gateway fallbacks
+ * Uses a standardized approach for content references
  */
 class SwarmContentService {
   private contentCache: Map<string, CachedContent>;
   private cacheExpiryTime: number; // Cache expiry time in milliseconds
-  private retryAttempts: number;
-  private retryDelay: number;
   
-  constructor(
-    cacheExpiryTimeInMinutes: number = 30,
-    retryAttempts: number = 3,
-    retryDelayInMs: number = 1000
-  ) {
+  constructor(cacheExpiryTimeInMinutes: number = 30) {
     // Initialize the cache
     this.contentCache = new Map<string, CachedContent>();
     this.cacheExpiryTime = cacheExpiryTimeInMinutes * 60 * 1000;
-    this.retryAttempts = retryAttempts;
-    this.retryDelay = retryDelayInMs;
   }
   
   /**
@@ -68,7 +51,7 @@ class SwarmContentService {
     
     // Content not in cache or expired, fetch from Swarm
     try {
-      const content = await this.fetchContentWithRetry(contentReference);
+      const content = await this.fetchContent(contentReference);
       
       // Add to cache
       this.contentCache.set(contentReference, {
@@ -106,7 +89,7 @@ class SwarmContentService {
     
     // Content not in cache or expired, fetch from Swarm
     try {
-      const content = await this.fetchContentWithRetry(contentReference);
+      const content = await this.fetchContent(contentReference);
       const html = marked(content);
       
       // Add to cache
@@ -140,14 +123,11 @@ class SwarmContentService {
   }
   
   /**
-   * Fetch content from Swarm with retry logic and improved content type detection
-   * 
+   * Fetch content from Swarm using the standardized path approach
    * @param contentReference Swarm content reference
    * @returns Promise resolving to the content string
    */
-  private async fetchContentWithRetry(contentReference: string): Promise<string> {
-    let lastError: Error | null = null;
-    
+  private async fetchContent(contentReference: string): Promise<string> {
     // Make sure content reference is valid
     if (!contentReference || contentReference.trim() === '') {
       throw new Error('Invalid content reference: empty or undefined');
@@ -160,129 +140,43 @@ class SwarmContentService {
     // Try with primary gateway and then backup gateways
     const gateways = ['http://localhost:1633', ...BACKUP_GATEWAYS];
     
+    // Try each gateway
     for (const gateway of gateways) {
-      for (let attempt = 0; attempt < this.retryAttempts; attempt++) {
-        try {
-          console.log(`Trying gateway ${gateway}, attempt ${attempt + 1}/${this.retryAttempts}`);
-          
-          // Try downloading as raw bytes first (most common for content)
-          try {
-            console.log(`Using bee-js with gateway ${gateway}`);
-            const bee = new Bee(gateway);
-            
-            // Try to download as raw data first
-            const data = await bee.downloadData(cleanReference);
-            console.log(`Downloaded data of size: ${data.length} bytes`);
-            
-            try {
-              // Try to decode as text
-              const content = new TextDecoder().decode(data);
-              
-              // Verify this is valid text and not binary data by checking for common text patterns
-              // If it contains a lot of unprintable characters, it's likely binary data
-              const nonPrintableChars = content.replace(/[\x20-\x7E\n\r\t]/g, '').length;
-              const isPrintable = (nonPrintableChars / content.length) < 0.1; // Allow 10% non-printable chars
-              
-              if (isPrintable) {
-                console.log(`Successfully retrieved content as text using bee-js from ${gateway}`);
-                return content;
-              } else {
-                console.warn(`Retrieved data appears to be binary, not text`);
-                throw new Error('Content appears to be binary, not text');
-              }
-            } catch (decodeError) {
-              console.warn(`Error decoding data as text: ${decodeError}`);
-              throw decodeError;
-            }
-          } catch (beeError) {
-            console.warn(`bee-js download failed with ${gateway}: ${beeError}`);
-          }
-          
-          // If this is likely a collection, try the /bzz/ endpoint
-          try {
-            console.log(`Trying /bzz/ endpoint with gateway ${gateway}`);
-            
-            // First try to get the index file if this is a collection
-            const bzzUrl = `${gateway}/bzz/${cleanReference}/index.md`;
-            console.log(`Trying to fetch index.md from collection: ${bzzUrl}`);
-            
-            const bzzResponse = await fetch(bzzUrl, { 
-              signal: AbortSignal.timeout(5000),
-              headers: {
-                'Accept': 'text/markdown, text/plain, */*'
-              }
-            });
-            
-            if (bzzResponse.ok) {
-              const contentType = bzzResponse.headers.get('Content-Type');
-              console.log(`Response content type: ${contentType}`);
-              
-              const content = await bzzResponse.text();
-              console.log(`Successfully retrieved content from ${bzzUrl}`);
-              return content;
-            } else {
-              console.warn(`/bzz/index.md endpoint failed with status ${bzzResponse.status} at ${gateway}`);
-              
-              // Try without index.md in case the file is at the root
-              const rootBzzUrl = `${gateway}/bzz/${cleanReference}/`;
-              console.log(`Trying to fetch root content: ${rootBzzUrl}`);
-              
-              const rootResponse = await fetch(rootBzzUrl, { 
-                signal: AbortSignal.timeout(5000),
-                headers: {
-                  'Accept': 'text/markdown, text/plain, */*'
-                }
-              });
-              
-              if (rootResponse.ok) {
-                const content = await rootResponse.text();
-                console.log(`Successfully retrieved content from ${rootBzzUrl}`);
-                return content;
-              } else {
-                console.warn(`Root /bzz/ endpoint failed with status ${rootResponse.status} at ${gateway}`);
-              }
-            }
-          } catch (bzzError) {
-            console.warn(`/bzz/ endpoint request failed at ${gateway}: ${bzzError}`);
-          }
-          
-          // As a last resort, try the raw bytes endpoint
-          try {
-            console.log(`Trying /bytes/ endpoint with gateway ${gateway}`);
-            const bytesUrl = `${gateway}/bytes/${cleanReference}`;
-            const bytesResponse = await fetch(bytesUrl, { 
-              signal: AbortSignal.timeout(5000),
-              headers: {
-                'Accept': 'text/plain, */*'
-              }
-            });
-            
-            if (bytesResponse.ok) {
-              const content = await bytesResponse.text();
-              console.log(`Successfully retrieved content from ${bytesUrl}`);
-              return content;
-            } else {
-              console.warn(`/bytes/ endpoint failed with status ${bytesResponse.status} at ${gateway}`);
-            }
-          } catch (bytesError) {
-            console.warn(`/bytes/ endpoint request failed at ${gateway}: ${bytesError}`);
-          }
-          
-          // All approaches failed for this attempt, delay before retry
-          await new Promise(resolve => setTimeout(resolve, this.retryDelay * (attempt + 1)));
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          console.error(`Error during attempt ${attempt + 1} with gateway ${gateway}: ${lastError.message}`);
-          // Continue to next attempt
+      try {
+        // Use standard path pattern
+        const url = `${gateway}/bzz/${cleanReference}/${STANDARD_CONTENT_FILENAME}`;
+        console.log(`Trying URL: ${url}`);
+        
+        const response = await fetch(url, { 
+          signal: AbortSignal.timeout(5000),
+          headers: {'Accept': 'text/markdown, text/plain, */*'}
+        });
+        
+        if (response.ok) {
+          const content = await response.text();
+          console.log(`Successfully retrieved content from ${url}`);
+          return content;
+        } else {
+          console.warn(`Failed to fetch from ${url} with status: ${response.status}`);
         }
+      } catch (error) {
+        console.warn(`Failed to fetch from gateway ${gateway}: ${error}`);
+        // Continue to next gateway
       }
-      
-      // All attempts with this gateway failed, continue to next gateway
-      console.warn(`All attempts with gateway ${gateway} failed`);
     }
     
-    // If we've exhausted all gateways and retry attempts, throw the last error
-    throw new Error(`Failed to fetch content using reference ${contentReference} after trying all gateways: ${lastError?.message}`);
+    // If we've exhausted all gateways, try one last approach with bee-js
+    try {
+      console.log(`Trying bee-js with localhost gateway`);
+      const bee = new Bee('http://localhost:1633');
+      const data = await bee.downloadData(cleanReference);
+      const content = new TextDecoder().decode(data);
+      return content;
+    } catch (error) {
+      console.warn(`bee-js approach failed: ${error}`);
+    }
+    
+    throw new Error(`Failed to fetch content using reference ${contentReference} after trying all gateways`);
   }
   
   /**
@@ -313,7 +207,7 @@ class SwarmContentService {
         const now = Date.now();
         
         if (!cachedContent || (now - cachedContent.timestamp) >= this.cacheExpiryTime) {
-          const content = await this.fetchContentWithRetry(reference);
+          const content = await this.fetchContent(reference);
           this.contentCache.set(reference, {
             content,
             html: marked(content),

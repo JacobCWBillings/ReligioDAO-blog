@@ -136,9 +136,11 @@ export const ProposalSubmissionPage: React.FC = () => {
         postageBatchId: globalState.postageBatchId
       });
       
-      // Upload blog content to Swarm
+      // Upload blog content to Swarm with standardized filename
+      // Note: Despite using a filename here, the content is stored at the root 
+      // of the reference, not at a '/content.md' path
       const resource = await swarm.newResource(
-        'blog.md',
+        'content.md', // Standardized filename
         content,
         'text/markdown'
       );
