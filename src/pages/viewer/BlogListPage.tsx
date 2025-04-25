@@ -1,94 +1,123 @@
 // src/pages/viewer/BlogListPage.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useBlogNFT } from '../../blockchain/hooks/useBlogNFT';
+import { useWallet } from '../../contexts/WalletContext';
 import { BlogCard } from '../../components/BlogCard';
-import { BlogFilter, BlogSort, BlogNFT } from '../../types/blockchain';
+import { BlogListSkeleton } from '../../components/skeletons/Skeleton';
+import { BlogFilter, BlogSort } from '../../types/blockchain';
 import './BlogListPage.css';
 
 export const BlogListPage: React.FC = () => {
-  const { getAllNFTs, getAllCategories, getAllTags, filterNFTs, sortNFTs, loading } = useBlogNFT();
+  const { 
+    loading, 
+    error, 
+    totalSupply,
+    categories,
+    tags,
+    getPaginatedNFTs,
+    getPopularCategories
+  } = useBlogNFT();
   
-  const [blogs, setBlogs] = useState<BlogNFT[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
+  const { isConnected } = useWallet();
   
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(9);
+  const [totalPages, setTotalPages] = useState(1);
+  
+  // Blog list state
+  const [blogs, setBlogs] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState<string | null>(null);
+  
+  // Filter and sort state
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [sortOption, setSortOption] = useState<BlogSort>({ field: 'createdAt', direction: 'desc' });
   
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Display options state
+  const [showFilters, setShowFilters] = useState(false);
   
-  // Fetch all blog NFTs on component mount
-  useEffect(() => {
-    const fetchBlogs = async () => {
-      try {
-        setIsLoading(true);
-        const nfts = await getAllNFTs();
-        setBlogs(nfts);
-        
-        // Get all categories and tags
-        const allCategories = nfts.reduce((acc: string[], nft) => {
-          const category = nft.metadata.properties.category;
-          if (category && !acc.includes(category)) {
-            acc.push(category);
-          }
-          return acc;
-        }, []);
-        
-        const allTags = nfts.reduce((acc: string[], nft) => {
-          const nftTags = nft.metadata.properties.tags || [];
-          nftTags.forEach(tag => {
-            if (!acc.includes(tag)) {
-              acc.push(tag);
-            }
-          });
-          return acc;
-        }, []);
-        
-        setCategories(allCategories);
-        setTags(allTags);
-      } catch (err) {
-        console.error('Error fetching blogs:', err);
-        setError('Failed to load blogs. Please try again later.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    fetchBlogs();
-  }, [getAllNFTs]);
+  // Popular categories (for quick filter buttons)
+  const [popularCategories, setPopularCategories] = useState<{ name: string; count: number }[]>([]);
   
-  // Apply filters and sorting
-  const filteredAndSortedBlogs = React.useMemo(() => {
-    // Create filter object
+  // Create filter object from selected filters
+  const activeFilter = useMemo((): BlogFilter => {
     const filter: BlogFilter = {};
     if (selectedCategory) filter.category = selectedCategory;
     if (selectedTag) filter.tag = selectedTag;
     if (searchTerm) filter.searchTerm = searchTerm;
+    return filter;
+  }, [selectedCategory, selectedTag, searchTerm]);
+  
+  // Load blogs with pagination
+  const loadBlogs = useCallback(async () => {
+    setIsLoading(true);
+    setHasError(null);
     
-    // Apply filtering
-    const filtered = filterNFTs(blogs, filter);
+    try {
+      const result = await getPaginatedNFTs(
+        currentPage,
+        pageSize,
+        activeFilter,
+        sortOption
+      );
+      
+      setBlogs(result.items);
+      setTotalPages(Math.ceil(result.total / pageSize));
+    } catch (err) {
+      console.error('Error loading blogs:', err);
+      setHasError('Failed to load blogs. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentPage, pageSize, activeFilter, sortOption, getPaginatedNFTs]);
+  
+  // Load blogs when dependencies change
+  useEffect(() => {
+    loadBlogs();
+  }, [loadBlogs]);
+  
+  // Load popular categories
+  useEffect(() => {
+    const fetchPopularCategories = async () => {
+      try {
+        const popular = await getPopularCategories(5);
+        setPopularCategories(popular);
+      } catch (err) {
+        console.error('Error getting popular categories:', err);
+      }
+    };
     
-    // Apply sorting
-    return sortNFTs(filtered, sortOption);
-  }, [blogs, selectedCategory, selectedTag, searchTerm, sortOption, filterNFTs, sortNFTs]);
+    fetchPopularCategories();
+  }, [getPopularCategories]);
+  
+  // Handle page change
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    setCurrentPage(newPage);
+    // Scroll to top of page
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   
   // Handle category selection
-  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedCategory(e.target.value);
+  const handleCategoryClick = (category: string) => {
+    if (selectedCategory === category) {
+      // Clicking the active category deselects it
+      setSelectedCategory('');
+    } else {
+      setSelectedCategory(category);
+    }
+    // Reset to first page when changing filters
+    setCurrentPage(1);
   };
   
   // Handle tag selection
   const handleTagChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedTag(e.target.value);
-  };
-  
-  // Handle search
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
+    setCurrentPage(1);
   };
   
   // Handle sort change
@@ -98,6 +127,20 @@ export const BlogListPage: React.FC = () => {
       'asc' | 'desc'
     ];
     setSortOption({ field, direction });
+    setCurrentPage(1);
+  };
+  
+  // Handle search
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    // Don't reset page immediately to avoid flickering during typing
+    // We'll reset on form submission or after typing stops
+  };
+  
+  // Handle search form submission
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCurrentPage(1);
   };
   
   // Reset all filters
@@ -106,122 +149,233 @@ export const BlogListPage: React.FC = () => {
     setSelectedTag('');
     setSearchTerm('');
     setSortOption({ field: 'createdAt', direction: 'desc' });
+    setCurrentPage(1);
   };
   
-  if (loading || isLoading) {
-    return (
-      <div className="blog-list-loading">
-        <div className="loader"></div>
-        <p>Loading blogs...</p>
-      </div>
-    );
-  }
+  // Toggle filters visibility
+  const toggleFilters = () => {
+    setShowFilters(prev => !prev);
+  };
   
-  if (error) {
+  // Render loading state
+  if (loading && isLoading && currentPage === 1) {
     return (
-      <div className="blog-list-error">
-        <h2>Error</h2>
-        <p>{error}</p>
-        <button onClick={() => window.location.reload()}>Try Again</button>
+      <div className="blog-list-page">
+        <div className="blogs-header">
+          <h1>Blog Posts</h1>
+          <p>Discover community-approved content</p>
+        </div>
+        <BlogListSkeleton />
       </div>
     );
   }
   
   return (
     <div className="blog-list-page">
-      <div className="blog-list-header">
-        <h1>Blog Posts</h1>
+      <div className="blogs-header">
+        <h1>ReligioDAO Blog</h1>
         <p>Discover community-approved content</p>
       </div>
       
-      <div className="blog-list-filters">
-        <div className="filter-row">
-          <div className="filter-group">
-            <label htmlFor="category-filter">Category</label>
-            <select
-              id="category-filter"
-              value={selectedCategory}
-              onChange={handleCategoryChange}
-            >
-              <option value="">All Categories</option>
-              {categories.map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="filter-group">
-            <label htmlFor="tag-filter">Tag</label>
-            <select
-              id="tag-filter"
-              value={selectedTag}
-              onChange={handleTagChange}
-            >
-              <option value="">All Tags</option>
-              {tags.map(tag => (
-                <option key={tag} value={tag}>{tag}</option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="filter-group">
-            <label htmlFor="sort-filter">Sort By</label>
-            <select
-              id="sort-filter"
-              value={`${sortOption.field}-${sortOption.direction}`}
-              onChange={handleSortChange}
-            >
-              <option value="createdAt-desc">Newest First</option>
-              <option value="createdAt-asc">Oldest First</option>
-              <option value="title-asc">Title A-Z</option>
-              <option value="title-desc">Title Z-A</option>
-              <option value="category-asc">Category A-Z</option>
-              <option value="category-desc">Category Z-A</option>
-            </select>
-          </div>
-          
-          <button className="reset-filters" onClick={resetFilters}>
-            Reset Filters
+      <div className="filter-section">
+        <div className="search-box">
+          <form onSubmit={handleSearchSubmit}>
+            <input
+              type="text"
+              placeholder="Search blogs..."
+              value={searchTerm}
+              onChange={handleSearch}
+              aria-label="Search blogs"
+            />
+            <button type="submit" className="search-button">
+              <span className="search-icon">🔍</span>
+            </button>
+          </form>
+        </div>
+        
+        <div className="filter-toggle">
+          <button 
+            onClick={toggleFilters} 
+            className={`filter-toggle-button ${showFilters ? 'active' : ''}`}
+          >
+            {showFilters ? 'Hide Filters' : 'Show Filters'} <span>{showFilters ? '▲' : '▼'}</span>
           </button>
         </div>
         
-        <div className="search-row">
-          <input
-            type="text"
-            placeholder="Search blogs..."
-            value={searchTerm}
-            onChange={handleSearch}
-            className="search-input"
-          />
-        </div>
+        {showFilters && (
+          <div className="filter-controls">
+            <div className="filter-group">
+              <label>Category</label>
+              <div className="category-filters">
+                {categories.map(category => (
+                  <button
+                    key={category}
+                    className={`category-filter ${selectedCategory === category ? 'active' : ''}`}
+                    onClick={() => handleCategoryClick(category)}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div className="filter-group">
+              <label htmlFor="tag-filter">Tag</label>
+              <select
+                id="tag-filter"
+                value={selectedTag}
+                onChange={handleTagChange}
+                className="filter-select"
+              >
+                <option value="">All Tags</option>
+                {tags.map(tag => (
+                  <option key={tag} value={tag}>{tag}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="filter-group">
+              <label htmlFor="sort-filter">Sort By</label>
+              <select
+                id="sort-filter"
+                value={`${sortOption.field}-${sortOption.direction}`}
+                onChange={handleSortChange}
+                className="filter-select"
+              >
+                <option value="createdAt-desc">Newest First</option>
+                <option value="createdAt-asc">Oldest First</option>
+                <option value="title-asc">Title A-Z</option>
+                <option value="title-desc">Title Z-A</option>
+                <option value="category-asc">Category A-Z</option>
+                <option value="category-desc">Category Z-A</option>
+              </select>
+            </div>
+            
+            {(selectedCategory || selectedTag || searchTerm) && (
+              <div className="filter-actions">
+                <button 
+                  onClick={resetFilters} 
+                  className="clear-filters-button"
+                >
+                  Clear All Filters
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Popular Categories Quick Filter */}
+        {popularCategories.length > 0 && (
+          <div className="popular-categories">
+            <h3>Popular Categories</h3>
+            <div className="category-chips">
+              {popularCategories.map(({ name, count }) => (
+                <button
+                  key={name}
+                  className={`category-chip ${selectedCategory === name ? 'active' : ''}`}
+                  onClick={() => handleCategoryClick(name)}
+                >
+                  {name} <span className="count">({count})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       
-      {filteredAndSortedBlogs.length === 0 ? (
-        <div className="no-blogs-found">
-          <h3>No blogs found</h3>
-          <p>Try adjusting your filters or check back later for new content</p>
+      {/* Blog grid or empty state */}
+      {hasError ? (
+        <div className="error-message">
+          <h3>Error</h3>
+          <p>{hasError}</p>
+          <button onClick={loadBlogs}>Try Again</button>
         </div>
-      ) : (
+      ) : blogs.length > 0 ? (
         <>
-          <div className="results-count">
-            Showing {filteredAndSortedBlogs.length} {filteredAndSortedBlogs.length === 1 ? 'result' : 'results'}
+          <div className="blog-count-info">
+            <p>
+              Showing {blogs.length} {blogs.length === 1 ? 'blog' : 'blogs'}
+              {totalSupply > 0 ? ` of ${totalSupply} total` : ''}
+              {Object.keys(activeFilter).length > 0 ? ' (filtered)' : ''}
+            </p>
           </div>
           
           <div className="blog-grid">
-            {filteredAndSortedBlogs.map(blog => (
-              <div key={blog.tokenId} className="blog-item">
-                <BlogCard blog={blog} />
-              </div>
+            {blogs.map(blog => (
+              <BlogCard 
+                key={blog.tokenId} 
+                blog={blog}
+                showProposalStatus={true}
+              />
             ))}
           </div>
+          
+          {/* Show loading indicator when fetching more blogs */}
+          {isLoading && currentPage > 1 && (
+            <div className="loading-more">
+              <div className="loading-spinner"></div>
+              <p>Loading more blogs...</p>
+            </div>
+          )}
+          
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button
+                className="pagination-button"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1 || isLoading}
+              >
+                Previous
+              </button>
+              
+              <span className="page-info">
+                Page {currentPage} of {totalPages}
+              </span>
+              
+              <button
+                className="pagination-button"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages || isLoading}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </>
+      ) : (
+        <div className="no-blogs">
+          <h3>No Blogs Found</h3>
+          {Object.keys(activeFilter).length > 0 ? (
+            <>
+              <p>No blogs match your current filters.</p>
+              <button onClick={resetFilters} className="clear-filters-button">
+                Clear Filters
+              </button>
+            </>
+          ) : totalSupply === 0 ? (
+            <p>No blogs have been published yet. Be the first to contribute!</p>
+          ) : (
+            <p>Try adjusting your search or check back later for new content.</p>
+          )}
+        </div>
       )}
       
-      <div className="blog-list-footer">
-        <Link to="/submit-proposal" className="submit-blog-button">
-          Submit New Blog
-        </Link>
-      </div>
+      {/* CTA for submitting new blogs */}
+      {isConnected ? (
+        <div className="submit-blog-cta">
+          <h3>Have something to share?</h3>
+          <p>Submit your blog post to be reviewed by the ReligioDAO community.</p>
+          <Link to="/submit-proposal" className="submit-blog-button">
+            Submit New Blog
+          </Link>
+        </div>
+      ) : (
+        <div className="connect-wallet-cta">
+          <h3>Want to contribute?</h3>
+          <p>Connect your wallet to submit blog posts for community review.</p>
+        </div>
+      )}
     </div>
   );
 };

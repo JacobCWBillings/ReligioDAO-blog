@@ -1,9 +1,9 @@
 // src/blockchain/utils/metadata.ts
-import { BlogNFTMetadata } from '../../types/blockchain';
+import { BlogNFTMetadata, NFTAttribute } from '../../types/blockchain';
 import config from '../../config';
 
 /**
- * Creates metadata for a Blog NFT
+ * Creates standardized metadata for a Blog NFT
  * This metadata is stored directly on-chain via the NFT for permanence
  * Only the blog content itself is stored on Swarm
  * 
@@ -13,6 +13,7 @@ import config from '../../config';
  * @param author Author's address
  * @param category Blog category
  * @param tags List of tags
+ * @param proposalId Optional proposal ID associated with this blog
  * @param previewImage Preview image reference (optional)
  * @returns BlogNFTMetadata object
  */
@@ -22,13 +23,38 @@ export function createBlogNFTMetadata(
   contentReference: string,
   author: string,
   category: string,
-  tags: string[],
+  tags: string[] | string,
+  proposalId?: string,
   previewImage?: string
 ): BlogNFTMetadata {
   const approvalDate = new Date().toISOString();
   
   // Make sure tags is always an array
   const validTags = Array.isArray(tags) ? tags : tags ? [tags] : [];
+  
+  // Collect attributes
+  const attributes: NFTAttribute[] = [
+    {
+      trait_type: "Author",
+      value: author
+    },
+    {
+      trait_type: "PublishedDate",
+      value: approvalDate
+    },
+    {
+      trait_type: "Category",
+      value: category
+    }
+  ];
+  
+  // Add tags as attributes
+  validTags.forEach(tag => {
+    attributes.push({
+      trait_type: "Tag",
+      value: tag
+    });
+  });
   
   // Create a compact but complete metadata structure
   return {
@@ -37,39 +63,21 @@ export function createBlogNFTMetadata(
     image: previewImage 
       ? `${config.swarm.gateway}/bzz/${previewImage}` 
       : config.placeholderImage,
-    attributes: [
-      {
-        trait_type: "Author",
-        value: author
-      },
-      {
-        trait_type: "PublishedDate",
-        value: approvalDate
-      },
-      {
-        trait_type: "Category",
-        value: category
-      },
-      ...validTags.map(tag => ({
-        trait_type: "Tag",
-        value: tag
-      }))
-    ],
+    attributes,
     properties: {
       contentReference, // Only the content reference points to Swarm
+      proposalId,       // Optional proposal ID 
       approvalDate,
       category,
       tags: validTags,
       authorAddress: author
-      // We don't need to store proposalId in the metadata
-      // since the NFT itself is created through the proposal process
     }
   };
 }
 
 /**
  * Converts NFT metadata to a token URI
- * Use base64 encoding to store directly on-chain for permanence
+ * Uses base64 encoding to store directly on-chain for permanence
  * 
  * @param metadata BlogNFTMetadata object
  * @param method 'base64' | 'swarm' | 'ipfs'
@@ -106,6 +114,9 @@ export function metadataToTokenURI(
 
 /**
  * Parses metadata from token URI
+ * Handles various URI formats: base64, Swarm, IPFS, HTTP
+ * Now with graceful error handling for invalid metadata
+ * 
  * @param tokenURI Token URI string (base64, Swarm, or IPFS)
  * @returns Promise resolving to BlogNFTMetadata
  */
@@ -114,53 +125,116 @@ export async function parseMetadataFromURI(tokenURI: string): Promise<BlogNFTMet
     // Handle different URI formats
     if (tokenURI.startsWith('data:application/json;base64,')) {
       // Base64 encoded JSON (preferred for on-chain storage)
-      const base64Data = tokenURI.replace('data:application/json;base64,', '');
-      const jsonString = decodeURIComponent(escape(atob(base64Data))); // Fix decoding for Unicode characters
-      return JSON.parse(jsonString);
+      try {
+        const base64Data = tokenURI.replace('data:application/json;base64,', '');
+        const jsonString = decodeURIComponent(escape(atob(base64Data))); // Fix decoding for Unicode characters
+        return JSON.parse(jsonString);
+      } catch (innerErr) {
+        console.warn(`Error parsing base64 data URI: ${innerErr}`);
+        // Fall through to the fallback
+      }
     } else if (tokenURI.startsWith('ipfs://')) {
       // IPFS URI
-      const ipfsGateway = config.ipfsGateway;
-      const ipfsHash = tokenURI.replace('ipfs://', '');
-      const response = await fetch(`${ipfsGateway}${ipfsHash}`);
-      return await response.json();
+      try {
+        const ipfsGateway = config.ipfsGateway;
+        const ipfsHash = tokenURI.replace('ipfs://', '');
+        const response = await fetch(`${ipfsGateway}${ipfsHash}`);
+        return await response.json();
+      } catch (innerErr) {
+        console.warn(`Error fetching from IPFS: ${innerErr}`);
+        // Fall through to the fallback
+      }
     } else if (tokenURI.startsWith('bzz://')) {
       // Swarm URI
-      const swarmGateway = config.swarm.gateway;
-      const swarmRef = tokenURI.replace('bzz://', '');
-      const response = await fetch(`${swarmGateway}/bzz/${swarmRef}`);
-      return await response.json();
+      try {
+        const swarmGateway = config.swarm.gateway;
+        const swarmRef = tokenURI.replace('bzz://', '');
+        const response = await fetch(`${swarmGateway}/bzz/${swarmRef}`);
+        return await response.json();
+      } catch (innerErr) {
+        console.warn(`Error fetching from Swarm: ${innerErr}`);
+        // Fall through to the fallback
+      }
     } else if (tokenURI.startsWith('http')) {
       // HTTP URI
-      const response = await fetch(tokenURI);
-      return await response.json();
+      try {
+        const response = await fetch(tokenURI);
+        return await response.json();
+      } catch (innerErr) {
+        console.warn(`Error fetching from HTTP URI: ${innerErr}`);
+        // Fall through to the fallback
+      }
     } else if (/^[a-fA-F0-9]{64}$/.test(tokenURI)) {
       // Looks like a raw Swarm hash
-      const swarmGateway = config.swarm.gateway;
-      const response = await fetch(`${swarmGateway}/bytes/${tokenURI}`);
-      return await response.json();
+      try {
+        const swarmGateway = config.swarm.gateway;
+        const response = await fetch(`${swarmGateway}/bytes/${tokenURI}`);
+        return await response.json();
+      } catch (innerErr) {
+        console.warn(`Error fetching from Swarm hash: ${innerErr}`);
+        // Fall through to the fallback
+      }
     } else {
       // Try to parse as direct JSON
       try {
         return JSON.parse(tokenURI);
-      } catch {
-        throw new Error(`Unsupported token URI format: ${tokenURI}`);
+      } catch (innerErr) {
+        console.warn(`Unsupported token URI format or invalid JSON: ${tokenURI.substring(0, 100)}...`);
+        // Fall through to the fallback
       }
     }
+    
+    // If we reach here, all parsing attempts failed
+    // Instead of throwing, return a fallback metadata object
+    return createFallbackMetadata(tokenURI);
   } catch (err) {
-    console.error(`Error parsing metadata from ${tokenURI}:`, err);
+    console.error(`Error parsing metadata from ${tokenURI ? tokenURI.substring(0, 50) + '...' : 'undefined'}:`, err);
     // Return minimal valid metadata to prevent crashes
-    return {
-      name: "Error fetching metadata",
-      description: "Failed to load blog metadata",
-      image: "",
-      attributes: [],
-      properties: {
-        contentReference: "",
-        approvalDate: new Date().toISOString(),
-        category: "",
-        tags: [],
-        authorAddress: ""
-      }
-    };
+    return createFallbackMetadata(tokenURI);
   }
+}
+
+/**
+ * Creates fallback metadata for invalid NFTs
+ * This ensures the application continues working even with invalid metadata
+ * 
+ * @param tokenURI Original tokenURI that failed to parse
+ * @returns A minimal valid BlogNFTMetadata object
+ */
+function createFallbackMetadata(tokenURI: string): BlogNFTMetadata {
+  const truncatedURI = tokenURI && tokenURI.length > 20 
+    ? `${tokenURI.substring(0, 20)}...` 
+    : tokenURI || 'unknown';
+  
+  return {
+    name: "Invalid Metadata NFT",
+    description: `This NFT has invalid metadata format and cannot be displayed properly. URI: ${truncatedURI}`,
+    image: config.placeholderImage,
+    attributes: [
+      {
+        trait_type: "Error",
+        value: "Invalid Metadata Format"
+      }
+    ],
+    properties: {
+      contentReference: "",
+      approvalDate: new Date().toISOString(),
+      category: "Error",
+      tags: ["invalid"],
+      authorAddress: ""
+    }
+  };
+}
+
+/**
+ * Extracts content reference from metadata
+ * 
+ * @param metadata BlogNFTMetadata object
+ * @returns Content reference string or empty string
+ */
+export function extractContentReferenceFromMetadata(metadata: BlogNFTMetadata): string {
+  if (metadata && metadata.properties && metadata.properties.contentReference) {
+    return metadata.properties.contentReference;
+  }
+  return '';
 }

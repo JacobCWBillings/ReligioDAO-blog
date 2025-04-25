@@ -55,51 +55,121 @@ export async function downloadFromSwarm(reference: string): Promise<string> {
 
 /**
  * Extracts content reference from contract calldata
- * Improved to more reliably extract Swarm references
- * @param callData Contract call data
+ * Robust implementation that handles multiple formats and edge cases
+ * 
+ * @param callData Contract call data (e.g., from mintTo function call)
  * @returns Extracted content reference or empty string
  */
 export function extractContentReference(callData: string): string {
-    try {
-      if (!callData || !callData.startsWith('0x')) return '';
-      
-      // Remove function selector (first 4 bytes / 8 hex chars)
-      const dataWithoutSelector = callData.slice(10);
-      
-      // In mintTo(address, string) function, the string comes after the address
-      // Get string data offset (typically 64 bytes after address)
-      const stringOffsetPos = 64; // Skip the address parameter (32 bytes = 64 hex chars)
-      const stringOffsetHex = dataWithoutSelector.slice(stringOffsetPos, stringOffsetPos + 64);
-      const stringOffset = parseInt(stringOffsetHex, 16);
-      
-      // Get string length from the offset position
-      const stringLengthPos = stringOffset * 2; // Convert byte offset to hex char offset
-      if (dataWithoutSelector.length < stringLengthPos + 64) return '';
-      
-      const stringLengthHex = dataWithoutSelector.slice(stringLengthPos, stringLengthPos + 64);
-      const stringLength = parseInt(stringLengthHex, 16);
-      
-      // Get string data
-      const stringDataPos = stringLengthPos + 64;
-      if (dataWithoutSelector.length < stringDataPos + (stringLength * 2)) return '';
-      
-      const stringDataHex = dataWithoutSelector.slice(stringDataPos, stringDataPos + (stringLength * 2));
-      
-      // Convert hex to string
-      const bytes = ethers.toUtf8Bytes(`0x${stringDataHex}`);
-      const contentRef = ethers.toUtf8String(bytes).replace(/[^\x20-\x7E]/g, '');
-      
-      // Extract bzz:// reference if present - FIXED to include dashes
-      const bzzMatch = contentRef.match(/bzz:\/\/[a-zA-Z0-9\-_]+/);
-      if (bzzMatch) {
-        return bzzMatch[0];
-      }
-      
-      return contentRef;
-    } catch (err) {
-      console.error('Error extracting content reference:', err);
+  try {
+    // Guard against invalid input
+    if (!callData || typeof callData !== 'string' || !callData.startsWith('0x')) {
       return '';
     }
+    
+    // First try to parse as metadata URI in the mintTo function
+    try {
+      // Remove function selector (first 4 bytes / 10 hex chars including 0x)
+      const dataWithoutSelector = callData.slice(10);
+      
+      // For mintTo(address, string) function:
+      // First parameter is address (32 bytes / 64 hex chars)
+      // Second parameter is string, which starts with an offset (32 bytes / 64 hex chars)
+      const stringOffsetPos = 64; // Skip the address parameter
+      const stringOffsetHex = dataWithoutSelector.slice(stringOffsetPos, stringOffsetPos + 64);
+      const stringOffset = parseInt(stringOffsetHex, 16) * 2; // Convert byte offset to hex char offset
+      
+      // Guard against invalid offsets
+      if (isNaN(stringOffset) || stringOffset <= 0 || dataWithoutSelector.length < stringOffset + 64) {
+        return '';
+      }
+      
+      // Get string length from the offset position
+      const stringLengthHex = dataWithoutSelector.slice(stringOffset, stringOffset + 64);
+      const stringLength = parseInt(stringLengthHex, 16) * 2; // Convert byte length to hex char length
+      
+      // Guard against invalid string length
+      if (isNaN(stringLength) || stringLength <= 0 || dataWithoutSelector.length < stringOffset + 64 + stringLength) {
+        return '';
+      }
+      
+      // Get string data
+      const stringDataPos = stringOffset + 64;
+      const stringDataHex = dataWithoutSelector.slice(stringDataPos, stringDataPos + stringLength);
+      
+      // Convert hex to string
+      let contentString = '';
+      try {
+        if (stringDataHex) {
+          const bytes = ethers.getBytes(`0x${stringDataHex}`);
+          contentString = ethers.toUtf8String(bytes);
+        }
+      } catch (e) {
+        // If direct conversion fails, try character by character to handle partial UTF-8
+        contentString = '';
+        for (let i = 0; i < stringDataHex.length; i += 2) {
+          const charCode = parseInt(stringDataHex.substr(i, 2), 16);
+          if (charCode >= 32 && charCode <= 126) { // Only printable ASCII
+            contentString += String.fromCharCode(charCode);
+          }
+        }
+      }
+      
+      // Extract different types of references
+      
+      // Check for base64 metadata that contains a content reference
+      if (contentString.startsWith('data:application/json;base64,')) {
+        try {
+          const base64Data = contentString.replace('data:application/json;base64,', '');
+          const jsonString = atob(base64Data);
+          const metadata = JSON.parse(jsonString);
+          
+          if (metadata && metadata.properties && metadata.properties.contentReference) {
+            return metadata.properties.contentReference;
+          }
+        } catch (e) {
+          // Fall through to other extraction methods
+        }
+      }
+      
+      // Check for direct Swarm reference
+      const bzzMatch = contentString.match(/bzz:\/\/([a-zA-Z0-9\-_]{64})/);
+      if (bzzMatch && bzzMatch[1]) {
+        return bzzMatch[1];
+      }
+      
+      // Check for raw Swarm hash (64 hex chars)
+      const hashMatch = contentString.match(/([a-fA-F0-9]{64})/);
+      if (hashMatch && hashMatch[1] && isValidSwarmReference(hashMatch[1])) {
+        return hashMatch[1];
+      }
+      
+      return contentString;
+    } catch (innerErr) {
+      // Fall through to simpler extraction if the structured approach fails
+    }
+    
+    // Simpler fallback extraction - just look for patterns in the raw calldata
+    const bzzMatch = callData.match(/bzz:\/\/([a-zA-Z0-9\-_]{64})/);
+    if (bzzMatch && bzzMatch[1]) {
+      return bzzMatch[1];
+    }
+    
+    // Look for a 64-character hex string that could be a Swarm reference
+    const hexMatch = callData.match(/([a-fA-F0-9]{64})/g);
+    if (hexMatch) {
+      for (const match of hexMatch) {
+        if (isValidSwarmReference(match)) {
+          return match;
+        }
+      }
+    }
+    
+    return '';
+  } catch (err) {
+    console.error('Error extracting content reference:', err);
+    return '';
+  }
 }
 
 /**

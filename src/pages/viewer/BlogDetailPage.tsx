@@ -2,21 +2,27 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useBlogNFT } from '../../blockchain/hooks/useBlogNFT';
+import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
-import { marked } from 'marked';
-import { getContentUrl } from '../../config';
+import { formatAddress } from '../../blockchain/utils/walletUtils';
+import { BlogDetailSkeleton } from '../../components/skeletons/Skeleton';
+import swarmContentService from '../../services/SwarmContentService';
 import './BlogDetailPage.css';
 
 export const BlogDetailPage: React.FC = () => {
   const { blogId } = useParams<{ blogId: string }>();
   const navigate = useNavigate();
   const { getNFTById } = useBlogNFT();
+  const { getProposalById } = useProposal();
   const { account, isConnected } = useWallet();
   
   const [blogContent, setBlogContent] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+  const [contentLoading, setContentLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [blog, setBlog] = useState<any>(null);
+  const [proposal, setProposal] = useState<any>(null);
+  const [relatedBlogs, setRelatedBlogs] = useState<any[]>([]);
 
   // Fetch blog data when the component mounts
   useEffect(() => {
@@ -41,62 +47,68 @@ export const BlogDetailPage: React.FC = () => {
         }
         
         setBlog(blogData);
-        await fetchBlogContent(blogData.contentReference);
+        setLoading(false);
+        
+        // If the blog has a proposal ID, fetch proposal details
+        if (blogData.proposalId) {
+          try {
+            const proposalData = await getProposalById(blogData.proposalId);
+            if (mounted && proposalData) {
+              setProposal(proposalData);
+            }
+          } catch (err) {
+            console.warn('Failed to fetch proposal details:', err);
+            // Non-critical error, don't set global error state
+          }
+        }
+        
+        // Fetch blog content
+        fetchBlogContent(blogData.contentReference);
       } catch (err) {
         console.error('Error fetching blog:', err);
         
         if (!mounted) return; // Component unmounted
         
-        if (err instanceof Error && err.message.includes('Contract not initialized')) {
-          // Try again in a bit if contract isn't ready
-          setTimeout(fetchBlog, 1000);
-        } else if (err instanceof Error && err.message.includes('token does not exist')) {
+        if (err instanceof Error && err.message.includes('token does not exist')) {
           setError('Blog not found');
-          setLoading(false);
         } else {
           setError('Failed to load blog');
-          setLoading(false);
         }
+        setLoading(false);
       }
     };
 
-    // Initial delay to ensure contract is initialized
-    setTimeout(fetchBlog, 500);
+    // Fetch blog data
+    fetchBlog();
     
     return () => {
       mounted = false; // Cleanup
     };
-  }, [blogId, getNFTById]);
+  }, [blogId, getNFTById, getProposalById]);
 
-  // Fetch the actual blog content from Swarm
+  // Fetch the blog content from Swarm using our service
   const fetchBlogContent = async (contentReference: string) => {
+    if (!contentReference) {
+      setError('Blog content reference not found');
+      setContentLoading(false);
+      return;
+    }
+    
     try {
-      // Construct the URL to fetch from Swarm
-      const contentUrl = getContentUrl(contentReference);
+      setContentLoading(true);
       
-      // Fetch the content
-      const response = await fetch(contentUrl);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch blog content: ${response.statusText}`);
-      }
-      
-      // Get the content as text
-      const contentText = await response.text();
-      
-      // Parse markdown to HTML
-      const htmlContent = marked(contentText);
-      
-      setBlogContent(htmlContent);
-      setLoading(false);
+      // Use our SwarmContentService for reliable retrieval with caching
+      const html = await swarmContentService.getContentAsHtml(contentReference);
+      setBlogContent(html);
     } catch (err) {
       console.error('Error fetching blog content:', err);
       setError('Failed to load blog content');
-      setLoading(false);
+    } finally {
+      setContentLoading(false);
     }
   };
 
-  // Handle edit button click
+  // Handle edit button click (only available to blog author)
   const handleEdit = () => {
     navigate(`/editor/${blogId}`);
   };
@@ -110,36 +122,45 @@ export const BlogDetailPage: React.FC = () => {
     });
   };
 
-  // Get appropriate image URL
-  const getImageUrl = (imageUri: string) => {
-    if (!imageUri) return '/etherjot/default.png';
+  // Determine if current user is the blog author
+  const isAuthor = React.useMemo(() => {
+    if (!isConnected || !account || !blog) return false;
     
-    return imageUri.startsWith('http') 
-      ? imageUri 
-      : imageUri.startsWith('ipfs://') 
-        ? `https://ipfs.io/ipfs/${imageUri.replace('ipfs://', '')}` 
-        : imageUri.startsWith('data:') 
-          ? imageUri 
-          : '/etherjot/default.png';
+    const authorAddress = blog.metadata.properties.authorAddress;
+    return authorAddress && authorAddress.toLowerCase() === account.toLowerCase();
+  }, [account, blog, isConnected]);
+
+  // Handle share button click
+  const handleShare = () => {
+    navigator.clipboard.writeText(window.location.href);
+    // Show a toast or alert
+    alert('Link copied to clipboard!');
   };
 
+  // If loading the blog, show skeleton
   if (loading) {
-    return <div className="loading">Loading blog...</div>;
+    return <BlogDetailSkeleton />;
   }
 
+  // If error, show error state
   if (error) {
     return (
-      <div className="error-container">
-        <h2>{error}</h2>
-        <Link to="/blogs" className="back-link">Back to Blogs</Link>
+      <div className="blog-error-container">
+        <h2>Oops! Something went wrong</h2>
+        <p>{error}</p>
+        <div className="blog-error-actions">
+          <button onClick={() => window.location.reload()}>Try Again</button>
+          <Link to="/blogs" className="back-link">Back to Blogs</Link>
+        </div>
       </div>
     );
   }
 
   if (!blog) {
     return (
-      <div className="error-container">
+      <div className="blog-error-container">
         <h2>Blog not found</h2>
+        <p>The blog you're looking for doesn't exist or has been removed.</p>
         <Link to="/blogs" className="back-link">Back to Blogs</Link>
       </div>
     );
@@ -152,9 +173,10 @@ export const BlogDetailPage: React.FC = () => {
 
   return (
     <div className="blog-detail-page">
+      {/* Blog Banner */}
       <div className="blog-banner">
         <img 
-          src={getImageUrl(blog.metadata.image)} 
+          src={blog.metadata.image} 
           alt={blog.metadata.name} 
           onError={(e) => {
             // Fallback to default image on error
@@ -164,12 +186,23 @@ export const BlogDetailPage: React.FC = () => {
       </div>
       
       <div className="blog-content-container">
+        {/* Blog Header */}
         <div className="blog-header">
           <div className="blog-metadata">
             {blog.metadata.properties.category && (
-              <span className="blog-category">{blog.metadata.properties.category}</span>
+              <span className="blog-category">
+                <Link to={`/blogs?category=${encodeURIComponent(blog.metadata.properties.category)}`}>
+                  {blog.metadata.properties.category}
+                </Link>
+              </span>
             )}
             <span className="blog-date">{formatDate(blog.createdAt)}</span>
+            
+            {proposal && (
+              <span className="blog-approval-date">
+                Approved: {formatDate(new Date(proposal.createdAt).getTime())}
+              </span>
+            )}
           </div>
           
           <h1 className="blog-title">{blog.metadata.name}</h1>
@@ -177,54 +210,94 @@ export const BlogDetailPage: React.FC = () => {
           {tags.length > 0 && (
             <div className="blog-tags">
               {tags.map((tag: string, index: number) => (
-                <span key={index} className="blog-tag">{tag}</span>
+                <Link
+                  key={index}
+                  to={`/blogs?tag=${encodeURIComponent(tag)}`}
+                  className="blog-tag"
+                >
+                  {tag}
+                </Link>
               ))}
             </div>
           )}
           
-          {isConnected && account && (
-            <div className="blog-actions">
+          <div className="blog-author-info">
+            <div className="blog-author-address">
+              By: {formatAddress(blog.metadata.properties.authorAddress, 6, 4)}
+            </div>
+            {isAuthor && (
+              <div className="blog-author-badge">Author</div>
+            )}
+          </div>
+          
+          <div className="blog-actions">
+            {isAuthor && (
               <button onClick={handleEdit} className="edit-button">
                 Edit Blog
               </button>
-            </div>
-          )}
+            )}
+            <button onClick={handleShare} className="share-button">
+              Share
+            </button>
+          </div>
         </div>
         
-        <div 
-          className="blog-content"
-          dangerouslySetInnerHTML={{ __html: blogContent }}
-        />
+        {/* Blog Content */}
+        {contentLoading ? (
+          <div className="blog-content-loading">
+            <div className="loading-spinner"></div>
+            <p>Loading content...</p>
+          </div>
+        ) : blogContent ? (
+          <div 
+            className="blog-content"
+            dangerouslySetInnerHTML={{ __html: blogContent }}
+          />
+        ) : (
+          <div className="blog-content-error">
+            <p>Content could not be loaded. The content may be unavailable or has been removed from Swarm storage.</p>
+          </div>
+        )}
         
+        {/* Blog Footer */}
         <div className="blog-footer">
           <Link to="/blogs" className="back-to-blogs">
             ← Back to all blogs
           </Link>
           
-          <div className="blog-author">
-            <span>Published by: </span>
-            <span className="author-address">
-              {blog.metadata.properties.authorAddress 
-                ? `${blog.metadata.properties.authorAddress.substring(0, 6)}...${blog.metadata.properties.authorAddress.substring(38)}`
-                : 'Unknown'
-              }
-            </span>
-          </div>
-          
-          <div className="blog-share">
-            <span>Share:</span>
-            <button 
-              className="share-button" 
-              onClick={() => {
-                navigator.clipboard.writeText(window.location.href);
-                alert('Link copied to clipboard!');
-              }}
-            >
-              Copy Link
-            </button>
+          <div className="blog-token-info">
+            <div className="blog-token-id">
+              Token ID: {blog.tokenId}
+            </div>
+            <div className="blog-owner">
+              Owner: {formatAddress(blog.owner, 6, 4)}
+            </div>
           </div>
         </div>
       </div>
+      
+      {/* Related Blogs Section */}
+      {relatedBlogs.length > 0 && (
+        <div className="related-blogs-section">
+          <h3>Related Blogs</h3>
+          <div className="related-blogs-grid">
+            {relatedBlogs.map(relatedBlog => (
+              <div key={relatedBlog.tokenId} className="related-blog-card">
+                <Link to={`/blogs/${relatedBlog.tokenId}`}>
+                  <img 
+                    src={relatedBlog.metadata.image || '/etherjot/default.png'} 
+                    alt={relatedBlog.metadata.name}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = '/etherjot/default.png';
+                    }}
+                  />
+                  <h4>{relatedBlog.metadata.name}</h4>
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,19 +1,20 @@
 // src/blockchain/hooks/useProposal.ts
 import { useState, useEffect, useCallback } from 'react';
-import { ethers } from 'ethers';
 import { useWallet } from '../../contexts/WalletContext';
 import { 
   BlogProposal, 
   Proposal, 
   ProposalStatus, 
-  BlockchainErrorType, 
   BlockchainError, 
+  BlockchainErrorType, 
   TransactionStatus 
 } from '../../types/blockchain';
 import { ProposalService } from '../services/ProposalService';
+import { blockchainTimeToJsTime } from '../utils/blockchainUtils';
 
 /**
- * Hook for interacting with the DAO's proposal system for blog minting
+ * React hook for interacting with the DAO's proposal system for blog minting
+ * Provides a React-friendly interface to ProposalService
  */
 export const useProposal = () => {
   const { provider, signer, account, chainId, isConnected } = useWallet();
@@ -30,7 +31,7 @@ export const useProposal = () => {
       const service = new ProposalService(provider, signer);
       
       const initService = async () => {
-        // Fix: Convert chainId which could be null to undefined
+        // Convert chainId which could be null to undefined
         await service.init(chainId ?? undefined);
         setProposalService(service);
         setError(null);
@@ -49,16 +50,19 @@ export const useProposal = () => {
 
   /**
    * Get proposal by ID
+   * 
+   * @param proposalId Proposal ID
+   * @returns Promise resolving to Proposal object or null
    */
   const getProposalById = useCallback(async (proposalId: string): Promise<Proposal | null> => {
     if (!proposalService) return null;
 
     try {
-      const proposal = await proposalService.getProposal(proposalId);
+      const rawProposal = await proposalService.getProposal(proposalId);
       
-      // Map status to enum
+      // Map numeric status to enum value
       let status = ProposalStatus.Pending;
-      switch (Number(proposal.status)) {
+      switch (Number(rawProposal.status)) {
         case 0:
           status = ProposalStatus.Pending;
           break;
@@ -79,19 +83,22 @@ export const useProposal = () => {
           break;
       }
       
+      // Convert timestamps to milliseconds
+      const createdAt = blockchainTimeToJsTime(rawProposal.createdAt);
+      const votingEnds = blockchainTimeToJsTime(rawProposal.votingEnds);
+      
       return {
-        id: proposal.id,
-        title: proposal.title,
-        description: proposal.description,
-        proposer: proposal.proposer,
+        id: rawProposal.id,
+        title: rawProposal.title,
+        description: rawProposal.description,
+        proposer: rawProposal.proposer,
         status,
-        createdAt: Number(proposal.createdAt) * 1000, // Convert to milliseconds
-        votingEnds: Number(proposal.votingEnds) * 1000, // Convert to milliseconds
-        votesFor: Number(proposal.votesFor),
-        votesAgainst: Number(proposal.votesAgainst),
-        executed: proposal.executed,
-        // Try to parse the callData to extract content reference
-        contentReference: extractContentReference(proposal.callData)
+        createdAt,
+        votingEnds,
+        votesFor: Number(rawProposal.votesFor),
+        votesAgainst: Number(rawProposal.votesAgainst),
+        executed: rawProposal.executed,
+        contentReference: rawProposal.contentReference
       };
     } catch (err) {
       console.error(`Error fetching proposal ${proposalId}:`, err);
@@ -101,6 +108,8 @@ export const useProposal = () => {
 
   /**
    * Fetch all proposals
+   * 
+   * @returns Promise resolving to array of Proposal objects
    */
   const getAllProposals = useCallback(async (): Promise<Proposal[]> => {
     if (!proposalService) {
@@ -144,6 +153,9 @@ export const useProposal = () => {
 
   /**
    * Create a blog minting proposal
+   * 
+   * @param proposal BlogProposal object
+   * @returns Promise resolving to TransactionStatus
    */
   const createBlogProposal = useCallback(async (
     proposal: BlogProposal
@@ -172,7 +184,11 @@ export const useProposal = () => {
       
       // Determine error type
       let errorType = BlockchainErrorType.Unknown;
-      if (err instanceof Error) {
+      if (err instanceof BlockchainError) {
+        // If it's already a BlockchainError, just propagate it
+        setError(err);
+        throw err;
+      } else if (err instanceof Error) {
         const errorMessage = err.message.toLowerCase();
         if (errorMessage.includes('user denied') || errorMessage.includes('user rejected')) {
           errorType = BlockchainErrorType.UserRejected;
@@ -196,6 +212,10 @@ export const useProposal = () => {
 
   /**
    * Vote on a proposal
+   * 
+   * @param proposalId Proposal ID
+   * @param support True for supporting the proposal, false for opposing
+   * @returns Promise resolving to TransactionStatus
    */
   const voteOnProposal = useCallback(async (
     proposalId: string,
@@ -228,6 +248,12 @@ export const useProposal = () => {
     } catch (err) {
       console.error('Error voting on proposal:', err);
       
+      // If it's already a BlockchainError, just propagate it
+      if (err instanceof BlockchainError) {
+        setError(err);
+        throw err;
+      }
+      
       // Determine error type
       let errorType = BlockchainErrorType.Unknown;
       if (err instanceof Error) {
@@ -254,6 +280,9 @@ export const useProposal = () => {
 
   /**
    * Execute a proposal to mint the NFT
+   * 
+   * @param proposalId Proposal ID
+   * @returns Promise resolving to TransactionStatus
    */
   const executeProposal = useCallback(async (
     proposalId: string
@@ -285,6 +314,12 @@ export const useProposal = () => {
     } catch (err) {
       console.error('Error executing proposal:', err);
       
+      // If it's already a BlockchainError, just propagate it
+      if (err instanceof BlockchainError) {
+        setError(err);
+        throw err;
+      }
+      
       // Determine error type
       let errorType = BlockchainErrorType.Unknown;
       if (err instanceof Error) {
@@ -311,6 +346,9 @@ export const useProposal = () => {
 
   /**
    * Check if a user has voted on a specific proposal
+   * 
+   * @param proposalId Proposal ID
+   * @returns Promise resolving to boolean indicating if the current account has voted
    */
   const hasVoted = useCallback(async (
     proposalId: string
@@ -328,36 +366,29 @@ export const useProposal = () => {
   }, [proposalService, account]);
 
   /**
-   * Extract content reference from calldata
-   * This is a helper function to try and parse the contentReference from the calldata
+   * Get all proposals that need votes
+   * 
+   * @returns Promise resolving to array of pending proposals
    */
-  const extractContentReference = (callData: string): string => {
-    try {
-      // This is a very simplified approach - in practice, you'd need to properly decode the ABI
-      // assuming mintTo(address, string) format
-      if (!callData || !callData.startsWith('0x')) return '';
-      
-      // Try to find the string data part - this is a simplification
-      const dataWithoutFunctionSelector = callData.slice(10);
-      
-      // The string data typically comes after the address (which is 32 bytes/64 hex chars)
-      // This is very approximate and might need adjustments based on actual contract encoding
-      const stringDataStart = 128; // Skip function selector (8 chars) + address param (64 chars) + offset (64 chars)
-      if (dataWithoutFunctionSelector.length < stringDataStart) return '';
-      
-      // Try to extract what might be the Swarm reference
-      const potentialReference = dataWithoutFunctionSelector.slice(stringDataStart, stringDataStart + 128);
-      
-      // Convert hex to UTF-8 string, filtering out non-printable characters
-      const bytes = ethers.toUtf8Bytes(`0x${potentialReference}`);
-      const reference = ethers.toUtf8String(bytes).replace(/[^\x20-\x7E]/g, '');
-      
-      return reference;
-    } catch (err) {
-      console.error('Error extracting content reference:', err);
-      return '';
+  const getPendingProposals = useCallback(async (): Promise<Proposal[]> => {
+    if (!proposalService) {
+      return [];
     }
-  };
+    
+    try {
+      const pendingProposalsRaw = await proposalService.getPendingProposals();
+      
+      // Convert raw proposals to our Proposal interface
+      const proposalPromises = pendingProposalsRaw.map(p => getProposalById(p.id));
+      const results = await Promise.all(proposalPromises);
+      
+      // Filter out nulls
+      return results.filter((p): p is Proposal => p !== null);
+    } catch (err) {
+      console.error('Error getting pending proposals:', err);
+      return [];
+    }
+  }, [proposalService, getProposalById]);
 
   return {
     proposals,
@@ -368,7 +399,8 @@ export const useProposal = () => {
     createBlogProposal,
     voteOnProposal,
     executeProposal,
-    hasVoted
+    hasVoted,
+    getPendingProposals
   };
 };
 

@@ -9,12 +9,13 @@ import {
   BlogProposal, 
   TransactionStatus 
 } from '../../types/blockchain';
-import { sendTransaction } from '../utils/transaction';
 import { extractContentReference } from '../utils/contentHash';
+import { createBlogNFTMetadata, metadataToTokenURI } from '../utils/metadata';
+import { toNumber, blockchainTimeToJsTime } from '../utils/blockchainUtils';
 
 /**
  * Class representing the Q Governance (QGov) system
- * Handles DAO voting and proposal management
+ * Handles direct interaction with DAO voting and proposal management contracts
  */
 export class QGovContract {
   private votingContract: ethers.Contract;
@@ -52,7 +53,7 @@ export class QGovContract {
    */
   public async getProposalCount(): Promise<number> {
     const count = await this.votingContract.proposalCount();
-    return count.toNumber();
+    return toNumber(count);
   }
   
   /**
@@ -63,26 +64,31 @@ export class QGovContract {
   public async getProposal(proposalId: string): Promise<Proposal | null> {
     try {
       const proposal = await this.votingContract.getProposal(proposalId);
-      const status = await this.votingContract.getProposalStatus(proposalId);
+      const statusNumber = await this.votingContract.getProposalStatus(proposalId);
       
       // Process voting results
-      const [votesFor, votesAgainst] = [
-        proposal.counters.votedFor,
-        proposal.counters.votedAgainst
-      ];
+      const votesFor = toNumber(proposal.counters.votedFor);
+      const votesAgainst = toNumber(proposal.counters.votedAgainst);
+      
+      // Convert timestamps
+      const createdAt = blockchainTimeToJsTime(proposal.params.votingStartTime);
+      const votingEnds = blockchainTimeToJsTime(proposal.params.votingEndTime);
+      
+      // Extract content reference
+      const contentReference = extractContentReference(proposal.callData);
       
       return {
-        id: proposal.id.toString(),
-        title: proposal.remark,
-        description: proposal.remark,
+        id: proposalId.toString(),
+        title: proposal.remark || "Blog Proposal",
+        description: proposal.remark || "",
         proposer: proposal.target,
-        status: this.mapStatus(status),
-        createdAt: Number(proposal.params.votingStartTime) * 1000,
-        votingEnds: Number(proposal.params.votingEndTime) * 1000,
-        votesFor: Number(votesFor),
-        votesAgainst: Number(votesAgainst),
+        status: this.mapStatus(toNumber(statusNumber)),
+        createdAt,
+        votingEnds,
+        votesFor,
+        votesAgainst,
         executed: proposal.executed,
-        contentReference: extractContentReference(proposal.callData)
+        contentReference
       };
     } catch (err) {
       console.error(`Error getting proposal ${proposalId}:`, err);
@@ -134,17 +140,32 @@ export class QGovContract {
    * Creates a blog minting proposal
    * @param proposal BlogProposal object
    * @param votingSituation Voting situation name
-   * @returns Promise resolving to TransactionStatus
+   * @returns Promise resolving to transaction hash
    */
   public async createBlogMintingProposal(
     proposal: BlogProposal,
     votingSituation: string = 'default'
-  ): Promise<TransactionStatus> {
+  ): Promise<string> {
     try {
+      // Create metadata object
+      const metadata = createBlogNFTMetadata(
+        proposal.title,
+        proposal.description,
+        proposal.contentReference,
+        proposal.authorAddress,
+        proposal.category,
+        proposal.tags,
+        undefined,
+        proposal.banner || undefined
+      );
+      
+      // Convert to Base64 for on-chain storage
+      const tokenURI = metadataToTokenURI(metadata, 'base64');
+      
       // Encode the mintTo function call
       const mintToCalldata = this.mintingContract.interface.encodeFunctionData(
         "mintTo",
-        [proposal.authorAddress, proposal.contentReference]
+        [proposal.authorAddress, tokenURI]
       );
       
       // Create proposal title and description
@@ -166,8 +187,7 @@ export class QGovContract {
         mintToCalldata
       );
       
-      // Wait for confirmation and return status
-      return await sendTransaction(tx);
+      return tx.hash;
     } catch (err) {
       console.error('Error creating blog minting proposal:', err);
       throw err;
@@ -178,22 +198,16 @@ export class QGovContract {
    * Votes on a proposal
    * @param proposalId Proposal ID
    * @param support True for yes vote, false for no
-   * @returns Promise resolving to TransactionStatus
+   * @returns Promise resolving to transaction hash
    */
   public async voteOnProposal(
     proposalId: string,
     support: boolean
-  ): Promise<TransactionStatus> {
+  ): Promise<string> {
     try {
-      let tx;
-      if (support) {
-        tx = await this.votingContract.voteFor(proposalId);
-      } else {
-        tx = await this.votingContract.voteAgainst(proposalId);
-      }
-      
-      // Wait for confirmation and return status
-      return await sendTransaction(tx);
+      const method = support ? 'voteFor' : 'voteAgainst';
+      const tx = await this.votingContract[method](proposalId);
+      return tx.hash;
     } catch (err) {
       console.error(`Error voting on proposal ${proposalId}:`, err);
       throw err;
@@ -203,14 +217,12 @@ export class QGovContract {
   /**
    * Executes an approved proposal
    * @param proposalId Proposal ID
-   * @returns Promise resolving to TransactionStatus
+   * @returns Promise resolving to transaction hash
    */
-  public async executeProposal(proposalId: string): Promise<TransactionStatus> {
+  public async executeProposal(proposalId: string): Promise<string> {
     try {
       const tx = await this.votingContract.executeProposal(proposalId);
-      
-      // Wait for confirmation and return status
-      return await sendTransaction(tx);
+      return tx.hash;
     } catch (err) {
       console.error(`Error executing proposal ${proposalId}:`, err);
       throw err;
@@ -233,7 +245,17 @@ export class QGovContract {
    * @returns Promise resolving to voting stats object
    */
   public async getVotingStats(proposalId: string): Promise<any> {
-    return await this.votingContract.getProposalVotingStats(proposalId);
+    const stats = await this.votingContract.getProposalVotingStats(proposalId);
+    
+    // Convert BigNumber values to numbers
+    return {
+      requiredQuorum: toNumber(stats.requiredQuorum),
+      currentQuorum: toNumber(stats.currentQuorum),
+      requiredMajority: toNumber(stats.requiredMajority),
+      currentMajority: toNumber(stats.currentMajority),
+      currentVetoQuorum: toNumber(stats.currentVetoQuorum),
+      requiredVetoQuorum: toNumber(stats.requiredVetoQuorum)
+    };
   }
 }
 

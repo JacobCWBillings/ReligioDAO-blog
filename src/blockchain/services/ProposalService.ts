@@ -5,16 +5,18 @@ import {
   BlogProposal, 
   TransactionStatus, 
   BlockchainError, 
-  BlockchainErrorType,
-  BlogNFTMetadata
+  BlockchainErrorType
 } from '../../types/blockchain';
 import { createBlogNFTMetadata, metadataToTokenURI } from '../utils/metadata';
+import { extractContentReference } from '../utils/contentHash';
+import { toNumber } from '../utils/blockchainUtils';
 
 import GeneralDAOVotingABI from '../abis/GeneralDAOVoting.json';
 import NFTMintingModulePlusABI from '../abis/NFTMintingModulePlus.json';
 
 /**
  * Service for interacting with the DAO's proposal system for blog NFT minting
+ * Handles all interaction with the governance and minting contracts
  */
 export class ProposalService {
   private provider: ethers.Provider;
@@ -30,6 +32,7 @@ export class ProposalService {
   
   /**
    * Initialize contracts
+   * @param chainId Optional chain ID to use specific network configuration
    */
   public async init(chainId?: number): Promise<void> {
     if (!this.signer) {
@@ -60,6 +63,9 @@ export class ProposalService {
   /**
    * Create a blog minting proposal
    * This function creates a proposal with complete blog metadata stored on-chain
+   * 
+   * @param proposal BlogProposal object with all blog details
+   * @returns Promise resolving to TransactionStatus
    */
   public async createBlogMintingProposal(
     proposal: BlogProposal
@@ -75,6 +81,7 @@ export class ProposalService {
         proposal.authorAddress,
         proposal.category,
         proposal.tags,
+        undefined, // proposal ID not available yet
         proposal.banner || undefined
       );
       
@@ -132,6 +139,8 @@ export class ProposalService {
           errorType = BlockchainErrorType.UserRejected;
         } else if (errorMessage.includes('insufficient funds')) {
           errorType = BlockchainErrorType.InsufficientFunds;
+        } else if (errorMessage.includes('network error') || errorMessage.includes('timeout')) {
+          errorType = BlockchainErrorType.NetworkError;
         }
       }
       
@@ -145,6 +154,10 @@ export class ProposalService {
 
   /**
    * Vote on a blog minting proposal
+   * 
+   * @param proposalId Proposal ID
+   * @param support True for yes vote, false for no
+   * @returns Promise resolving to TransactionStatus
    */
   public async voteOnProposal(
     proposalId: string,
@@ -154,7 +167,8 @@ export class ProposalService {
     
     try {
       // Vote on the proposal
-      const tx = await this.votingContract!.vote(proposalId, support);
+      const method = support ? 'voteFor' : 'voteAgainst';
+      const tx = await this.votingContract![method](proposalId);
       
       // Initial transaction status
       const status: TransactionStatus = {
@@ -183,6 +197,8 @@ export class ProposalService {
           errorType = BlockchainErrorType.UserRejected;
         } else if (errorMessage.includes('already voted')) {
           errorType = BlockchainErrorType.ContractError;
+        } else if (errorMessage.includes('network error') || errorMessage.includes('timeout')) {
+          errorType = BlockchainErrorType.NetworkError;
         }
       }
       
@@ -197,6 +213,9 @@ export class ProposalService {
   /**
    * Execute an approved proposal to mint the blog NFT
    * This will create an NFT with all metadata stored directly on-chain
+   * 
+   * @param proposalId Proposal ID
+   * @returns Promise resolving to TransactionStatus
    */
   public async executeProposal(proposalId: string): Promise<TransactionStatus> {
     this.ensureInitialized();
@@ -233,6 +252,8 @@ export class ProposalService {
           errorType = BlockchainErrorType.UserRejected;
         } else if (errorMessage.includes('not approved')) {
           errorType = BlockchainErrorType.ContractError;
+        } else if (errorMessage.includes('network error') || errorMessage.includes('timeout')) {
+          errorType = BlockchainErrorType.NetworkError;
         }
       }
       
@@ -248,6 +269,8 @@ export class ProposalService {
    * Get all pending proposals that need votes
    * This focuses on what users need (proposals to vote on)
    * rather than emphasizing proposal IDs
+   * 
+   * @returns Promise resolving to array of pending proposals
    */
   public async getPendingProposals(): Promise<any[]> {
     this.ensureInitialized();
@@ -259,7 +282,7 @@ export class ProposalService {
       for (const id of proposalIds) {
         const proposal = await this.getProposal(id);
         // Only include active proposals that need votes
-        if (proposal.status === 1) { // Active status
+        if (Number(proposal.status) === 1) { // Active status
           pendingProposals.push(proposal);
         }
       }
@@ -277,27 +300,34 @@ export class ProposalService {
 
   /**
    * Get proposal details
+   * 
+   * @param proposalId Proposal ID
+   * @returns Promise resolving to proposal details
    */
   public async getProposal(proposalId: string): Promise<any> {
     this.ensureInitialized();
     
     try {
       const proposal = await this.votingContract!.getProposal(proposalId);
-      const callData = await this.votingContract!.getProposalCallData(proposalId);
-      const [votesFor, votesAgainst] = await this.votingContract!.getProposalVotes(proposalId);
+      const status = await this.votingContract!.getProposalStatus(proposalId);
+      const callData = proposal.callData;
+      
+      // Extract content reference from the calldata
+      const contentReference = extractContentReference(callData);
       
       return {
-        id: proposal.id.toString(),
-        title: proposal.title,
-        description: proposal.description,
-        proposer: proposal.proposer,
-        createdAt: proposal.createdAt.toString(),
-        votingEnds: proposal.votingEnds.toString(),
-        votesFor: votesFor.toString(),
-        votesAgainst: votesAgainst.toString(),
-        status: proposal.status,
+        id: proposalId.toString(),
+        title: proposal.remark || "Blog Proposal",
+        description: proposal.remark || "",
+        proposer: proposal.target,
+        createdAt: toNumber(proposal.params.votingStartTime),
+        votingEnds: toNumber(proposal.params.votingEndTime),
+        votesFor: toNumber(proposal.counters.votedFor),
+        votesAgainst: toNumber(proposal.counters.votedAgainst),
+        status: toNumber(status),
         executed: proposal.executed,
-        callData
+        callData,
+        contentReference
       };
     } catch (err) {
       console.error('Error getting proposal details:', err);
@@ -311,13 +341,18 @@ export class ProposalService {
 
   /**
    * Get all proposal IDs
+   * 
+   * @returns Promise resolving to array of proposal IDs
    */
   public async getAllProposalIds(): Promise<string[]> {
     this.ensureInitialized();
     
     try {
-      const proposalIds = await this.votingContract!.getAllProposals();
-      return proposalIds.map((id: string | number) => id.toString());
+      const proposalCount = await this.votingContract!.proposalCount();
+      const count = toNumber(proposalCount);
+      
+      // Create an array of IDs from 1 to count
+      return Array.from({ length: count }, (_, i) => (i + 1).toString());
     } catch (err) {
       console.error('Error getting all proposal IDs:', err);
       throw new BlockchainError(
@@ -330,12 +365,16 @@ export class ProposalService {
 
   /**
    * Check if a user has voted on a proposal
+   * 
+   * @param proposalId Proposal ID
+   * @param voter Voter address
+   * @returns Promise resolving to boolean indicating if voter has voted
    */
   public async hasVoted(proposalId: string, voter: string): Promise<boolean> {
     this.ensureInitialized();
     
     try {
-      return await this.votingContract!.hasVoted(proposalId, voter);
+      return await this.votingContract!.hasUserVoted(proposalId, voter);
     } catch (err) {
       console.error('Error checking if user has voted:', err);
       throw new BlockchainError(
@@ -345,49 +384,10 @@ export class ProposalService {
       );
     }
   }
-  
-  /**
-   * Extract content reference from encoded calldata
-   * This can be useful for debugging but isn't essential for normal operation
-   */
-  private extractContentReference(callData: string): string {
-    try {
-      if (!callData || !callData.startsWith('0x')) return '';
-      
-      // Try to decode the function call
-      const decodedData = this.nftMintingModule!.interface.decodeFunctionData('mintTo', callData);
-      
-      // Check if we got tokenURI data
-      if (decodedData && decodedData.length >= 2) {
-        const tokenURI = decodedData[1];
-        
-        // If it's a base64 encoded JSON
-        if (tokenURI.startsWith('data:application/json;base64,')) {
-          try {
-            const base64Data = tokenURI.replace('data:application/json;base64,', '');
-            const jsonString = atob(base64Data);
-            const metadata = JSON.parse(jsonString);
-            
-            if (metadata && metadata.properties && metadata.properties.contentReference) {
-              return metadata.properties.contentReference;
-            }
-          } catch (e) {
-            console.error('Error parsing base64 metadata:', e);
-          }
-        }
-        
-        return tokenURI;
-      }
-      
-      return '';
-    } catch (err) {
-      console.error('Error extracting content reference:', err);
-      return '';
-    }
-  }
 
   /**
    * Ensure contracts are initialized
+   * @throws BlockchainError if not initialized
    */
   private ensureInitialized(): void {
     if (!this.votingContract || !this.nftMintingModule) {

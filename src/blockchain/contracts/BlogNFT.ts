@@ -2,12 +2,13 @@
 import { ethers } from 'ethers';
 import QRC721PlusABI from '../abis/QRC721Plus.json';
 import { getContractAddresses } from '../../config';
-import { BlogNFT, BlogNFTMetadata } from '../../types/blockchain';
+import { BlogNFT } from '../../types/blockchain';
 import { parseMetadataFromURI } from '../utils/metadata';
+import { toNumber } from '../utils/blockchainUtils';
 
 /**
  * Class representing the BlogNFT contract interface
- * Wrapper around QRC721Plus contract
+ * Wrapper around QRC721Plus contract for direct interaction
  */
 export class BlogNFTContract {
   private contract: ethers.Contract;
@@ -61,7 +62,7 @@ export class BlogNFTContract {
    */
   public async getTotalSupply(): Promise<number> {
     const totalSupply = await this.contract.totalSupply();
-    return totalSupply.toNumber();
+    return toNumber(totalSupply);
   }
   
   /**
@@ -110,13 +111,15 @@ export class BlogNFTContract {
    */
   public async getBalanceOf(owner: string): Promise<number> {
     const balance = await this.contract.balanceOf(owner);
-    return balance.toNumber();
+    return toNumber(balance);
   }
   
   /**
    * Mints a new token to a recipient with metadata
+   * Note: This is typically done through governance, not directly
+   * 
    * @param recipient Recipient address
-   * @param tokenId Token ID to mint
+   * @param tokenId Token ID to mint (or empty string to auto-assign)
    * @param tokenURI Token URI with metadata
    * @returns Promise resolving to transaction
    */
@@ -147,7 +150,7 @@ export class BlogNFTContract {
         owner,
         metadata,
         contentReference: metadata.properties.contentReference,
-        proposalId: metadata.properties.proposalId,
+        proposalId: metadata.properties.proposalId || "",
         createdAt: new Date(metadata.properties.approvalDate).getTime()
       };
     } catch (err) {

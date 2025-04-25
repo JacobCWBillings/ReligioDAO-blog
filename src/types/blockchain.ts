@@ -1,16 +1,16 @@
 // src/types/blockchain.ts
-
 import { ethers } from 'ethers';
 
 /**
  * Enum for proposal statuses
+ * Used across the application for consistent status representation
  */
 export enum ProposalStatus {
   Pending = 'Pending',    // Created but voting hasn't started yet
   Active = 'Active',      // Voting is active
   Approved = 'Approved',  // Voting finished with approval
   Rejected = 'Rejected',  // Voting finished with rejection
-  Executed = 'Executed',  // Proposal has been executed
+  Executed = 'Executed',  // Proposal has been executed (NFT minted)
   Canceled = 'Canceled'   // Proposal was canceled
 }
 
@@ -32,21 +32,28 @@ export interface Proposal {
 }
 
 /**
- * Interface for a blog proposal with metadata
+ * Blog NFT Metadata structure for NFT representation of approved blogs
  */
-export interface BlogProposalWithMetadata extends Proposal {
-  metadata: BlogNFTMetadata;    // Metadata for the NFT if minted
+export interface BlogNFTMetadata {
+  name: string;
+  description: string;
+  image: string;
+  attributes: NFTAttribute[];
+  properties: BlogProperties;
 }
 
-/**
- * Interface for user's vote on a proposal
- */
-export interface ProposalVote {
-  proposalId: string;           // ID of the proposal
-  voter: string;                // Address of the voter
-  support: boolean;             // True for "for", false for "against"
-  weight: number;               // Voting power/weight
-  timestamp: number;            // When the vote was cast
+export interface NFTAttribute {
+  trait_type: string;
+  value: string | number;
+}
+
+export interface BlogProperties {
+  contentReference: string;    // Swarm reference to the blog content
+  proposalId?: string;         // ID of the governance proposal that approved this blog
+  approvalDate: string;        // ISO date string when the blog was approved
+  category?: string;           // Blog category
+  tags?: string[];             // Array of tags associated with the blog
+  authorAddress: string;       // Ethereum address of the author
 }
 
 /**
@@ -65,28 +72,10 @@ export interface BlogProposal {
 }
 
 /**
- * Blog NFT Metadata structure for NFT representation of approved blogs
+ * Interface for a blog proposal with metadata
  */
-export interface BlogNFTMetadata {
-  name: string;
-  description: string;
-  image: string;
-  attributes: NFTAttribute[];
-  properties: BlogProperties;
-}
-
-export interface NFTAttribute {
-  trait_type: string;
-  value: string | number;
-}
-
-export interface BlogProperties {
-  contentReference: string;    // Swarm reference to the blog content
-  proposalId: string;          // ID of the governance proposal that approved this blog
-  approvalDate: string;        // ISO date string when the blog was approved
-  category?: string;           // Blog category
-  tags?: string[];             // Array of tags associated with the blog
-  authorAddress: string;       // Ethereum address of the author
+export interface BlogProposalWithMetadata extends Proposal {
+  metadata: BlogNFTMetadata;    // Metadata for the NFT if minted
 }
 
 /**
@@ -99,6 +88,17 @@ export interface BlogNFT {
   contentReference: string;         // Swarm reference to the blog content
   proposalId: string;               // ID of the governance proposal
   createdAt: number;                // Timestamp when the blog was created/approved
+}
+
+/**
+ * Interface for user's vote on a proposal
+ */
+export interface ProposalVote {
+  proposalId: string;           // ID of the proposal
+  voter: string;                // Address of the voter
+  support: boolean;             // True for "for", false for "against"
+  weight: number;               // Voting power/weight
+  timestamp: number;            // When the vote was cast
 }
 
 /**
@@ -148,17 +148,21 @@ export interface PaginatedBlogs {
  * Common blockchain error types
  */
 export enum BlockchainErrorType {
-  UserRejected = 'UserRejected',
-  NetworkError = 'NetworkError',
-  ContractError = 'ContractError',
-  UnsupportedNetwork = 'UnsupportedNetwork',
-  InsufficientFunds = 'InsufficientFunds',
-  GasLimitExceeded = 'GasLimitExceeded',  // Added for gas limit errors
-  NonceError = 'NonceError',              // Added for nonce-related errors
-  Timeout = 'Timeout',                    // Added for transaction timeout
-  Unknown = 'Unknown'
+  UserRejected = 'UserRejected',     // User rejected transaction in wallet
+  NetworkError = 'NetworkError',      // Network connection issues
+  ContractError = 'ContractError',    // Smart contract errors or reverts
+  UnsupportedNetwork = 'UnsupportedNetwork', // Wrong network/chain
+  InsufficientFunds = 'InsufficientFunds',   // Not enough funds for transaction
+  GasLimitExceeded = 'GasLimitExceeded',     // Gas limit issues
+  NonceError = 'NonceError',                 // Transaction nonce problems
+  Timeout = 'Timeout',                       // Transaction timeout
+  Unknown = 'Unknown'                        // Unclassified errors
 }
 
+/**
+ * Custom error class for blockchain-related errors
+ * Provides standardized error handling across the application
+ */
 export class BlockchainError extends Error {
   type: BlockchainErrorType;
   originalError?: Error;

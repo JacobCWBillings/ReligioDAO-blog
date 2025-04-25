@@ -1,14 +1,18 @@
+// src/types/blog.ts
 import { Article } from '../libetherjot';
+import { ProposalStatus } from './blockchain';
 
 /**
  * Extension of the original Etherjot Article type with blockchain-related properties
+ * Brings together the DAO and NFT concepts for blog posts
  */
 export interface BlockchainArticle extends Article {
   proposalId?: string;          // ID of the proposal in qgov
-  proposalStatus?: string;      // Status of the proposal
+  proposalStatus?: ProposalStatus; // Status of the proposal (using standardized enum)
   nftTokenId?: string;          // NFT token ID if approved and minted
   authorAddress?: string;       // Author's wallet address
   isNFT?: boolean;              // Flag to indicate if article is represented as NFT
+  contentReference?: string;    // Swarm reference to the content
 }
 
 /**
@@ -28,30 +32,75 @@ export interface BlogDraft {
 }
 
 /**
- * Represents a blog proposal ready for submission to qgov
+ * For blog posts imported from blockchain/NFTs - maps to BlockchainArticle
  */
-export interface BlogProposal {
-  title: string;
-  content: string;
-  contentReference: string;  // Swarm reference to the content
-  preview: string;
-  banner: string | null;
-  category: string;
-  tags: string[];
-  authorAddress: string;
-  description: string;      // Proposal description for voting
+export function mapNFTToBlockchainArticle(
+  nft: any, 
+  content: string
+): BlockchainArticle {
+  // Extract basic properties from NFT metadata
+  const { metadata, tokenId, proposalId } = nft;
+  const { name, description, image, properties } = metadata;
+  
+  // Convert tags from NFT format to article format
+  const tags = Array.isArray(properties.tags) ? properties.tags : [];
+  
+  // Map to BlockchainArticle structure
+  return {
+    title: name,
+    html: content, // The full HTML content
+    markdown: '', // We typically don't store the markdown in NFT metadata
+    createdAt: new Date(properties.approvalDate).getTime(), // Convert ISO date to timestamp
+    tags,
+    path: `blogs/${tokenId}`, // Virtual path for routing
+    category: properties.category || 'Uncategorized',
+    banner: image || '',   // Make sure this is a string, not null
+    commentsFeed: '', // Comments not supported in this version
+    kind: 'regular', // Default kind
+    stamp: '', // Required by Article interface
+    preview: description || 'No description available', // Set preview from description
+    nftTokenId: tokenId,
+    proposalId,
+    authorAddress: properties.authorAddress,
+    isNFT: true,
+    contentReference: properties.contentReference,
+    proposalStatus: ProposalStatus.Executed // Since it's an NFT, the proposal was executed
+  };
 }
 
 /**
  * Enum for blog publication status
+ * Uses ProposalStatus enum but adds Draft state for local drafts
  */
 export enum BlogStatus {
   Draft = 'Draft',               // Saved locally, not published
   ProposalPending = 'Pending',   // Submitted to qgov, awaiting voting
-  ProposalActive = 'Voting',     // Actively being voted on
+  ProposalActive = 'Active',     // Actively being voted on
   Approved = 'Approved',         // Approved but not yet minted as NFT
   Published = 'Published',       // Minted as NFT and published
   Rejected = 'Rejected'          // Rejected by DAO vote
+}
+
+/**
+ * Converts ProposalStatus to BlogStatus
+ */
+export function mapProposalStatusToBlogStatus(status: ProposalStatus): BlogStatus {
+  switch (status) {
+    case ProposalStatus.Pending:
+      return BlogStatus.ProposalPending;
+    case ProposalStatus.Active:
+      return BlogStatus.ProposalActive;
+    case ProposalStatus.Approved:
+      return BlogStatus.Approved;
+    case ProposalStatus.Rejected:
+      return BlogStatus.Rejected;
+    case ProposalStatus.Executed:
+      return BlogStatus.Published;
+    case ProposalStatus.Canceled:
+      return BlogStatus.Rejected;
+    default:
+      return BlogStatus.Draft;
+  }
 }
 
 /**

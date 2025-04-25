@@ -120,6 +120,9 @@ export function formatErrorForUser(error: BlockchainError | Error): string {
       
       case BlockchainErrorType.Timeout:
         return 'Transaction timed out. Please try again';
+      
+      case BlockchainErrorType.UnsupportedNetwork:
+        return 'Unsupported network. Please switch to a supported network';
         
       default:
         return error.message || 'Unknown blockchain error';
@@ -162,4 +165,61 @@ export async function waitForTransaction(
     `Transaction ${txHash} timed out after ${timeout}ms`,
     BlockchainErrorType.Timeout
   );
+}
+
+/**
+ * Creates a TransactionStatus object from a transaction hash
+ * Useful for returning status when you only have the hash (e.g., from another service)
+ * 
+ * @param txHash Transaction hash
+ * @returns TransactionStatus object
+ */
+export function createPendingTransactionStatus(txHash: string): TransactionStatus {
+  return {
+    hash: txHash,
+    status: 'pending',
+    confirmations: 0
+  };
+}
+
+/**
+ * Estimates gas for a transaction - Updated for ethers.js v6 compatibility
+ * 
+ * @param contract Ethers contract
+ * @param method Method name
+ * @param args Method arguments
+ * @param additionalMargin Additional gas margin (percentage as decimal, e.g., 0.1 for 10%)
+ * @returns Promise resolving to gas limit as bigint
+ */
+export async function estimateGas(
+  contract: ethers.Contract,
+  method: string,
+  args: any[],
+  additionalMargin: number = 0.1
+): Promise<bigint> {
+  try {
+    // In ethers v6, we need to use this approach to dynamically access contract methods
+    // Use the function property to access the method safely
+    const contractFunction = contract.getFunction(method);
+    
+    if (!contractFunction) {
+      throw new Error(`Method ${method} not found on contract`);
+    }
+    
+    // Estimate gas for the transaction
+    const estimatedGas = await contractFunction.estimateGas(...args);
+    
+    // Add a safety margin (working with bigint)
+    const margin = Number(estimatedGas) * additionalMargin;
+    const gasLimit = BigInt(Math.floor(Number(estimatedGas) + margin));
+    
+    return gasLimit;
+  } catch (err) {
+    console.error(`Error estimating gas for ${method}:`, err);
+    throw new BlockchainError(
+      `Failed to estimate gas for ${method}`,
+      determineErrorType(err),
+      err instanceof Error ? err : new Error(String(err))
+    );
+  }
 }
