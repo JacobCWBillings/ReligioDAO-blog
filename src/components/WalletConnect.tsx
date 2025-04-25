@@ -31,6 +31,9 @@ export const WalletConnect: React.FC = () => {
             case 11155111: return 'Sepolia Testnet';
             case 100: return 'Gnosis Chain';
             case 31337: return 'Local Dev Chain';
+            case 35441: return 'Q Mainnet';
+            case 35442: return 'Q Devnet';
+            case 35443: return 'Q Testnet';
             default: return `Chain ID: ${chainId}`;
         }
     };
@@ -63,7 +66,7 @@ export const WalletConnect: React.FC = () => {
                         </div>
                         {balance && (
                             <div className="wallet-balance" onClick={handleRefreshBalance}>
-                                {parseFloat(balance).toFixed(4)} ETH
+                                {parseFloat(balance).toFixed(4)} QGov
                             </div>
                         )}
                         <button 

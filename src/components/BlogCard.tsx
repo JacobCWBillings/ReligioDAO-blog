@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { BlogNFT } from '../types/blockchain';
 import { formatAddress } from '../blockchain/utils/walletUtils';
 import { HighlightedTitle, HighlightedPreview } from './TextHighlighter';
+import defaultImage from '../assets/images/default.jpg'
 import './BlogCard.css';
 
 interface BlogCardProps {
@@ -44,7 +45,7 @@ export const BlogCard: React.FC<BlogCardProps> = ({
   
   // Handle image loading errors by falling back to default image
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    e.currentTarget.src = '/public/default.png';
+    e.currentTarget.src = defaultImage;
   };
   
   // Format the description to a limited preview
@@ -117,7 +118,7 @@ export const BlogCard: React.FC<BlogCardProps> = ({
       >
         <div className="blog-card-image-container">
           <img 
-            src={image || '/public/default.png'} 
+            src={image || defaultImage} 
             alt={name} 
             className="blog-card-image" 
             onError={handleImageError}

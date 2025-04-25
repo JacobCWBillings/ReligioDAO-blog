@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 // import QRC721Plus from './blockchain/abis/QRC721Plus.json';
 // import GeneralDAOVoting from './blockchain/abis/GeneralDAOVoting.json';
 // import NFTMintingModulePlus from './blockchain/abis/NFTMintingModulePlus.json';
+import defaultImage from './assets/images/default.jpg'
 
 // Constants for voting parameters
 export const FIVE_PERCENTAGE = '50000000000000000000000000';
@@ -151,7 +152,7 @@ const config: AppConfig = {
   ipfsGateway: 'https://ipfs.io/ipfs/',
   
   // Default placeholder image
-  placeholderImage: '/public/default.png',
+  placeholderImage: defaultImage,
 };
 
 export default config;
@@ -204,8 +205,8 @@ export const walletConnectionInfo = Object.values(config.networks)
       rpcUrl: network.rpcUrl,
       explorerUrl: network.blockExplorer,
       nativeCurrency: {
-        name: network.chainId >= 35441 && network.chainId <= 35443 ? 'Q' : 'ETH',
-        symbol: network.chainId >= 35441 && network.chainId <= 35443 ? 'Q' : 'ETH',
+        name: network.chainId >= 35441 && network.chainId <= 35443 ? 'Q' : 'QGov',
+        symbol: network.chainId >= 35441 && network.chainId <= 35443 ? 'Q' : 'QGov',
         decimals: 18,
       }
     };

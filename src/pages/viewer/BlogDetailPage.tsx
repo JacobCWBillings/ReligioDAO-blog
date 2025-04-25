@@ -7,6 +7,7 @@ import { useWallet } from '../../contexts/WalletContext';
 import { formatAddress } from '../../blockchain/utils/walletUtils';
 import { BlogDetailSkeleton } from '../../components/skeletons/Skeleton';
 import swarmContentService from '../../services/SwarmContentService';
+import defaultImage from '../../assets/images/default.jpg'
 import './BlogDetailPage.css';
 
 export const BlogDetailPage: React.FC = () => {
@@ -259,7 +260,7 @@ export const BlogDetailPage: React.FC = () => {
           alt={blog.metadata.name} 
           onError={(e) => {
             // Fallback to default image on error
-            (e.target as HTMLImageElement).src = '/public/default.png';
+            (e.target as HTMLImageElement).src = defaultImage;
           }}
         />
       </div>
@@ -382,10 +383,10 @@ export const BlogDetailPage: React.FC = () => {
               <div key={relatedBlog.tokenId} className="related-blog-card">
                 <Link to={`/blogs/${relatedBlog.tokenId}`}>
                   <img 
-                    src={relatedBlog.metadata.image || '/public/default.png'} 
+                    src={relatedBlog.metadata.image || defaultImage} 
                     alt={relatedBlog.metadata.name}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/public/default.png';
+                      (e.target as HTMLImageElement).src = defaultImage;
                     }}
                   />
                   <h4>{relatedBlog.metadata.name}</h4>

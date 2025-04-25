@@ -4,6 +4,9 @@ import { Link } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import { WalletConnect } from './WalletConnect';
 import './Header.css';
+import yesImage from '../assets/images/yes.png';
+import noImage from '../assets/images/no.png';
+
 
 interface HeaderProps {
     isBeeRunning: boolean;
@@ -34,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({ isBeeRunning, hasPostageStamp })
                         <span>Bee</span>
                         <img 
                             className="status-image" 
-                            src={isBeeRunning ? '/etherjot/yes.png' : '/etherjot/no.png'} 
+                            src={isBeeRunning ? yesImage : noImage} 
                             alt={isBeeRunning ? 'Connected' : 'Disconnected'} 
                         />
                     </div>
@@ -42,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({ isBeeRunning, hasPostageStamp })
                         <span>Stamp</span>
                         <img 
                             className="status-image" 
-                            src={hasPostageStamp ? '/etherjot/yes.png' : '/etherjot/no.png'} 
+                            src={hasPostageStamp ? yesImage : noImage} 
                             alt={hasPostageStamp ? 'Available' : 'Unavailable'} 
                         />
                     </div>

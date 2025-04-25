@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { BlogNFT } from '../types/blockchain';
 import { useBlogNFT } from '../blockchain/hooks/useBlogNFT';
 import { formatAddress } from '../blockchain/utils/walletUtils';
+import defaultImage from '../assets/images/default.jpg'
 import './TrendingBlogs.css';
 
 interface TrendingBlogsProps {
@@ -142,10 +143,10 @@ export const TrendingBlogs: React.FC<TrendingBlogsProps> = ({
             <div className="trending-blog-rank">{index + 1}</div>
             <div className="trending-blog-image">
               <img 
-                src={blog.metadata.image || '/public/default.png'} 
+                src={blog.metadata.image || defaultImage} 
                 alt={blog.metadata.name}
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/public/default.png';
+                  (e.target as HTMLImageElement).src = defaultImage;
                 }}
               />
               {filter === 'recent' && index === 0 && (

@@ -1,5 +1,6 @@
 import { GlobalState } from '../engine/GlobalState'
 import { createTagCloud } from './TagCloud'
+import defaultImage from '../../assets/images/default.jpg'
 
 export function createPost(
     globalState: GlobalState,
@@ -16,7 +17,7 @@ export function createPost(
     const formattedDate = new Date(createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric' })
 
     const bannerAsset = globalState.assets.find(x => x.reference === banner)
-    const bannerSrc = bannerAsset ? '../'.repeat(depth) + bannerAsset.name : 'default.png'
+    const bannerSrc = bannerAsset ? '../'.repeat(depth) + bannerAsset.name : defaultImage
 
     const image = kind === 'highlight' ? '' : `<a href="${path}"><img class="image-16-9" src="${bannerSrc}"></a>`
     const meta =
