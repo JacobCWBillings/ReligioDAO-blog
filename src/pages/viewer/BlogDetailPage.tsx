@@ -1,4 +1,4 @@
-// src/pages/viewer/BlogDetailPage.tsx
+// src/pages/viewer/BlogDetailPage.tsx - Fixed version
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useBlogNFT } from '../../blockchain/hooks/useBlogNFT';
@@ -23,37 +23,43 @@ export const BlogDetailPage: React.FC = () => {
   const [blog, setBlog] = useState<any>(null);
   const [proposal, setProposal] = useState<any>(null);
   const [relatedBlogs, setRelatedBlogs] = useState<any[]>([]);
+  const [fetchAttempted, setFetchAttempted] = useState<boolean>(false);
 
   // Fetch blog data when the component mounts
   useEffect(() => {
-    let mounted = true; // For cleanup
+    let isMounted = true; // Flag to track if component is mounted
     
     const fetchBlog = async () => {
       if (!blogId) {
-        setError('Blog ID not provided');
-        setLoading(false);
+        if (isMounted) {
+          setError('Blog ID not provided');
+          setLoading(false);
+        }
         return;
       }
 
       try {
         const blogData = await getNFTById(blogId);
         
-        if (!mounted) return; // Component unmounted, skip updating state
+        if (!isMounted) return; // Skip state updates if unmounted
         
         if (!blogData) {
+          console.error('Blog not found for ID:', blogId);
           setError('Blog not found');
           setLoading(false);
           return;
         }
         
+        console.log('Retrieved blog data:', blogData);
         setBlog(blogData);
+        setError(null); // Clear any previous errors
         setLoading(false);
         
         // If the blog has a proposal ID, fetch proposal details
         if (blogData.proposalId) {
           try {
             const proposalData = await getProposalById(blogData.proposalId);
-            if (mounted && proposalData) {
+            if (isMounted && proposalData) {
               setProposal(proposalData);
             }
           } catch (err) {
@@ -62,18 +68,55 @@ export const BlogDetailPage: React.FC = () => {
           }
         }
         
-        // Fetch blog content
-        fetchBlogContent(blogData.contentReference);
+        // Extract and validate content reference
+        if (blogData.contentReference && typeof blogData.contentReference === 'string') {
+          const contentRef = blogData.contentReference.trim();
+          
+          if (contentRef) {
+            console.log(`Extracted content reference from blog metadata: ${contentRef}`);
+            // Fetch blog content
+            if (isMounted) {
+              fetchBlogContent(contentRef);
+            }
+          } else {
+            console.error('Content reference is empty in blog metadata');
+            if (isMounted) {
+              setError('Blog content reference is missing');
+              setContentLoading(false);
+            }
+          }
+        } else if (blogData.metadata?.properties?.contentReference && 
+                  typeof blogData.metadata.properties.contentReference === 'string') {
+          // Try fallback to nested content reference
+          const contentRef = blogData.metadata.properties.contentReference.trim();
+          
+          if (contentRef) {
+            console.log(`Using nested content reference from metadata properties: ${contentRef}`);
+            if (isMounted) {
+              fetchBlogContent(contentRef);
+            }
+          } else {
+            console.error('Nested content reference is empty');
+            if (isMounted) {
+              setError('Blog content reference is missing');
+              setContentLoading(false);
+            }
+          }
+        } else {
+          console.error('No content reference found in blog metadata');
+          if (isMounted) {
+            setError('Blog content reference is missing');
+            setContentLoading(false);
+          }
+        }
       } catch (err) {
         console.error('Error fetching blog:', err);
         
-        if (!mounted) return; // Component unmounted
+        if (!isMounted) return; // Skip state updates if unmounted
         
-        if (err instanceof Error && err.message.includes('token does not exist')) {
-          setError('Blog not found');
-        } else {
-          setError('Failed to load blog');
-        }
+        setError(err instanceof Error && err.message.includes('token does not exist') 
+          ? 'Blog not found' 
+          : 'Failed to load blog');
         setLoading(false);
       }
     };
@@ -82,27 +125,40 @@ export const BlogDetailPage: React.FC = () => {
     fetchBlog();
     
     return () => {
-      mounted = false; // Cleanup
+      isMounted = false; // Cleanup function to handle unmounting
     };
   }, [blogId, getNFTById, getProposalById]);
 
   // Fetch the blog content from Swarm using our service
   const fetchBlogContent = async (contentReference: string) => {
-    if (!contentReference) {
+    if (!contentReference || contentReference.trim() === '') {
       setError('Blog content reference not found');
       setContentLoading(false);
       return;
     }
     
+    // Avoid double fetch
+    if (fetchAttempted) return;
+    setFetchAttempted(true);
+    
     try {
       setContentLoading(true);
+      console.log(`Fetching blog content for reference: ${contentReference}`);
       
       // Use our SwarmContentService for reliable retrieval with caching
       const html = await swarmContentService.getContentAsHtml(contentReference);
-      setBlogContent(html);
+      
+      if (!html || html.trim() === '') {
+        console.error('Retrieved empty content from Swarm');
+        setError('Blog content is empty');
+      } else {
+        console.log('Successfully retrieved blog content');
+        setBlogContent(html);
+        setError(null); // Clear any previous errors
+      }
     } catch (err) {
       console.error('Error fetching blog content:', err);
-      setError('Failed to load blog content');
+      setError(`Failed to load blog content: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setContentLoading(false);
     }
@@ -126,7 +182,7 @@ export const BlogDetailPage: React.FC = () => {
   const isAuthor = React.useMemo(() => {
     if (!isConnected || !account || !blog) return false;
     
-    const authorAddress = blog.metadata.properties.authorAddress;
+    const authorAddress = blog.metadata?.properties?.authorAddress;
     return authorAddress && authorAddress.toLowerCase() === account.toLowerCase();
   }, [account, blog, isConnected]);
 
@@ -136,14 +192,36 @@ export const BlogDetailPage: React.FC = () => {
     // Show a toast or alert
     alert('Link copied to clipboard!');
   };
+  
+  // Handle retry content loading
+  const handleRetryContentLoad = async () => {
+    if (!blog) return;
+    
+    setError(null);
+    setContentLoading(true);
+    setFetchAttempted(false);
+    
+    // Extract content reference and retry
+    const contentRef = blog.contentReference || 
+                      (blog.metadata?.properties?.contentReference || '');
+    
+    if (contentRef.trim()) {
+      // Clear from cache to force fresh fetch
+      swarmContentService.removeFromCache(contentRef);
+      fetchBlogContent(contentRef);
+    } else {
+      setError('Blog content reference is missing');
+      setContentLoading(false);
+    }
+  };
 
   // If loading the blog, show skeleton
   if (loading) {
     return <BlogDetailSkeleton />;
   }
 
-  // If error, show error state
-  if (error) {
+  // If error and no blog, show error state
+  if (error && !blog) {
     return (
       <div className="blog-error-container">
         <h2>Oops! Something went wrong</h2>
@@ -167,7 +245,7 @@ export const BlogDetailPage: React.FC = () => {
   }
 
   // Get tags from metadata
-  const tags = blog.metadata.properties.tags && Array.isArray(blog.metadata.properties.tags) 
+  const tags = blog.metadata?.properties?.tags && Array.isArray(blog.metadata.properties.tags) 
     ? blog.metadata.properties.tags 
     : [];
 
@@ -180,7 +258,7 @@ export const BlogDetailPage: React.FC = () => {
           alt={blog.metadata.name} 
           onError={(e) => {
             // Fallback to default image on error
-            (e.target as HTMLImageElement).src = '/etherjot/default.png';
+            (e.target as HTMLImageElement).src = '/public/default.png';
           }}
         />
       </div>
@@ -189,7 +267,7 @@ export const BlogDetailPage: React.FC = () => {
         {/* Blog Header */}
         <div className="blog-header">
           <div className="blog-metadata">
-            {blog.metadata.properties.category && (
+            {blog.metadata?.properties?.category && (
               <span className="blog-category">
                 <Link to={`/blogs?category=${encodeURIComponent(blog.metadata.properties.category)}`}>
                   {blog.metadata.properties.category}
@@ -223,7 +301,7 @@ export const BlogDetailPage: React.FC = () => {
           
           <div className="blog-author-info">
             <div className="blog-author-address">
-              By: {formatAddress(blog.metadata.properties.authorAddress, 6, 4)}
+              By: {formatAddress(blog.metadata?.properties?.authorAddress, 6, 4)}
             </div>
             {isAuthor && (
               <div className="blog-author-badge">Author</div>
@@ -242,11 +320,26 @@ export const BlogDetailPage: React.FC = () => {
           </div>
         </div>
         
+        {/* Content Reference Debug Info (only in development) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="content-debug-info" style={{background: '#f8f8f8', padding: '10px', marginBottom: '20px', fontSize: '12px', fontFamily: 'monospace'}}>
+            <div>Content Reference: {blog.contentReference || 'Not directly available'}</div>
+            <div>Nested Reference: {blog.metadata?.properties?.contentReference || 'Not available in properties'}</div>
+          </div>
+        )}
+        
         {/* Blog Content */}
         {contentLoading ? (
           <div className="blog-content-loading">
             <div className="loading-spinner"></div>
             <p>Loading content...</p>
+          </div>
+        ) : error ? (
+          <div className="blog-content-error">
+            <p>{error}</p>
+            <button onClick={handleRetryContentLoad} className="retry-button">
+              Retry Loading Content
+            </button>
           </div>
         ) : blogContent ? (
           <div 
@@ -256,6 +349,9 @@ export const BlogDetailPage: React.FC = () => {
         ) : (
           <div className="blog-content-error">
             <p>Content could not be loaded. The content may be unavailable or has been removed from Swarm storage.</p>
+            <button onClick={handleRetryContentLoad} className="retry-button">
+              Retry Loading Content
+            </button>
           </div>
         )}
         
@@ -285,10 +381,10 @@ export const BlogDetailPage: React.FC = () => {
               <div key={relatedBlog.tokenId} className="related-blog-card">
                 <Link to={`/blogs/${relatedBlog.tokenId}`}>
                   <img 
-                    src={relatedBlog.metadata.image || '/etherjot/default.png'} 
+                    src={relatedBlog.metadata.image || '/public/default.png'} 
                     alt={relatedBlog.metadata.name}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/etherjot/default.png';
+                      (e.target as HTMLImageElement).src = '/public/default.png';
                     }}
                   />
                   <h4>{relatedBlog.metadata.name}</h4>

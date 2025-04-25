@@ -151,7 +151,7 @@ const config: AppConfig = {
   ipfsGateway: 'https://ipfs.io/ipfs/',
   
   // Default placeholder image
-  placeholderImage: '/etherjot/default.png',
+  placeholderImage: '/public/default.png',
 };
 
 export default config;

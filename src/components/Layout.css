@@ -1,10 +1,29 @@
+/* src/components/Layout.css */
 .app-container {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    background-color: #f8f8f8;
 }
 
 .content-container {
-    display: flex;
     flex-grow: 1;
+    padding: 30px 20px;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+/* For smaller screens */
+@media (max-width: 768px) {
+    .content-container {
+        padding: 20px 15px;
+    }
+}
+
+/* For mobile screens */
+@media (max-width: 480px) {
+    .content-container {
+        padding: 15px 10px;
+    }
 }

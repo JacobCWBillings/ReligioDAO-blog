@@ -1,12 +1,11 @@
+// src/App.tsx
 import React from 'react';
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import { Bee } from '@ethersphere/bee-js';
-import { Article, Asset, GlobalState, getGlobalState } from './libetherjot';
+import { GlobalState, getGlobalState } from './libetherjot';
 import { GlobalStateProvider } from './contexts/GlobalStateContext';
-import { save } from './Saver';
-import { Dates, Optional, Strings } from 'cafe-utility';
 import { WalletProvider } from './contexts/WalletContext';
 import { createReligioDAOState } from './utils/platformInitializer';
 
@@ -20,10 +19,10 @@ import { BlogEditorPage } from './pages/BlogEditorPage';
 import { BlogListPage } from './pages/viewer/BlogListPage';
 import { BlogDetailPage } from './pages/viewer/BlogDetailPage';
 import { GlobalSettingsPage } from './pages/GlobalSettingsPage';
-import { WelcomePage } from './WelcomePage';
 import { ProposalListPage } from './pages/proposal/ProposalListPage';
 import { ProposalDetailPage } from './pages/proposal/ProposalDetailPage';
 import { ProposalSubmissionPage } from './pages/proposal/ProposalSubmissionPage';
+import { Dates } from 'cafe-utility';
 
 // Define supported chain IDs for the dApp
 const SUPPORTED_CHAIN_IDS = [
@@ -88,7 +87,7 @@ export function App() {
                     
                     // Convert to GlobalState and save
                     const state = await getGlobalState(platformState);
-                    await save(state);
+                    localStorage.setItem('state', JSON.stringify(platformState));
                     setGlobalState(state);
                     
                 } catch (error) {

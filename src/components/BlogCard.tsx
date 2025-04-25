@@ -44,7 +44,7 @@ export const BlogCard: React.FC<BlogCardProps> = ({
   
   // Handle image loading errors by falling back to default image
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    e.currentTarget.src = '/etherjot/default.png';
+    e.currentTarget.src = '/public/default.png';
   };
   
   // Format the description to a limited preview
@@ -117,7 +117,7 @@ export const BlogCard: React.FC<BlogCardProps> = ({
       >
         <div className="blog-card-image-container">
           <img 
-            src={image || '/etherjot/default.png'} 
+            src={image || '/public/default.png'} 
             alt={name} 
             className="blog-card-image" 
             onError={handleImageError}

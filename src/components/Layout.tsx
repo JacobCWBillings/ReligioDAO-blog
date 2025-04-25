@@ -1,3 +1,4 @@
+// src/components/Layout.tsx
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Header } from './Header';
@@ -14,7 +15,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp }) => {
     const { 
         globalState, 
-        setGlobalState,
+        updateGlobalState,
         showAssetBrowser, 
         setShowAssetBrowser,
         showAssetPicker,
@@ -24,7 +25,6 @@ export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp })
     // Function to insert asset in the current editor context
     const insertAsset = (reference: string) => {
         // This will be called from the AssetBrowser
-        // The actual implementation will depend on how you handle the editor state
         console.log('Insert asset with reference:', reference);
         setShowAssetBrowser(false);
     };
@@ -35,7 +35,7 @@ export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp })
             {showAssetBrowser && (
                 <AssetBrowser
                     globalState={globalState}
-                    setGlobalState={setGlobalState}
+                    setGlobalState={(state) => updateGlobalState(() => state)}
                     setShowAssetBrowser={setShowAssetBrowser}
                     insertAsset={insertAsset}
                 />

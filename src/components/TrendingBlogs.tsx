@@ -142,10 +142,10 @@ export const TrendingBlogs: React.FC<TrendingBlogsProps> = ({
             <div className="trending-blog-rank">{index + 1}</div>
             <div className="trending-blog-image">
               <img 
-                src={blog.metadata.image || '/etherjot/default.png'} 
+                src={blog.metadata.image || '/public/default.png'} 
                 alt={blog.metadata.name}
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/etherjot/default.png';
+                  (e.target as HTMLImageElement).src = '/public/default.png';
                 }}
               />
               {filter === 'recent' && index === 0 && (
