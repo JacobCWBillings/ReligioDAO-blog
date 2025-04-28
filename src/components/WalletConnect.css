@@ -17,6 +17,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    white-space: nowrap;
 }
 
 .connect-button:hover {
@@ -44,6 +45,7 @@
     font-family: 'space-grotesk', monospace;
     cursor: pointer;
     transition: all 0.3s;
+    white-space: nowrap;
 }
 
 .wallet-address-button:hover {
@@ -55,8 +57,7 @@
     height: 12px;
     background-color: #4cd964;
     border-radius: 50%;
-    margin-right: 4px;
-    position: relative;
+    flex-shrink: 0;
 }
 
 /* Different colors for different wallet providers */
@@ -88,7 +89,7 @@
     z-index: 100;
 }
 
-.dropdown-address, .dropdown-network, .dropdown-wallet {
+.dropdown-address, .dropdown-network, .dropdown-wallet, .dropdown-balance {
     margin-bottom: 10px;
     display: flex;
     justify-content: space-between;
@@ -103,6 +104,11 @@
 .dropdown-value {
     font-family: 'space-grotesk', monospace;
     font-weight: 600;
+    font-size: 0.85rem;
+    max-width: 130px;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .disconnect-button {

@@ -52,12 +52,17 @@
 .header-right {
     display: flex;
     align-items: center;
-    gap: 24px;
+    /* padding-right: 12px; */
 }
 
+/* Status indicators */
 .status-indicators {
     display: flex;
-    gap: 16px;
+    flex-direction: row;
+    gap: 48px;
+    margin-bottom: 8px;
+    /* justify-content: space-between; */
+    min-width: 2px;
 }
 
 .status-indicator {

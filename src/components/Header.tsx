@@ -7,7 +7,6 @@ import './Header.css';
 import yesImage from '../assets/images/yes.png';
 import noImage from '../assets/images/no.png';
 
-
 interface HeaderProps {
     isBeeRunning: boolean;
     hasPostageStamp: boolean;
@@ -32,27 +31,27 @@ export const Header: React.FC<HeaderProps> = ({ isBeeRunning, hasPostageStamp })
             </nav>
 
             <div className="header-right">
-                <div className="status-indicators">
-                    <div className="status-indicator">
-                        <span>Bee</span>
-                        <img 
-                            className="status-image" 
-                            src={isBeeRunning ? yesImage : noImage} 
-                            alt={isBeeRunning ? 'Connected' : 'Disconnected'} 
-                        />
+                <div>
+                    <div className="status-indicators">
+                        <div className="status-indicator">
+                            <span>Bee</span>
+                            <img 
+                                className="status-image" 
+                                src={isBeeRunning ? yesImage : noImage} 
+                                alt={isBeeRunning ? 'Connected' : 'Disconnected'} 
+                            />
+                        </div>
+                        <div className="status-indicator">
+                            <span>Stamp</span>
+                            <img 
+                                className="status-image" 
+                                src={hasPostageStamp ? yesImage : noImage} 
+                                alt={hasPostageStamp ? 'Available' : 'Unavailable'} 
+                            />
+                        </div>
                     </div>
-                    <div className="status-indicator">
-                        <span>Stamp</span>
-                        <img 
-                            className="status-image" 
-                            src={hasPostageStamp ? yesImage : noImage} 
-                            alt={hasPostageStamp ? 'Available' : 'Unavailable'} 
-                        />
-                    </div>
+                    <WalletConnect />
                 </div>
-
-                {/* Wallet Connection */}
-                <WalletConnect />
             </div>
         </header>
     );
