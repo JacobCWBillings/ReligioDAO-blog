@@ -6,6 +6,7 @@ import { useWallet } from '../../contexts/WalletContext';
 import { Proposal, ProposalStatus } from '../../types/blockchain';
 import { BlogProposalMinting } from '../../components/proposal/BlogProposalMinting';
 import './ProposalDetailPage.css';
+import swarmContentService from '../../services/SwarmContentService';
 
 export const ProposalDetailPage: React.FC = () => {
   const { proposalId } = useParams<{ proposalId: string }>();
@@ -13,12 +14,22 @@ export const ProposalDetailPage: React.FC = () => {
   const { getProposalById, voteOnProposal, hasVoted, loading, error } = useProposal();
   const { account, isConnected } = useWallet();
   
+  // Basic proposal state
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [userHasVoted, setUserHasVoted] = useState<boolean>(false);
   const [isVoting, setIsVoting] = useState<boolean>(false);
   const [voteSuccess, setVoteSuccess] = useState<boolean>(false);
   const [voteError, setVoteError] = useState<string | null>(null);
+
+  // Content preview state
+  const [proposalContent, setProposalContent] = useState<string>('');
+  const [contentLoading, setContentLoading] = useState<boolean>(false);
+  const [contentError, setContentError] = useState<string | null>(null);
+  const [fetchContentAttempted, setFetchContentAttempted] = useState<boolean>(false);
   
+  // Add state for the NFT token ID after execution
+  const [nftTokenId, setNftTokenId] = useState<string | null>(null);
+
   // Load proposal data
   useEffect(() => {
     const loadProposal = async () => {
@@ -36,6 +47,45 @@ export const ProposalDetailPage: React.FC = () => {
     
     loadProposal();
   }, [proposalId, getProposalById]);
+
+  // Function to fetch content from Swarm
+  const fetchProposalContent = async (contentReference: string) => {
+    if (!contentReference || contentReference.trim() === '') {
+      setContentError('Content reference not found in proposal data');
+      return;
+    }
+    
+    // Avoid double fetch
+    if (fetchContentAttempted) return;
+    setFetchContentAttempted(true);
+    
+    try {
+      setContentLoading(true);
+      console.log(`Fetching proposal content for reference: ${contentReference}`);
+      
+      // Use standardized SwarmContentService
+      const html = await swarmContentService.getContentAsHtml(contentReference);
+      
+      if (!html || html.trim() === '') {
+        setContentError('Retrieved empty content');
+      } else {
+        setProposalContent(html);
+        setContentError(null);
+      }
+    } catch (err) {
+      console.error('Error fetching proposal content:', err);
+      setContentError(`Failed to load content: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setContentLoading(false);
+    }
+  };
+
+  // Call this when proposal loads and has a content reference
+  useEffect(() => {
+    if (proposal?.contentReference) {
+      fetchProposalContent(proposal.contentReference);
+    }
+  }, [proposal]);
   
   // Check if the user has already voted
   useEffect(() => {
@@ -83,6 +133,23 @@ export const ProposalDetailPage: React.FC = () => {
     }
   };
   
+  // Handle execution success callback from BlogProposalMinting
+  const handleExecuteSuccess = (tokenId: string | null) => {
+    console.log(`Proposal executed successfully with token ID: ${tokenId}`);
+    setNftTokenId(tokenId);
+    
+    // Refresh the proposal data after execution
+    if (proposalId) {
+      getProposalById(proposalId).then(updatedProposal => {
+        if (updatedProposal) {
+          setProposal(updatedProposal);
+        }
+      }).catch(err => {
+        console.error('Error refreshing proposal after execution:', err);
+      });
+    }
+  };
+  
   // Format date
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('en-US', {
@@ -119,6 +186,19 @@ export const ProposalDetailPage: React.FC = () => {
     const total = votesFor + votesAgainst;
     if (total === 0) return 0;
     return (votesFor / total) * 100;
+  };
+  
+  // Handle retry content loading
+  const handleRetryContentLoad = () => {
+    if (!proposal?.contentReference) return;
+    
+    setContentError(null);
+    setContentLoading(true);
+    setFetchContentAttempted(false);
+    
+    // Clear from cache to force fresh fetch
+    swarmContentService.removeFromCache(proposal.contentReference);
+    fetchProposalContent(proposal.contentReference);
   };
   
   if (loading) {
@@ -189,6 +269,40 @@ export const ProposalDetailPage: React.FC = () => {
             ))}
           </div>
         </div>
+        
+        {/* Content Preview Section */}
+        {proposal.contentReference && (
+          <div className="proposal-content-preview">
+            <h2>Blog Content Preview</h2>
+            
+            {contentLoading ? (
+              <div className="content-loading">
+                <div className="loading-spinner"></div>
+                <p>Loading content preview...</p>
+              </div>
+            ) : contentError ? (
+              <div className="content-error">
+                <p>{contentError}</p>
+                <button 
+                  onClick={handleRetryContentLoad} 
+                  className="retry-button"
+                >
+                  Retry Loading Content
+                </button>
+              </div>
+            ) : proposalContent ? (
+              <div className="proposal-preview-container">
+                <div 
+                  className="proposal-content"
+                  dangerouslySetInnerHTML={{ __html: proposalContent }}
+                />
+                <div className="preview-fade"></div>
+              </div>
+            ) : (
+              <p>No content preview available.</p>
+            )}
+          </div>
+        )}
         
         <div className="proposal-voting">
           <h2>Voting</h2>
@@ -262,10 +376,11 @@ export const ProposalDetailPage: React.FC = () => {
               proposalId={proposal.id}
               title={blogInfo.blogTitle}
               description={proposal.description}
-              contentReference={proposal.contentReference || '' }
+              contentReference={proposal.contentReference || ''}
               category={blogInfo.category}
               tags={blogInfo.tags}
               authorAddress={blogInfo.authorAddress}
+              onExecuteSuccess={handleExecuteSuccess}
             />
           </div>
         )}
@@ -273,15 +388,21 @@ export const ProposalDetailPage: React.FC = () => {
         {proposal.executed && (
           <div className="proposal-executed">
             <h2>Proposal Executed</h2>
-            <p>This proposal has been executed successfully.</p>
+            <p>This proposal has been executed successfully and minted as an NFT.</p>
             
-            {proposal.contentReference && (
-              <div className="view-blog-container">
+            <div className="view-blog-container">
+              {nftTokenId ? (
+                // Use the extracted NFT token ID when available
+                <Link to={`/blogs/${nftTokenId}`} className="view-blog-button">
+                  View Blog Post
+                </Link>
+              ) : (
+                // Fall back to proposal ID if token ID not available
                 <Link to={`/blogs/${proposal.id}`} className="view-blog-button">
                   View Blog Post
                 </Link>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </div>

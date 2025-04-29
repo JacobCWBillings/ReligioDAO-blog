@@ -173,6 +173,9 @@ export function App() {
         return <div className="app-loading">Preparing ReligioDAO Platform...</div>;
     }
 
+    // Updated routing in App.tsx
+    // This ensures clear separation between blogs and proposals
+
     // Main application with routing
     return (
         <BrowserRouter>
@@ -192,23 +195,25 @@ export function App() {
                             {/* Home Page */}
                             <Route index element={<HomePage />} />
                             
-                            {/* Blog Editor Routes */}
+                            {/* Blog Editor Routes - Entry point for all blog creation */}
                             <Route path="editor">
                                 <Route index element={<BlogEditorPage />} />
                                 <Route path=":blogId" element={<BlogEditorPage />} />
                             </Route>
                             
-                            {/* Blog Viewer Routes */}
+                            {/* Blog Viewer Routes - Only for approved/minted blogs */}
                             <Route path="blogs">
                                 <Route index element={<BlogListPage />} />
                                 <Route path=":blogId" element={<BlogDetailPage />} />
                             </Route>
                             
-                            {/* Proposal Routes */}
+                            {/* Proposal Routes - For both viewing and voting */}
                             <Route path="proposals">
                                 <Route index element={<ProposalListPage />} />
                                 <Route path=":proposalId" element={<ProposalDetailPage />} />
                             </Route>
+                            
+                            {/* Proposal Submission - Only accessible after editor */}
                             <Route path="submit-proposal" element={<ProposalSubmissionPage />} />
                             
                             {/* Settings */}

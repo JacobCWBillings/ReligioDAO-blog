@@ -1,4 +1,5 @@
 // src/components/proposal/BlogProposalMinting.tsx
+// Updated BlogProposalMinting.tsx
 import React, { useState } from 'react';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
@@ -13,6 +14,7 @@ interface BlogProposalMintingProps {
   category: string;
   tags: string[];
   authorAddress: string;
+  onExecuteSuccess?: (tokenId: string | null) => void;
 }
 
 export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
@@ -22,7 +24,8 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
   contentReference,
   category,
   tags,
-  authorAddress
+  authorAddress,
+  onExecuteSuccess
 }) => {
   const { executeProposal, loading, error } = useProposal();
   const { isConnected } = useWallet();
@@ -30,6 +33,7 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
   const [isExecuting, setIsExecuting] = useState(false);
   const [executeSuccess, setExecuteSuccess] = useState(false);
   const [executeError, setExecuteError] = useState<string | null>(null);
+  const [nftTokenId, setNftTokenId] = useState<string | null>(null);
   
   const handleExecute = async () => {
     if (!isConnected) {
@@ -44,6 +48,19 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
       const result = await executeProposal(proposalId);
       
       if (result.status === 'confirmed') {
+        // Store the token ID if it was extracted from the transaction receipt
+        if (result.tokenId) {
+          setNftTokenId(result.tokenId);
+          // Call the success callback with the token ID
+          if (onExecuteSuccess) {
+            onExecuteSuccess(result.tokenId);
+          }
+        } else {
+          // No token ID found, but execution was successful
+          if (onExecuteSuccess) {
+            onExecuteSuccess(null);
+          }
+        }
         setExecuteSuccess(true);
       } else {
         setExecuteError('Transaction failed to confirm. Please try again.');
@@ -62,7 +79,8 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
         <div className="execution-success">
           <h3>Proposal Executed Successfully!</h3>
           <p>The blog post has been minted as an NFT and is now published.</p>
-          <Link to={`/blogs/${proposalId}`} className="view-blog-button">
+          {/* Use the extracted token ID if available, otherwise fall back to proposal ID */}
+          <Link to={`/blogs/${nftTokenId || proposalId}`} className="view-blog-button">
             View Blog Post
           </Link>
         </div>

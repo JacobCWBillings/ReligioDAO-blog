@@ -11,6 +11,8 @@ import {
 } from '../../types/blockchain';
 import { ProposalService } from '../services/ProposalService';
 import { blockchainTimeToJsTime } from '../utils/blockchainUtils';
+import { extractTokenIdFromMintingReceipt, extractNFTTokenIdFromReceipt } from '../utils/transactionUtils';
+import { getContractAddresses } from '../../config';
 
 /**
  * React hook for interacting with the DAO's proposal system for blog minting
@@ -280,14 +282,15 @@ export const useProposal = () => {
 
   /**
    * Execute a proposal to mint the NFT
+   * Enhanced to extract the token ID from the transaction receipt
    * 
    * @param proposalId Proposal ID
-   * @returns Promise resolving to TransactionStatus
+   * @returns Promise resolving to TransactionStatus with optional tokenId
    */
   const executeProposal = useCallback(async (
     proposalId: string
-  ): Promise<TransactionStatus> => {
-    if (!proposalService || !account) {
+  ): Promise<TransactionStatus & { tokenId?: string }> => {
+    if (!proposalService || !account || !chainId) {
       throw new BlockchainError(
         'ProposalService not initialized or wallet not connected',
         BlockchainErrorType.ContractError
@@ -300,6 +303,28 @@ export const useProposal = () => {
     try {
       const status = await proposalService.executeProposal(proposalId);
       
+      // Extract token ID from transaction receipt if available
+      let tokenId: string | undefined = undefined;
+      if (status.status === 'confirmed' && status.receipt) {
+        // First try to extract using the specialized function for our minting module
+        tokenId = extractTokenIdFromMintingReceipt(status.receipt) ?? undefined;
+        
+        // If that doesn't work, try with the general NFT token extraction
+        if (!tokenId) {
+          // Get NFT contract address from config
+          const contractAddresses = getContractAddresses(chainId);
+          // Try to extract from Transfer event
+          tokenId = extractNFTTokenIdFromReceipt(
+            status.receipt, 
+            contractAddresses.blogNFT
+          ) ?? undefined;
+        }
+        
+        if (tokenId) {
+          console.log(`Extracted token ID from receipt: ${tokenId}`);
+        }
+      }
+      
       // Refresh the proposal if successful
       if (status.status === 'confirmed') {
         const updatedProposal = await getProposalById(proposalId);
@@ -310,7 +335,11 @@ export const useProposal = () => {
         }
       }
       
-      return status;
+      // Return both the transaction status and the token ID
+      return {
+        ...status,
+        tokenId
+      };
     } catch (err) {
       console.error('Error executing proposal:', err);
       
@@ -342,7 +371,7 @@ export const useProposal = () => {
     } finally {
       setLoading(false);
     }
-  }, [proposalService, account, getProposalById]);
+  }, [proposalService, account, chainId, getProposalById]);
 
   /**
    * Check if a user has voted on a specific proposal
@@ -390,6 +419,43 @@ export const useProposal = () => {
     }
   }, [proposalService, getProposalById]);
 
+  /**
+   * Get NFT token ID for an executed proposal
+   * Useful for linking to the newly minted blog posts
+   * 
+   * @param proposalId Proposal ID 
+   * @param executionTxHash Transaction hash of execution
+   * @returns Promise resolving to token ID or null
+   */
+  const getTokenIdForExecutedProposal = useCallback(async (
+    proposalId: string,
+    executionTxHash: string
+  ): Promise<string | null> => {
+    if (!provider || !chainId) return null;
+    
+    try {
+      const receipt = await provider.getTransactionReceipt(executionTxHash);
+      
+      if (receipt) {
+        // First try specialized extraction
+        let tokenId = extractTokenIdFromMintingReceipt(receipt);
+        
+        // If not found, try general NFT extraction
+        if (!tokenId) {
+          const contractAddresses = getContractAddresses(chainId);
+          tokenId = extractNFTTokenIdFromReceipt(receipt, contractAddresses.blogNFT);
+        }
+        
+        return tokenId;
+      }
+      
+      return null;
+    } catch (err) {
+      console.error('Error getting token ID for executed proposal:', err);
+      return null;
+    }
+  }, [provider, chainId]);
+
   return {
     proposals,
     loading,
@@ -400,7 +466,8 @@ export const useProposal = () => {
     voteOnProposal,
     executeProposal,
     hasVoted,
-    getPendingProposals
+    getPendingProposals,
+    getTokenIdForExecutedProposal
   };
 };
 

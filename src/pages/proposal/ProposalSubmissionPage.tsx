@@ -4,12 +4,17 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useWallet } from '../../contexts/WalletContext';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useGlobalState } from '../../contexts/GlobalStateContext';
+import { useProposalSubmissionGuard } from '../../hooks/useNavigationGuard';
 import { Swarm } from '../../libswarm';
 import { BlogProposal } from '../../types/blockchain';
+import { extractProposalIdFromReceipt } from '../../blockchain/utils/transactionUtils';
 import { marked } from 'marked';
 import './ProposalSubmissionPage.css';
 
 export const ProposalSubmissionPage: React.FC = () => {
+  // Apply the navigation guard
+  useProposalSubmissionGuard();
+  
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const draftId = searchParams.get('draftId');
@@ -42,41 +47,70 @@ export const ProposalSubmissionPage: React.FC = () => {
   
   const [showPreview, setShowPreview] = useState(false);
 
+  // Validate draft exists in localStorage
+  useEffect(() => {
+    if (!draftId) return;
+    
+    const draftKey = `blog-draft-${draftId}`;
+    const draftJson = localStorage.getItem(draftKey);
+    
+    if (!draftJson) {
+      console.log('Draft not found in localStorage, redirecting to editor');
+      navigate('/editor');
+      return;
+    }
+    
+    // Validate draft has required fields
+    try {
+      const draft = JSON.parse(draftJson);
+      if (!draft.contentReference || !draft.title) {
+        console.warn('Draft is missing critical fields (contentReference or title)');
+        navigate('/editor');
+        return;
+      }
+    } catch (err) {
+      console.error('Error parsing draft:', err);
+      navigate('/editor');
+      return;
+    }
+  }, [draftId, navigate]);
+
   // Load draft if draftId is provided
   useEffect(() => {
-    if (draftId) {
-      const draftJson = localStorage.getItem(`blog-draft-${draftId}`);
-      if (draftJson) {
-        try {
-          const draft = JSON.parse(draftJson);
-          setTitle(draft.title || '');
-          setContent(draft.content || '');
-          setContentReference(draft.contentReference || '');
-          setPreview(draft.preview || '');
-          setBanner(draft.banner || null);
-          setCategory(draft.category || '');
-          
-          // Handle tags - if it's an array, join it; if it's a string, use it
-          if (draft.tags) {
-            if (Array.isArray(draft.tags)) {
-              setTags(draft.tags.join(', '));
-            } else if (typeof draft.tags === 'string') {
-              setTags(draft.tags);
-            }
+    if (!draftId) return;
+    
+    const draftJson = localStorage.getItem(`blog-draft-${draftId}`);
+    if (draftJson) {
+      try {
+        const draft = JSON.parse(draftJson);
+        setTitle(draft.title || '');
+        setContent(draft.content || '');
+        setContentReference(draft.contentReference || '');
+        setPreview(draft.preview || '');
+        setBanner(draft.banner || null);
+        setCategory(draft.category || '');
+        
+        // Handle tags - if it's an array, join it; if it's a string, use it
+        if (draft.tags) {
+          if (Array.isArray(draft.tags)) {
+            setTags(draft.tags.join(', '));
+          } else if (typeof draft.tags === 'string') {
+            setTags(draft.tags);
           }
-          
-          // Generate a default description if none exists
-          if (!description) {
-            setDescription(`A blog post about ${draft.category || 'various topics'} by ${account || 'a community member'}`);
-          }
-        } catch (err) {
-          console.error('Error parsing draft:', err);
-          setUploadError('Failed to load draft. Please try again or create a new proposal.');
         }
+        
+        // Generate a default description if none exists
+        if (!description) {
+          setDescription(`A blog post about ${draft.category || 'various topics'} by ${account || 'a community member'}`);
+        }
+      } catch (err) {
+        console.error('Error parsing draft:', err);
+        setUploadError('Failed to load draft. Please create a new blog in the editor.');
+        navigate('/editor');
       }
     }
-  }, [draftId, account, description]);
-
+  }, [draftId, account, description, navigate]);
+  
   // Redirect if not connected
   useEffect(() => {
     if (!isConnected) {
@@ -104,8 +138,10 @@ export const ProposalSubmissionPage: React.FC = () => {
       errors.title = 'Title is required';
     }
     
-    if (!content.trim() && !contentReference) {
-      errors.content = 'Content is required';
+    if (!contentReference) {
+      // We now require a content reference from the draft
+      // The editor flow should have created this
+      errors.content = 'Content reference is missing. Please go back to the editor.';
     }
     
     if (!category.trim()) {
@@ -137,8 +173,6 @@ export const ProposalSubmissionPage: React.FC = () => {
       });
       
       // Upload blog content to Swarm with standardized filename
-      // Note: Despite using a filename here, the content is stored at the root 
-      // of the reference, not at a '/content.md' path
       const resource = await swarm.newResource(
         'content.md', // Standardized filename
         content,
@@ -171,9 +205,13 @@ export const ProposalSubmissionPage: React.FC = () => {
     }
     
     try {
-      // 1. Upload content to Swarm if needed
-      const reference = await uploadToSwarm();
-      setContentReference(reference);
+      // 1. Use existing content reference or upload to Swarm if needed
+      const reference = contentReference || await uploadToSwarm();
+      
+      // Set contentReference in state if it wasn't already set
+      if (!contentReference) {
+        setContentReference(reference);
+      }
       
       // 2. Create the blog proposal
       const tagsArray = tags
@@ -198,9 +236,17 @@ export const ProposalSubmissionPage: React.FC = () => {
       
       if (result.status === 'confirmed') {
         setSubmitSuccess(true);
-        // Extract proposal ID from result if available
-        // For now using a placeholder
-        setProposalId('1');
+        
+        // Extract proposal ID from transaction receipt events if available
+        if (result.receipt) {
+          const extractedProposalId = extractProposalIdFromReceipt(result.receipt);
+          if (extractedProposalId) {
+            setProposalId(extractedProposalId);
+          } else {
+            // Fallback to a default or placeholder
+            setProposalId('1');
+          }
+        }
         
         // Remove the draft from localStorage if it exists
         if (draftId) {
@@ -222,6 +268,9 @@ export const ProposalSubmissionPage: React.FC = () => {
   const viewProposal = () => {
     if (proposalId) {
       navigate(`/proposals/${proposalId}`);
+    } else {
+      // If we don't have a proposal ID, just go to the proposals list
+      navigate('/proposals');
     }
   };
 
@@ -355,6 +404,7 @@ export const ProposalSubmissionPage: React.FC = () => {
                 {contentReference && (
                   <div className="content-reference-note">
                     <p>Your content has been uploaded to Swarm with reference: {contentReference}</p>
+                    <p className="reference-notice">This reference ensures the content remains available even if Swarm postage stamps expire.</p>
                   </div>
                 )}
                 {formErrors.content && <div className="error-message">{formErrors.content}</div>}

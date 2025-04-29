@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+// src/pages/BlogEditorPage.tsx
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Dates, Optional, Strings } from 'cafe-utility';
 import { useGlobalState } from '../contexts/GlobalStateContext';
@@ -6,12 +7,12 @@ import { useWallet } from '../contexts/WalletContext';
 import { Bee } from '@ethersphere/bee-js';
 import { NewPostPage } from '../NewPostPage';
 import { Sidebar } from '../Sidebar';
-import { Asset, Article, createArticlePage, parseMarkdown } from '../libetherjot';
+import { OptionsBar } from '../OptionsBar';
+import { Article, Asset, GlobalState, createArticlePage, parseMarkdown } from '../libetherjot';
 import { parse } from 'marked';
 import { DEFAULT_CONTENT } from '../Constants';
 import './BlogEditorPage.css';
 import { AssetBrowser } from '../asset-browser/AssetBrowser';
-import EditorAssetManager from '../components/editor/EditorAssetManager';
 
 export const BlogEditorPage: React.FC = () => {
     const navigate = useNavigate();
@@ -21,8 +22,9 @@ export const BlogEditorPage: React.FC = () => {
         updateGlobalState, 
         setShowAssetBrowser, 
         showAssetBrowser,
+        showAssetPicker,
         setShowAssetPicker, 
-        setAssetPickerCallback 
+        setAssetPickerCallback
     } = useGlobalState();
     
     const { isConnected, account } = useWallet();
@@ -38,54 +40,18 @@ export const BlogEditorPage: React.FC = () => {
     const [commentsFeed, setCommentsFeed] = useState<string>(Strings.randomHex(40));
     const [editing, setEditing] = useState<Article | false>(false);
     const [loading, setLoading] = useState(false);
-    const [assetInsertionHandler, setAssetInsertionHandler] = useState<((reference: string) => void) | null>(null);
-
-    // // Redirect if not connected
-    // useEffect(() => {
-    //     if (!isConnected) {
-    //         navigate('/');
-    //     }
-    // }, [isConnected, navigate]);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
 
     // Load article if editing existing one
     useEffect(() => {
         if (blogId && globalState.articles) {
-            const article = globalState.articles.find(a => a.path.includes(blogId));
+            const article = globalState.articles.find(a => a.path === `blogs/${blogId}`);
             if (article) {
                 loadArticleForEditing(article);
             }
         }
     }, [blogId, globalState.articles]);
-
-    // Function to handle asset insertion
-    const handleInsertAsset = (reference: string) => {
-        if (assetInsertionHandler) {
-            assetInsertionHandler(reference);
-        } else {
-            // Fallback if the handler isn't set
-            const imageMarkdown = `![Image](http://localhost:1633/bytes/${reference})`;
-            setArticleContent(articleContent + '\n' + imageMarkdown);
-        }
-        
-        // Close the asset browser
-        setShowAssetBrowser(false);
-    };
-
-    // Expose asset insertion function globally for browser integration
-    useEffect(() => {
-        // @ts-ignore - Adding a property to window
-        window.insertAssetIntoEditor = (reference: string) => {
-            if (assetInsertionHandler) {
-                assetInsertionHandler(reference);
-            }
-        };
-        
-        return () => {
-            // Clean up when component unmounts
-            // @ts-ignore - Removing a property from window
-            delete window.insertAssetIntoEditor;
-        };
-    }, [assetInsertionHandler]);
 
     const loadArticleForEditing = async (article: Article) => {
         try {
@@ -109,16 +75,61 @@ export const BlogEditorPage: React.FC = () => {
             setArticleType(articleType);
         } catch (error) {
             console.error("Error loading article:", error);
-            // Handle error - maybe show notification
+            setError("Failed to load article for editing");
         }
     };
 
-    const handlePublish = async () => {
-        if (!articleTitle || !articleContent) {
+    const handleSaveDraft = async () => {
+        if (!articleTitle) {
+            setError("Please enter a title for your blog");
             return;
         }
         
         setLoading(true);
+        setError(null);
+        
+        try {
+            // Create a draft object
+            const draftId = `draft-${Date.now()}`;
+            const draft = {
+                id: draftId,
+                title: articleTitle,
+                content: articleContent,
+                preview: articleContent.substring(0, 200) + '...',
+                banner: articleBanner,
+                category: articleCategory,
+                tags: articleTags.split(',').map(tag => tag.trim()).filter(tag => tag),
+                authorAddress: account || '',
+                lastModified: Date.now(),
+                isAutoSaved: false
+            };
+            
+            // Save draft to localStorage
+            localStorage.setItem(`blog-draft-${draftId}`, JSON.stringify(draft));
+            
+            setSuccess("Draft saved successfully!");
+            setTimeout(() => setSuccess(null), 3000);
+        } catch (err) {
+            console.error('Error saving draft:', err);
+            setError('Failed to save draft');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePublish = async () => {
+        if (!articleTitle || !articleContent || !articleCategory) {
+            setError("Please fill in all required fields (title, content, category)");
+            return;
+        }
+        
+        if (!isConnected && !editing) {
+            setError("Please connect your wallet to publish a new blog");
+            return;
+        }
+        
+        setLoading(true);
+        setError(null);
         
         try {
             // Extract references to all images used in the content
@@ -177,31 +188,49 @@ export const BlogEditorPage: React.FC = () => {
                 navigate(`/blogs/${results.path}`);
             } else {
                 // For new blogs, prepare for proposal submission
-                // Upload to Swarm to get the content reference
-                const results = await createArticlePage(
-                    articleTitle,
-                    markdown,
-                    globalState,
-                    articleCategory,
-                    articleTags
-                        .split(',')
-                        .map(x => Strings.shrinkTrim(x))
-                        .filter(x => x),
-                    articleBanner || '',
-                    articleDate,
-                    commentsFeed,
-                    articleType,
-                    parse
-                );
                 
-                // Create a draft with the necessary information
+                // 1. CRITICAL: Upload to Swarm to get the content reference
+                console.log('Uploading content to Swarm...');
+                let contentReference: string;
+                
+                try {
+                    const results = await createArticlePage(
+                        articleTitle,
+                        markdown,
+                        globalState,
+                        articleCategory,
+                        articleTags
+                            .split(',')
+                            .map(x => Strings.shrinkTrim(x))
+                            .filter(x => x),
+                        articleBanner || '',
+                        articleDate,
+                        commentsFeed,
+                        articleType,
+                        parse
+                    );
+                    
+                    // Extract contentReference from results
+                    contentReference = results.markdown;
+                    
+                    if (!contentReference) {
+                        throw new Error('Failed to get content reference from Swarm upload');
+                    }
+                    
+                    console.log(`Successfully uploaded to Swarm with reference: ${contentReference}`);
+                } catch (error) {
+                    console.error('Failed to upload content to Swarm:', error);
+                    throw new Error('Content upload to Swarm failed');
+                }
+                
+                // 2. Create a draft with the necessary information
                 const draftId = `draft-${Date.now()}`;
                 const draft = {
                     id: draftId,
                     title: articleTitle,
                     content: normalizedContent, // Use the normalized content with proper references
-                    contentReference: results.markdown, // Swarm reference to the content
-                    preview: results.preview,
+                    contentReference, // Swarm reference to the content
+                    preview: articleBanner ? '' : String(markdown).substring(0, 200) + '...',
                     banner: articleBanner,
                     category: articleCategory,
                     tags: articleTags
@@ -212,15 +241,15 @@ export const BlogEditorPage: React.FC = () => {
                     lastModified: Date.now(),
                 };
                 
-                // Save the draft to local storage
+                // 3. Save the draft to local storage
                 localStorage.setItem(`blog-draft-${draftId}`, JSON.stringify(draft));
                 
-                // Navigate to the proposal submission page with the draft ID
+                // 4. Navigate to the proposal submission page with the draft ID
                 navigate(`/submit-proposal?draftId=${draftId}`);
             }
-        } catch (error) {
-            console.error("Error publishing blog:", error);
-            // Handle error - maybe show notification
+        } catch (err) {
+            console.error("Error publishing blog:", err);
+            setError(err instanceof Error ? err.message : 'Error publishing blog');
         } finally {
             setLoading(false);
         }
@@ -228,27 +257,102 @@ export const BlogEditorPage: React.FC = () => {
 
     return (
         <div className="blog-editor-page">
-            <Sidebar
-                globalState={globalState}
-                setEditing={setEditing}
-                editing={editing}
-                articleContent={articleContent}
-                setArticleContent={setArticleContent}
-                setArticleTitle={setArticleTitle}
-                setArticleBanner={setArticleBanner}
-                setArticleCategory={setArticleCategory}
-                setArticleTags={setArticleTags}
-                setArticleCommentsFeed={setCommentsFeed}
-                setShowAssetBrowser={setShowAssetBrowser}
-                setArticleType={setArticleType}
-            />
-            
-            <div className="editor-container">
-                <EditorAssetManager onInsertAsset={handleInsertAsset} />
-                <NewPostPage 
-                    articleContent={articleContent} 
+            <div className="editor-layout">
+                <Sidebar
+                    globalState={globalState}
+                    setEditing={setEditing}
+                    editing={editing}
+                    articleContent={articleContent}
                     setArticleContent={setArticleContent}
-                    onInsertAsset={(handler) => setAssetInsertionHandler(() => handler)}
+                    setArticleTitle={setArticleTitle}
+                    setArticleBanner={setArticleBanner}
+                    setArticleCategory={setArticleCategory}
+                    setArticleTags={setArticleTags}
+                    setArticleCommentsFeed={setCommentsFeed}
+                    setShowAssetBrowser={setShowAssetBrowser}
+                    setArticleType={setArticleType}
+                />
+                
+                <div className="editor-main">
+                    <div className="editor-header">
+                        <h1>{editing ? 'Edit Blog Post' : 'Create New Blog Post'}</h1>
+                        
+                        <div className="editor-toolbar">
+                            <div className="editor-fields">
+                                <div className="editor-field">
+                                    <label htmlFor="title">Title<span className="required">*</span></label>
+                                    <input 
+                                        id="title"
+                                        type="text" 
+                                        value={articleTitle} 
+                                        onChange={e => setArticleTitle(e.target.value)}
+                                        placeholder="Enter blog title"
+                                    />
+                                </div>
+                                
+                                <div className="editor-field">
+                                    <label htmlFor="category">Category<span className="required">*</span></label>
+                                    <input 
+                                        id="category"
+                                        type="text" 
+                                        value={articleCategory} 
+                                        onChange={e => setArticleCategory(e.target.value)}
+                                        placeholder="E.g. Technology, Philosophy"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="editor-actions">
+                                <button 
+                                    className="draft-button"
+                                    onClick={handleSaveDraft}
+                                    disabled={loading}
+                                >
+                                    {loading ? 'Saving...' : 'Save Draft'}
+                                </button>
+                                
+                                <button 
+                                    className="publish-button"
+                                    onClick={handlePublish}
+                                    disabled={!articleTitle || !articleCategory || loading}
+                                >
+                                    {loading ? (editing ? 'Updating...' : 'Uploading...') : (editing ? 'Update Blog' : 'Submit Proposal')}
+                                </button>
+                            </div>
+                        </div>
+                        
+                        {error && <div className="editor-error">{error}</div>}
+                        {success && <div className="editor-success">{success}</div>}
+                    </div>
+                    
+                    <div className="editor-content">
+                        <NewPostPage 
+                            articleContent={articleContent}
+                            setArticleContent={setArticleContent}
+                        />
+                    </div>
+                </div>
+                
+                <OptionsBar
+                    globalState={globalState}
+                    articleContent={articleContent}
+                    articleTitle={articleTitle}
+                    setArticleTitle={setArticleTitle}
+                    articleBanner={articleBanner}
+                    setArticleBanner={setArticleBanner}
+                    articleCategory={articleCategory}
+                    setArticleCategory={setArticleCategory}
+                    articleTags={articleTags}
+                    setArticleTags={setArticleTags}
+                    editing={editing}
+                    setEditing={setEditing}
+                    articleType={articleType}
+                    setArticleType={setArticleType}
+                    commentsFeed={commentsFeed}
+                    articleDate={articleDate}
+                    setArticleDate={setArticleDate}
+                    setShowAssetPicker={setShowAssetPicker}
+                    setAssetPickerCallback={setAssetPickerCallback}
                 />
             </div>
             
@@ -256,112 +360,11 @@ export const BlogEditorPage: React.FC = () => {
             {showAssetBrowser && (
                 <AssetBrowser
                     globalState={globalState}
-                    setGlobalState={(state) => updateGlobalState(() => state)}
-                    setShowAssetBrowser={setShowAssetBrowser}
-                    insertAsset={handleInsertAsset}
-                />
+                    setGlobalState={(state: GlobalState) => updateGlobalState(() => state)}
+                    setShowAssetBrowser={setShowAssetBrowser} insertAsset={function (reference: string): void {
+                        throw new Error('Function not implemented.');
+                    } }                />
             )}
-            
-            <div className="editor-options">
-                <div className="editor-options-content">
-                    <h2>{editing ? 'Edit Blog Post' : 'Create New Blog Post'}</h2>
-                    
-                    <div className="form-group">
-                        <label htmlFor="title">Title*</label>
-                        <input 
-                            id="title"
-                            type="text" 
-                            value={articleTitle} 
-                            onChange={e => setArticleTitle(e.target.value)} 
-                            placeholder="Enter blog title"
-                        />
-                    </div>
-                    
-                    <div className="form-group">
-                        <label htmlFor="category">Category*</label>
-                        <input 
-                            id="category"
-                            type="text" 
-                            value={articleCategory} 
-                            onChange={e => setArticleCategory(e.target.value)} 
-                            placeholder="E.g. Technology, Philosophy, Art"
-                        />
-                    </div>
-                    
-                    <div className="form-group">
-                        <label htmlFor="tags">Tags (comma separated)</label>
-                        <input 
-                            id="tags"
-                            type="text" 
-                            value={articleTags} 
-                            onChange={e => setArticleTags(e.target.value)} 
-                            placeholder="E.g. blockchain, ethics, future"
-                        />
-                    </div>
-                    
-                    <div className="form-group">
-                        <label htmlFor="date">Publication Date</label>
-                        <input 
-                            id="date"
-                            type="text" 
-                            value={articleDate} 
-                            onChange={e => setArticleDate(e.target.value)} 
-                            placeholder="YYYY-MM-DD"
-                        />
-                    </div>
-                    
-                    <div className="form-group">
-                        <label htmlFor="type">Display Type</label>
-                        <select 
-                            id="type"
-                            value={articleType}
-                            onChange={e => setArticleType(e.target.value as 'regular' | 'h1' | 'h2')}
-                        >
-                            <option value="regular">Regular</option>
-                            <option value="h1">Primary (Large)</option>
-                            <option value="h2">Secondary (Medium)</option>
-                        </select>
-                    </div>
-                    
-                    <div className="form-group">
-                        <label>Banner Image</label>
-                        {articleBanner && (
-                            <div className="image-preview">
-                                <img src={`http://localhost:1633/bytes/${articleBanner}`} alt="Banner preview" />
-                            </div>
-                        )}
-                        <button 
-                            onClick={() => {
-                                setAssetPickerCallback(() => (asset: Optional<Asset>) => {
-                                    asset.ifPresent(a => {
-                                        setArticleBanner(a.reference);
-                                    });
-                                    setShowAssetPicker(false);
-                                });
-                                setShowAssetPicker(true);
-                            }}
-                        >
-                            Select Banner Image
-                        </button>
-                    </div>
-                    
-                    <div className="form-actions">
-                        <button 
-                            className="cancel-button"
-                            onClick={() => navigate(-1)}
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            className="publish-button"
-                            onClick={handlePublish}
-                            disabled={!articleTitle || !articleCategory || loading}
-                        >
-                            {loading ? 'Saving...' : editing ? 'Update Blog' : 'Submit Proposal'}
-                        </button>
-                    </div>
-                </div>
-            </div>
         </div>
     );
 };

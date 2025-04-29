@@ -124,3 +124,35 @@ export const BlogListSkeleton: React.FC = () => {
     </div>
   );
 };
+
+
+export const ProposalListSkeleton: React.FC = () => {
+  return (
+    <div className="proposal-skeleton">
+      {Array(3).fill(0).map((_, index) => (
+        <div key={index} className="proposal-card-skeleton">
+          <div className="proposal-header-skeleton">
+            <div className="proposal-title-skeleton"></div>
+            <div className="proposal-status-skeleton"></div>
+          </div>
+          <div className="proposal-description-skeleton">
+            <div className="skeleton-line"></div>
+            <div className="skeleton-line"></div>
+            <div className="skeleton-line" style={{ width: '70%' }}></div>
+          </div>
+          <div className="vote-progress-skeleton">
+            <div className="progress-bar-skeleton"></div>
+            <div className="vote-counts-skeleton">
+              <div className="vote-count-skeleton"></div>
+              <div className="vote-count-skeleton"></div>
+            </div>
+          </div>
+          <div className="proposal-footer-skeleton">
+            <div className="proposer-skeleton"></div>
+            <div className="date-skeleton"></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
