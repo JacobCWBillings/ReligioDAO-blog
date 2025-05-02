@@ -3,9 +3,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
-import { formatAddress } from '../../blockchain/utils/walletUtils';
 import { ProposalStatus } from '../../types/blockchain';
 import { ProposalListSkeleton } from '../../components/skeletons/Skeleton';
+import { ProposalCard } from '../../components/proposal/ProposalCard';
 import './ProposalListPage.css';
 
 export const ProposalListPage: React.FC = () => {
@@ -80,7 +80,19 @@ export const ProposalListPage: React.FC = () => {
     
     // Apply status filter
     if (statusFilter !== 'all') {
-      filtered = filtered.filter(p => p.status === statusFilter);
+      filtered = filtered.filter(p => {
+        // Special handling for executed proposals
+        if (statusFilter === ProposalStatus.Executed && p.executed) {
+          return true;
+        }
+        
+        // Special handling for proposals ready for execution
+        if (statusFilter === ProposalStatus.Approved) {
+          return p.status === ProposalStatus.Approved && !p.executed;
+        }
+        
+        return p.status === statusFilter;
+      });
     }
     
     // Apply search filter
@@ -124,91 +136,13 @@ export const ProposalListPage: React.FC = () => {
     return filtered;
   }, [proposals, statusFilter, searchTerm, sortBy]);
   
-  // Format date
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-  
-  // Format relative time
-  const formatRelativeTime = (timestamp: number) => {
-    const now = Date.now();
-    const diffInSeconds = Math.floor((timestamp - now) / 1000);
+  // Determine if a proposal needs user attention
+  const needsAttention = useCallback((proposal: any): boolean => {
+    if (!isConnected || !account) return false;
     
-    if (diffInSeconds < 0) return 'Ended';
-    
-    const days = Math.floor(diffInSeconds / 86400);
-    const hours = Math.floor((diffInSeconds % 86400) / 3600);
-    const minutes = Math.floor((diffInSeconds % 3600) / 60);
-    
-    if (days > 0) {
-      return `${days}d ${hours}h remaining`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes}m remaining`;
-    } else if (minutes > 0) {
-      return `${minutes}m remaining`;
-    } else {
-      return 'Ending soon';
-    }
-  };
-  
-  // Get status display details with improved mapping
-  const getStatusDetails = (status: ProposalStatus) => {
-    switch (status) {
-      case ProposalStatus.Pending:
-        return { 
-          label: 'Pending', 
-          className: 'status-pending',
-          description: 'Awaiting voting period to begin'
-        };
-      case ProposalStatus.Active:
-        return { 
-          label: 'Active', 
-          className: 'status-active',
-          description: 'Voting is currently active'
-        };
-      case ProposalStatus.Approved:
-        return { 
-          label: 'Approved', 
-          className: 'status-approved',
-          description: 'Proposal approved, awaiting execution'
-        };
-      case ProposalStatus.Rejected:
-        return { 
-          label: 'Rejected', 
-          className: 'status-rejected',
-          description: 'Proposal was rejected by vote'
-        };
-      case ProposalStatus.Executed:
-        return { 
-          label: 'Executed', 
-          className: 'status-executed',
-          description: 'Proposal was executed successfully'
-        };
-      case ProposalStatus.Canceled:
-        return { 
-          label: 'Canceled', 
-          className: 'status-canceled',
-          description: 'Proposal was canceled'
-        };
-      default:
-        return { 
-          label: 'Unknown', 
-          className: 'status-unknown',
-          description: 'Unknown status'
-        };
-    }
-  };
-  
-  // Calculate voting progress percentage
-  const calculateProgress = (votesFor: number, votesAgainst: number) => {
-    const total = votesFor + votesAgainst;
-    if (total === 0) return 0;
-    return (votesFor / total) * 100;
-  };
+    // Highlight active proposals that user can vote on
+    return proposal.status === ProposalStatus.Active;
+  }, [isConnected, account]);
   
   // Clear all filters
   const clearFilters = () => {
@@ -230,8 +164,6 @@ export const ProposalListPage: React.FC = () => {
   // Handle search form submit
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Current implementation just prevents page reload
-    // Could add additional functionality here
   };
   
   // Handle sort change
@@ -242,14 +174,6 @@ export const ProposalListPage: React.FC = () => {
   // Navigate to submit proposal page
   const handleSubmitProposal = () => {
     navigate('/submit-proposal');
-  };
-  
-  // Determine if a proposal needs user attention
-  const needsAttention = (proposal: any): boolean => {
-    if (!isConnected || !account) return false;
-    
-    // Highlight active proposals that user can vote on
-    return proposal.status === ProposalStatus.Active;
   };
 
   return (
@@ -353,7 +277,7 @@ export const ProposalListPage: React.FC = () => {
             </div>
             <div className="stat-item">
               <span className="stat-value">
-                {proposals.filter(p => p.status === ProposalStatus.Executed).length}
+                {proposals.filter(p => p.executed).length}
               </span>
               <span className="stat-label">Executed</span>
             </div>
@@ -378,7 +302,7 @@ export const ProposalListPage: React.FC = () => {
               <div className="filter-summary">
                 <p>
                   Showing {filteredProposals.length} {filteredProposals.length === 1 ? 'proposal' : 'proposals'}
-                  {statusFilter !== 'all' ? ` with status "${getStatusDetails(statusFilter as ProposalStatus).label}"` : ''}
+                  {statusFilter !== 'all' ? ` with status "${statusFilter}"` : ''}
                   {searchTerm ? ` matching "${searchTerm}"` : ''}
                 </p>
                 {(statusFilter !== 'all' || searchTerm) && (
@@ -389,73 +313,14 @@ export const ProposalListPage: React.FC = () => {
               </div>
               
               <div className="proposals-container">
-                {filteredProposals.map((proposal) => {
-                  const statusDetails = getStatusDetails(proposal.status);
-                  const progressPercentage = calculateProgress(proposal.votesFor, proposal.votesAgainst);
-                  const attention = needsAttention(proposal);
-                  
-                  return (
-                    <Link 
-                      to={`/proposals/${proposal.id}`} 
-                      key={proposal.id}
-                      className={`proposal-card ${attention ? 'needs-attention' : ''}`}
-                    >
-                      <div className="proposal-header">
-                        <h2 className="proposal-title">{proposal.title}</h2>
-                        <span className={`proposal-status ${statusDetails.className}`}>
-                          {statusDetails.label}
-                        </span>
-                      </div>
-                      
-                      <p className="proposal-description">
-                        {proposal.description.length > 150 
-                          ? `${proposal.description.substring(0, 150)}...` 
-                          : proposal.description}
-                      </p>
-                      
-                      {(proposal.status === ProposalStatus.Active || 
-                        proposal.status === ProposalStatus.Approved || 
-                        proposal.status === ProposalStatus.Rejected) && (
-                        <div className="vote-progress">
-                          <div className="vote-progress-bar" style={{ width: `${progressPercentage}%` }}></div>
-                          <div className="vote-counts">
-                            <span className="for">For: {proposal.votesFor}</span>
-                            <span className="progress-percent">{progressPercentage.toFixed(1)}%</span>
-                            <span className="against">Against: {proposal.votesAgainst}</span>
-                          </div>
-                        </div>
-                      )}
-                      
-                      <div className="proposal-footer">
-                        <div className="proposal-meta">
-                          <span className="proposer">
-                            By: {formatAddress(proposal.proposer, 6, 4)}
-                          </span>
-                          <span className="proposal-date">
-                            Created: {formatDate(proposal.createdAt)}
-                          </span>
-                          {proposal.status === ProposalStatus.Active && (
-                            <span className="voting-ends">
-                              {formatRelativeTime(proposal.votingEnds)}
-                            </span>
-                          )}
-                        </div>
-                        
-                        {proposal.status === ProposalStatus.Active && (
-                          <div className="card-action-hint">
-                            Click to vote
-                          </div>
-                        )}
-                        
-                        {proposal.status === ProposalStatus.Approved && !proposal.executed && (
-                          <div className="card-action-hint">
-                            Ready for execution
-                          </div>
-                        )}
-                      </div>
-                    </Link>
-                  );
-                })}
+                {filteredProposals.map((proposal) => (
+                  <ProposalCard
+                    key={proposal.id}
+                    proposal={proposal}
+                    showVotingProgress={true}
+                    needsAttention={needsAttention(proposal)}
+                  />
+                ))}
               </div>
             </>
           ) : (
