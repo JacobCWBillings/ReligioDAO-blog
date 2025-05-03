@@ -27,6 +27,7 @@ export const ProposalListPage: React.FC = () => {
   
   // UI state
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [downloading, setDownloading] = useState<boolean>(false);
   
   // Load proposals when component mounts
   useEffect(() => {
@@ -176,6 +177,61 @@ export const ProposalListPage: React.FC = () => {
     navigate('/submit-proposal');
   };
 
+  // Handle download proposals
+  const handleDownloadProposals = () => {
+    if (!filteredProposals.length) return;
+    
+    setDownloading(true);
+    
+    try {
+      // Format proposals for download - simplify and clean up data
+      const downloadData = filteredProposals.map(p => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        proposer: p.proposer,
+        status: p.status,
+        executed: p.executed,
+        votesFor: p.votesFor,
+        votesAgainst: p.votesAgainst,
+        createdAt: p.createdAt,
+        votingEnds: p.votingEnds,
+        contentReference: p.contentReference || null
+      }));
+      
+      // Convert to JSON string with proper formatting
+      const jsonData = JSON.stringify(downloadData, null, 2);
+      
+      // Create a blob and download link
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      // Create download element
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Generate filename with date
+      const date = new Date().toISOString().split('T')[0];
+      let filename = `religiodao-proposals-${date}`;
+      if (statusFilter !== 'all') {
+        filename += `-${statusFilter}`;
+      }
+      filename += '.json';
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Error downloading proposal data:', err);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="proposal-list-page">
       <div className="proposals-header">
@@ -258,6 +314,15 @@ export const ProposalListPage: React.FC = () => {
               disabled={refreshing || loading}
             >
               {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+            
+            <button 
+              className="download-button"
+              onClick={handleDownloadProposals}
+              disabled={downloading || loading || !filteredProposals.length}
+              title="Download proposals as JSON"
+            >
+              {downloading ? 'Downloading...' : 'Download JSON'}
             </button>
           </div>
         </div>
