@@ -33,14 +33,16 @@ export const ProposalListPage: React.FC = () => {
   useEffect(() => {
     const loadProposals = async () => {
       try {
-        await getAllProposals();
+        if (isConnected) {
+          await getAllProposals();
+        }
       } catch (err) {
         console.error('Error loading proposals:', err);
       }
     };
     
     loadProposals();
-  }, [getAllProposals]);
+  }, [getAllProposals, isConnected]);
   
   // Update URL search params when filters change
   useEffect(() => {
@@ -185,19 +187,21 @@ export const ProposalListPage: React.FC = () => {
     
     try {
       // Format proposals for download - simplify and clean up data
-      const downloadData = filteredProposals.map(p => ({
-        id: p.id,
-        title: p.title,
-        description: p.description,
-        proposer: p.proposer,
-        status: p.status,
-        executed: p.executed,
-        votesFor: p.votesFor,
-        votesAgainst: p.votesAgainst,
-        createdAt: p.createdAt,
-        votingEnds: p.votingEnds,
-        contentReference: p.contentReference || null
-      }));
+      // const downloadData = filteredProposals.map(p => ({
+      //   id: p.id,
+      //   title: p.title,
+      //   description: p.description,
+      //   proposer: p.proposer,
+      //   status: p.status,
+      //   executed: p.executed,
+      //   votesFor: p.votesFor,
+      //   votesAgainst: p.votesAgainst,
+      //   createdAt: p.createdAt,
+      //   votingEnds: p.votingEnds,
+      //   contentReference: p.contentReference || null
+      // }));
+
+      const downloadData = proposals
       
       // Convert to JSON string with proper formatting
       const jsonData = JSON.stringify(downloadData, null, 2);
