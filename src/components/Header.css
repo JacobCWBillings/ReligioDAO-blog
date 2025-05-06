@@ -1,11 +1,16 @@
+/* src/components/Header.css */
 .app-header {
-    background-color: #e8e8e8;
+    background-color: #fff;
     display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    padding: 16px;
-    height: 10vh;
+    padding: 16px 24px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    height: auto;
 }
 
 .header-left {
@@ -21,62 +26,75 @@
 .logo-link h1 {
     margin: 0;
     font-size: 1.5rem;
+    font-weight: 700;
+    color: #ff8a00;
 }
 
 .header-nav {
     display: flex;
-    gap: 20px;
+    gap: 24px;
 }
 
 .header-nav a {
     text-decoration: none;
-    color: #111;
+    color: #333;
     padding: 8px 12px;
     border-radius: 4px;
-    transition: background-color 0.3s ease;
+    transition: all 0.3s ease;
+    font-weight: 500;
 }
 
 .header-nav a:hover {
-    background-color: #ddd;
+    background-color: rgba(255, 138, 0, 0.1);
+    color: #ff8a00;
 }
 
 .header-right {
     display: flex;
-    flex-direction: row;
     align-items: center;
-    gap: 16px;
+    /* padding-right: 12px; */
 }
 
-.header-right > div {
+/* Status indicators */
+.status-indicators {
     display: flex;
     flex-direction: row;
-    gap: 8px;
-    align-items: center;
+    gap: 48px;
+    margin-bottom: 8px;
+    /* justify-content: space-between; */
+    min-width: 2px;
 }
 
-.header-right > div > input {
-    font-family: monospace;
-    width: 64ch;
-}
-
-.wallet-info {
+.status-indicator {
     display: flex;
-    flex-direction: row;
     align-items: center;
     gap: 8px;
+    font-size: 0.9rem;
+    color: #666;
 }
 
-.wallet-button {
-    background-color: #ff8a00;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: background-color 0.3s ease;
+.status-image {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
 }
 
-.wallet-button:hover {
-    background-color: #ff9e2e;
+/* Responsive styles */
+@media (max-width: 768px) {
+    .app-header {
+        flex-direction: column;
+        padding: 12px;
+        gap: 12px;
+    }
+    
+    .header-nav {
+        width: 100%;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    .header-right {
+        width: 100%;
+        justify-content: center;
+    }
 }

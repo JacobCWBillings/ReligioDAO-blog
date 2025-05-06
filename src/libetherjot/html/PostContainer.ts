@@ -1,6 +1,7 @@
 import { Arrays } from 'cafe-utility'
 import { Article, GlobalState } from '../engine/GlobalState'
 import { createPost } from './Post'
+import defaultImage from '../../assets/images/default.jpg'
 
 export function createPostContainer(globalState: GlobalState, depth: number, filter?: string): string {
     if (filter) {
@@ -85,7 +86,7 @@ function buildArticle(
         x.tags,
         x.createdAt,
         x.path,
-        x.banner || 'default.png',
+        x.banner || defaultImage,
         as,
         depth
     )

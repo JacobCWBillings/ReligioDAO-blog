@@ -1,41 +1,101 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+// src/pages/proposal/ProposalListPage.tsx
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
 import { ProposalStatus } from '../../types/blockchain';
+import { ProposalListSkeleton } from '../../components/skeletons/Skeleton';
+import { ProposalCard } from '../../components/proposal/ProposalCard';
 import './ProposalListPage.css';
 
 export const ProposalListPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { proposals, getAllProposals, loading, error } = useProposal();
-  const { isConnected } = useWallet();
+  const { isConnected, account } = useWallet();
   
   // State for filtering
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [sortBy, setSortBy] = useState<string>('newest');
+  const [statusFilter, setStatusFilter] = useState<string>(
+    searchParams.get('status') || 'all'
+  );
+  const [searchTerm, setSearchTerm] = useState<string>(
+    searchParams.get('search') || ''
+  );
+  const [sortBy, setSortBy] = useState<string>(
+    searchParams.get('sort') || 'newest'
+  );
+  
+  // UI state
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [downloading, setDownloading] = useState<boolean>(false);
   
   // Load proposals when component mounts
   useEffect(() => {
     const loadProposals = async () => {
       try {
-        await getAllProposals();
+        if (isConnected) {
+          await getAllProposals();
+        }
       } catch (err) {
         console.error('Error loading proposals:', err);
       }
     };
     
     loadProposals();
-  }, [getAllProposals]);
+  }, [getAllProposals, isConnected]);
+  
+  // Update URL search params when filters change
+  useEffect(() => {
+    const newParams = new URLSearchParams();
+    
+    if (statusFilter !== 'all') {
+      newParams.set('status', statusFilter);
+    }
+    
+    if (searchTerm) {
+      newParams.set('search', searchTerm);
+    }
+    
+    if (sortBy !== 'newest') {
+      newParams.set('sort', sortBy);
+    }
+    
+    setSearchParams(newParams, { replace: true });
+  }, [statusFilter, searchTerm, sortBy, setSearchParams]);
+  
+  // Handle refresh
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await getAllProposals();
+    } catch (err) {
+      console.error('Error refreshing proposals:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   
   // Filter and sort proposals
-  const getFilteredProposals = useCallback(() => {
+  const filteredProposals = useMemo(() => {
     if (!proposals) return [];
     
     let filtered = [...proposals];
     
     // Apply status filter
     if (statusFilter !== 'all') {
-      filtered = filtered.filter(p => p.status === statusFilter);
+      filtered = filtered.filter(p => {
+        // Special handling for executed proposals
+        if (statusFilter === ProposalStatus.Executed && p.executed) {
+          return true;
+        }
+        
+        // Special handling for proposals ready for execution
+        if (statusFilter === ProposalStatus.Approved) {
+          return p.status === ProposalStatus.Approved && !p.executed;
+        }
+        
+        return p.status === statusFilter;
+      });
     }
     
     // Apply search filter
@@ -43,57 +103,49 @@ export const ProposalListPage: React.FC = () => {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(p => 
         p.title.toLowerCase().includes(term) || 
-        p.description.toLowerCase().includes(term)
+        p.description.toLowerCase().includes(term) ||
+        p.proposer.toLowerCase().includes(term)
       );
     }
     
     // Apply sorting
-    if (sortBy === 'newest') {
-      filtered.sort((a, b) => b.createdAt - a.createdAt);
-    } else if (sortBy === 'oldest') {
-      filtered.sort((a, b) => a.createdAt - b.createdAt);
-    } else if (sortBy === 'mostVotes') {
-      filtered.sort((a, b) => (b.votesFor + b.votesAgainst) - (a.votesFor + a.votesAgainst));
+    switch (sortBy) {
+      case 'newest':
+        filtered.sort((a, b) => b.createdAt - a.createdAt);
+        break;
+      case 'oldest':
+        filtered.sort((a, b) => a.createdAt - b.createdAt);
+        break;
+      case 'mostVotes':
+        filtered.sort((a, b) => (b.votesFor + b.votesAgainst) - (a.votesFor + a.votesAgainst));
+        break;
+      case 'endingSoon':
+        filtered.sort((a, b) => {
+          // Only sort active proposals by end time
+          if (a.status === ProposalStatus.Active && b.status === ProposalStatus.Active) {
+            return a.votingEnds - b.votingEnds;
+          }
+          // If one is active and the other isn't, prioritize active
+          if (a.status === ProposalStatus.Active) return -1;
+          if (b.status === ProposalStatus.Active) return 1;
+          // Default to newest
+          return b.createdAt - a.createdAt;
+        });
+        break;
+      default:
+        filtered.sort((a, b) => b.createdAt - a.createdAt);
     }
     
     return filtered;
   }, [proposals, statusFilter, searchTerm, sortBy]);
   
-  // Format date
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-  
-  // Get status display details
-  const getStatusDetails = (status: ProposalStatus) => {
-    switch (status) {
-      case ProposalStatus.Pending:
-        return { label: 'Pending', className: 'status-pending' };
-      case ProposalStatus.Active:
-        return { label: 'Voting Active', className: 'status-active' };
-      case ProposalStatus.Approved:
-        return { label: 'Approved', className: 'status-approved' };
-      case ProposalStatus.Rejected:
-        return { label: 'Rejected', className: 'status-rejected' };
-      case ProposalStatus.Executed:
-        return { label: 'Executed', className: 'status-executed' };
-      case ProposalStatus.Canceled:
-        return { label: 'Canceled', className: 'status-canceled' };
-      default:
-        return { label: 'Unknown', className: 'status-unknown' };
-    }
-  };
-  
-  // Calculate voting progress percentage
-  const calculateProgress = (votesFor: number, votesAgainst: number) => {
-    const total = votesFor + votesAgainst;
-    if (total === 0) return 0;
-    return (votesFor / total) * 100;
-  };
+  // Determine if a proposal needs user attention
+  const needsAttention = useCallback((proposal: any): boolean => {
+    if (!isConnected || !account) return false;
+    
+    // Highlight active proposals that user can vote on
+    return proposal.status === ProposalStatus.Active;
+  }, [isConnected, account]);
   
   // Clear all filters
   const clearFilters = () => {
@@ -102,63 +154,151 @@ export const ProposalListPage: React.FC = () => {
     setSortBy('newest');
   };
   
-  // Get filtered proposals
-  const filteredProposals = getFilteredProposals();
+  // Handle status filter click
+  const handleStatusFilter = (status: string) => {
+    setStatusFilter(status);
+  };
+  
+  // Handle search input
+  const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  };
+  
+  // Handle search form submit
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+  };
+  
+  // Handle sort change
+  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSortBy(e.target.value);
+  };
+  
+  // Navigate to submit proposal page
+  const handleSubmitProposal = () => {
+    navigate('/submit-proposal');
+  };
+
+  // Handle download proposals
+  const handleDownloadProposals = () => {
+    if (!filteredProposals.length) return;
+    
+    setDownloading(true);
+    
+    try {
+      // Format proposals for download - simplify and clean up data
+      const downloadData = filteredProposals.map(p => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        proposer: p.proposer,
+        status: p.status,
+        executed: p.executed,
+        votesFor: p.votesFor,
+        votesAgainst: p.votesAgainst,
+        createdAt: p.createdAt,
+        votingEnds: p.votingEnds,
+        contentReference: p.contentReference || null
+      }));
+      
+      // Convert to JSON string with proper formatting
+      const jsonData = JSON.stringify(downloadData, null, 2);
+      
+      // Create a blob and download link
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      // Create download element
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Generate filename with date
+      const date = new Date().toISOString().split('T')[0];
+      let filename = `religiodao-proposals-${date}`;
+      if (statusFilter !== 'all') {
+        filename += `-${statusFilter}`;
+      }
+      filename += '.json';
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Error downloading proposal data:', err);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  // Add a description caption to executed proposals
+  const getExecutedDescription = () => {
+    return "Proposals have been executed and processed by the DAO.";
+  };
 
   return (
     <div className="proposal-list-page">
       <div className="proposals-header">
         <h1>Governance Proposals</h1>
-        <p>View and vote on blog proposals from the ReligioDAO community</p>
+        <p>Review and vote on blog submissions from the ReligioDAO community</p>
       </div>
       
       <div className="filter-section">
         <div className="search-box">
-          <input
-            type="text"
-            placeholder="Search proposals..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+          <form onSubmit={handleSearchSubmit}>
+            <input
+              type="text"
+              placeholder="Search proposals..."
+              value={searchTerm}
+              onChange={handleSearchInput}
+              aria-label="Search proposals"
+            />
+            <button type="submit" className="search-button">
+              <span className="search-icon">🔍</span>
+            </button>
+          </form>
         </div>
         
         <div className="filter-controls">
           <div className="status-filters">
             <button 
               className={`status-filter ${statusFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setStatusFilter('all')}
+              onClick={() => handleStatusFilter('all')}
             >
               All
             </button>
             <button 
-              className={`status-filter ${statusFilter === ProposalStatus.Pending ? 'active' : ''}`}
-              onClick={() => setStatusFilter(ProposalStatus.Pending)}
-            >
-              Pending
-            </button>
-            <button 
               className={`status-filter ${statusFilter === ProposalStatus.Active ? 'active' : ''}`}
-              onClick={() => setStatusFilter(ProposalStatus.Active)}
+              onClick={() => handleStatusFilter(ProposalStatus.Active)}
             >
               Active
             </button>
             <button 
+              className={`status-filter ${statusFilter === ProposalStatus.Pending ? 'active' : ''}`}
+              onClick={() => handleStatusFilter(ProposalStatus.Pending)}
+            >
+              Pending
+            </button>
+            <button 
               className={`status-filter ${statusFilter === ProposalStatus.Approved ? 'active' : ''}`}
-              onClick={() => setStatusFilter(ProposalStatus.Approved)}
+              onClick={() => handleStatusFilter(ProposalStatus.Approved)}
             >
               Approved
             </button>
             <button 
-              className={`status-filter ${statusFilter === ProposalStatus.Rejected ? 'active' : ''}`}
-              onClick={() => setStatusFilter(ProposalStatus.Rejected)}
-            >
-              Rejected
-            </button>
-            <button 
               className={`status-filter ${statusFilter === ProposalStatus.Executed ? 'active' : ''}`}
-              onClick={() => setStatusFilter(ProposalStatus.Executed)}
+              onClick={() => handleStatusFilter(ProposalStatus.Executed)}
             >
               Executed
+            </button>
+            <button 
+              className={`status-filter ${statusFilter === ProposalStatus.Rejected ? 'active' : ''}`}
+              onClick={() => handleStatusFilter(ProposalStatus.Rejected)}
+            >
+              Rejected
             </button>
           </div>
           
@@ -167,105 +307,130 @@ export const ProposalListPage: React.FC = () => {
             <select 
               id="sort-select" 
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
+              onChange={handleSortChange}
             >
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
               <option value="mostVotes">Most votes</option>
+              <option value="endingSoon">Ending soon</option>
             </select>
+            
+            <button 
+              className="refresh-button"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+            
+            <button 
+              className="download-button"
+              onClick={handleDownloadProposals}
+              disabled={downloading || loading || !filteredProposals.length}
+              title="Download proposals as JSON"
+            >
+              {downloading ? 'Downloading...' : 'Download JSON'}
+            </button>
           </div>
         </div>
+        
+        {/* Stats summary */}
+        {proposals && proposals.length > 0 && (
+          <div className="proposal-stats">
+            <div className="stat-item">
+              <span className="stat-value">{proposals.length}</span>
+              <span className="stat-label">Total Proposals</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-value">
+                {proposals.filter(p => p.status === ProposalStatus.Active).length}
+              </span>
+              <span className="stat-label">Active Votes</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-value">
+                {proposals.filter(p => p.executed).length}
+              </span>
+              <span className="stat-label">Executed</span>
+            </div>
+          </div>
+        )}
+        
+        {/* Add description for Executed filter when selected */}
+        {statusFilter === ProposalStatus.Executed && (
+          <div className="filter-description">
+            <p>{getExecutedDescription()}</p>
+          </div>
+        )}
       </div>
       
-      {loading ? (
-        <div className="loading-indicator">Loading proposals...</div>
+      {loading && !refreshing ? (
+        <ProposalListSkeleton />
       ) : error ? (
         <div className="error-message">
-          <p>Error loading proposals: {error.message}</p>
-          <button onClick={() => getAllProposals()} className="retry-button">
+          <h3>Error Loading Proposals</h3>
+          <p>{error.message}</p>
+          <button onClick={handleRefresh} className="retry-button">
             Try Again
           </button>
         </div>
       ) : (
         <>
           {filteredProposals.length > 0 ? (
-            <div className="proposals-container">
-              {filteredProposals.map((proposal) => {
-                const statusDetails = getStatusDetails(proposal.status);
-                const progressPercentage = calculateProgress(proposal.votesFor, proposal.votesAgainst);
-                
-                return (
-                  <Link 
-                    to={`/proposals/${proposal.id}`} 
+            <>
+              <div className="filter-summary">
+                <p>
+                  Showing {filteredProposals.length} {filteredProposals.length === 1 ? 'proposal' : 'proposals'}
+                  {statusFilter !== 'all' ? ` with status "${statusFilter}"` : ''}
+                  {searchTerm ? ` matching "${searchTerm}"` : ''}
+                </p>
+                {(statusFilter !== 'all' || searchTerm) && (
+                  <button className="clear-filters-button" onClick={clearFilters}>
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+              
+              <div className="proposals-container">
+                {filteredProposals.map((proposal) => (
+                  <ProposalCard
                     key={proposal.id}
-                    className="proposal-card"
-                  >
-                    <div className="proposal-header">
-                      <h2 className="proposal-title">{proposal.title}</h2>
-                      <span className={`proposal-status ${statusDetails.className}`}>
-                        {statusDetails.label}
-                      </span>
-                    </div>
-                    
-                    <p className="proposal-description">
-                      {proposal.description.length > 150 
-                        ? `${proposal.description.substring(0, 150)}...` 
-                        : proposal.description}
-                    </p>
-                    
-                    {(proposal.status === ProposalStatus.Active || 
-                      proposal.status === ProposalStatus.Approved || 
-                      proposal.status === ProposalStatus.Rejected) && (
-                      <div className="vote-progress">
-                        <div className="vote-progress-bar" style={{ width: `${progressPercentage}%` }}></div>
-                        <div className="vote-counts">
-                          <span className="for">For: {proposal.votesFor}</span>
-                          <span className="progress-percent">{progressPercentage.toFixed(1)}%</span>
-                          <span className="against">Against: {proposal.votesAgainst}</span>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="proposal-footer">
-                      <div className="proposal-meta">
-                        <span className="proposer">
-                          By: {proposal.proposer.substring(0, 6)}...{proposal.proposer.substring(38)}
-                        </span>
-                        <span className="proposal-date">
-                          Created: {formatDate(proposal.createdAt)}
-                        </span>
-                        {proposal.votingEnds > Date.now() ? (
-                          <span className="voting-ends">
-                            Voting ends: {formatDate(proposal.votingEnds)}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+                    proposal={proposal}
+                    showVotingProgress={true}
+                    needsAttention={needsAttention(proposal)}
+                    // Note: No blog post link props are passed
+                  />
+                ))}
+              </div>
+            </>
           ) : (
             <div className="no-proposals">
-              <p>No proposals found matching your criteria.</p>
-              {(statusFilter !== 'all' || searchTerm) && (
-                <button 
-                  className="clear-filters-button"
-                  onClick={clearFilters}
-                >
-                  Clear Filters
-                </button>
+              <h3>No Proposals Found</h3>
+              {(statusFilter !== 'all' || searchTerm) ? (
+                <>
+                  <p>No proposals match your current filters.</p>
+                  <button className="clear-filters-button" onClick={clearFilters}>
+                    Clear Filters
+                  </button>
+                </>
+              ) : (
+                <p>There are no proposals in the system yet. Be the first to submit one!</p>
               )}
             </div>
           )}
         </>
       )}
       
-      {isConnected && (
+      {isConnected ? (
         <div className="proposal-actions">
-          <Link to="/submit-proposal" className="submit-proposal-button">
+          <button onClick={handleSubmitProposal} className="submit-proposal-button">
             Submit New Proposal
-          </Link>
+          </button>
+        </div>
+      ) : (
+        <div className="connect-wallet-cta">
+          <h3>Want to participate?</h3>
+          <p>Connect your wallet to submit and vote on proposals.</p>
         </div>
       )}
     </div>

@@ -1,9 +1,12 @@
+// src/components/Layout.tsx
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Header } from './Header';
 import { AssetBrowser } from '../asset-browser/AssetBrowser';
 import { AssetPicker } from '../asset-browser/AssetPicker';
 import { useGlobalState } from '../contexts/GlobalStateContext';
+import { useWallet } from '../contexts/WalletContext';
+import { BeeWarningBanner } from './BeeWarningBanner';
 import './Layout.css';
 
 interface LayoutProps {
@@ -14,17 +17,18 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp }) => {
     const { 
         globalState, 
-        setGlobalState,
+        updateGlobalState,
         showAssetBrowser, 
         setShowAssetBrowser,
         showAssetPicker,
         assetPickerCallback
     } = useGlobalState();
+    
+    const { isConnected } = useWallet(); // Add this to check wallet connection
 
     // Function to insert asset in the current editor context
     const insertAsset = (reference: string) => {
         // This will be called from the AssetBrowser
-        // The actual implementation will depend on how you handle the editor state
         console.log('Insert asset with reference:', reference);
         setShowAssetBrowser(false);
     };
@@ -35,7 +39,7 @@ export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp })
             {showAssetBrowser && (
                 <AssetBrowser
                     globalState={globalState}
-                    setGlobalState={setGlobalState}
+                    setGlobalState={(state) => updateGlobalState(() => state)}
                     setShowAssetBrowser={setShowAssetBrowser}
                     insertAsset={insertAsset}
                 />
@@ -53,6 +57,14 @@ export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp })
                 isBeeRunning={isBeeRunning} 
                 hasPostageStamp={hasPostageStamp}
             />
+            
+            {/* Show warning only to connected users who need to interact with Swarm */}
+            {isConnected && (!isBeeRunning || !hasPostageStamp) && (
+                <BeeWarningBanner 
+                    isBeeRunning={isBeeRunning} 
+                    hasPostageStamp={hasPostageStamp} 
+                />
+            )}
             
             <main className="content-container">
                 <Outlet />

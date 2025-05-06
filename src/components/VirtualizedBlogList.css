@@ -1,0 +1,68 @@
+/* src/components/VirtualizedBlogList.css */
+.virtualized-blog-container {
+    width: 100%;
+    overflow-y: auto;
+    position: relative;
+    /* Smoother scrolling for better UX */
+    scroll-behavior: smooth;
+    /* Enable GPU acceleration for smoother scrolling */
+    transform: translateZ(0);
+  }
+  
+  .virtualized-blog-content {
+    position: relative;
+    width: 100%;
+  }
+  
+  .virtualized-blog-item {
+    padding: 10px;
+    box-sizing: border-box;
+  }
+  
+  .virtualized-loading-indicator {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 20px;
+    text-align: center;
+    background-color: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(5px);
+    border-radius: 0 0 8px 8px;
+  }
+  
+  .virtualized-loading-indicator .loading-spinner {
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    border: 3px solid rgba(255, 138, 0, 0.3);
+    border-radius: 50%;
+    border-top-color: #ff8a00;
+    animation: spin 1s linear infinite;
+    margin-bottom: 8px;
+  }
+  
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  
+  /* Custom scrollbar for better UI */
+  .virtualized-blog-container::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .virtualized-blog-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+  
+  .virtualized-blog-container::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 4px;
+  }
+  
+  .virtualized-blog-container::-webkit-scrollbar-thumb:hover {
+    background: #ff8a00;
+  }

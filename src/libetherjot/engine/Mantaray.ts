@@ -5,6 +5,8 @@ import { createStyle } from '../html/Style'
 import { createFrontPage } from '../page/FrontPage'
 import { GlobalState } from './GlobalState'
 import { createArticleSlug } from './Utility'
+import defaultImage from '../../assets/images/default.jpg'
+
 
 export async function recreateMantaray(globalState: GlobalState): Promise<void> {
     const collection = await globalState.swarm.newCollection()
@@ -21,7 +23,7 @@ export async function recreateMantaray(globalState: GlobalState): Promise<void> 
         await globalState.swarm.newRawData(createArticleFontData(), 'font/ttf')
     )
     await collection.addRawData('style.css', await globalState.swarm.newRawData(createStyle(), 'text/css'))
-    await collection.addRawData('default.png', await globalState.swarm.newRawData(createDefaultImage(), 'image/png'))
+    await collection.addRawData(defaultImage, await globalState.swarm.newRawData(createDefaultImage(), 'image/png'))
     await collection.addRawData('favicon.png', await globalState.swarm.newRawData(createFavicon(), 'image/png'))
     await collection.addRawData('/', await createFrontPage(globalState))
     await collection.addRawData('index.html', await createFrontPage(globalState))

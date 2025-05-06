@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 // import QRC721Plus from './blockchain/abis/QRC721Plus.json';
 // import GeneralDAOVoting from './blockchain/abis/GeneralDAOVoting.json';
 // import NFTMintingModulePlus from './blockchain/abis/NFTMintingModulePlus.json';
+import defaultImage from './assets/images/default.jpg'
 
 // Constants for voting parameters
 export const FIVE_PERCENTAGE = '50000000000000000000000000';
@@ -35,6 +36,7 @@ interface NetworkConfig {
     generalDAOVoting: string; // Voting contract
     nftMintingModule: string; // NFTMintingModulePlus address
   };
+  votingSituationName?: string;
 }
 
 /**
@@ -77,10 +79,11 @@ const config: AppConfig = {
       rpcUrl: 'https://rpc.qtestnet.org',
       blockExplorer: 'https://explorer.qtestnet.org',
       contracts: {
-        blogNFT: '0x2cd51Ea55E4B10AD0A75CCfe44974e05ED881B87', // Replace with actual QRC721Plus contract address
-        generalDAOVoting: '0x9b1Ab43e9d948358c93C6B89BEBD84434f112Af5', // Q Testnet voting contract
-        nftMintingModule: '0x5d897fF501a9d322ae6c0d37a6b267B7bdaF719f', // NFT minting module on Q Testnet
+        blogNFT: '0x48380b647EF3D35acba895699f46802a525A3233', // QRC721Plus contract address
+        generalDAOVoting: '0x0905589827E3860F22aB6D689572dd5ADa90f642', // Q Testnet voting contract
+        nftMintingModule: '0x2cd51Ea55E4B10AD0A75CCfe44974e05ED881B87', // NFT minting module on Q Testnet
       },
+      votingSituationName: 'BlogRitual Voting'
     },
     
     // Q Mainnet
@@ -94,6 +97,7 @@ const config: AppConfig = {
         generalDAOVoting: '0x536061A4A6633d5A1AF99DE29B7cE82439e1e5c0', // Q Mainnet voting contract
         nftMintingModule: '0xc6E9F942fA51921e21eaE4DcF859944719D90A63', // NFT minting module on Q Mainnet
       },
+      votingSituationName: 'None Voting'
     },
     
     // Q Devnet
@@ -107,6 +111,7 @@ const config: AppConfig = {
         generalDAOVoting: '0x536061A4A6633d5A1AF99DE29B7cE82439e1e5c0', // Q Devnet voting contract
         nftMintingModule: '0xAD92dbbe4709C64EBF9fB0b62720E15A33A2e426', // NFT minting module on Q Devnet
       },
+      votingSituationName: 'None Voting'
     },
     
     // Gnosis Chain (previously xDai)
@@ -147,7 +152,7 @@ const config: AppConfig = {
   ipfsGateway: 'https://ipfs.io/ipfs/',
   
   // Default placeholder image
-  placeholderImage: '/etherjot/default.png',
+  placeholderImage: defaultImage,
 };
 
 export default config;
@@ -200,8 +205,8 @@ export const walletConnectionInfo = Object.values(config.networks)
       rpcUrl: network.rpcUrl,
       explorerUrl: network.blockExplorer,
       nativeCurrency: {
-        name: network.chainId >= 35441 && network.chainId <= 35443 ? 'Q' : 'ETH',
-        symbol: network.chainId >= 35441 && network.chainId <= 35443 ? 'Q' : 'ETH',
+        name: network.chainId >= 35441 && network.chainId <= 35443 ? 'Q' : 'QGov',
+        symbol: network.chainId >= 35441 && network.chainId <= 35443 ? 'Q' : 'QGov',
         decimals: 18,
       }
     };
@@ -219,6 +224,12 @@ export const getCurrentNetworkConfig = (chainId?: number): NetworkConfig => {
 export const getContractAddresses = (chainId?: number) => {
   const network = getCurrentNetworkConfig(chainId);
   return network.contracts;
+};
+
+// Helper function to get votin situation name
+export const getVotingSituationName = (chainId?: number) => {
+  const network = getCurrentNetworkConfig(chainId);
+  return network.votingSituationName;
 };
 
 // Helper function to get Swarm gateway URL

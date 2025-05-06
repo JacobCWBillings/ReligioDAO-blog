@@ -1,12 +1,11 @@
+// src/App.tsx
 import React from 'react';
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import { Bee } from '@ethersphere/bee-js';
-import { Article, Asset, GlobalState, getGlobalState } from './libetherjot';
+import { GlobalState, getGlobalState } from './libetherjot';
 import { GlobalStateProvider } from './contexts/GlobalStateContext';
-import { save } from './Saver';
-import { Dates, Optional, Strings } from 'cafe-utility';
 import { WalletProvider } from './contexts/WalletContext';
 import { createReligioDAOState } from './utils/platformInitializer';
 
@@ -16,14 +15,14 @@ import { Layout } from './components/Layout';
 
 // Pages
 import { HomePage } from './pages/HomePage';
-import { BlogEditorPage } from './pages/BlogEditorPage';
+import { EditorPage } from './EditorPage';
 import { BlogListPage } from './pages/viewer/BlogListPage';
 import { BlogDetailPage } from './pages/viewer/BlogDetailPage';
 import { GlobalSettingsPage } from './pages/GlobalSettingsPage';
-import { WelcomePage } from './WelcomePage';
 import { ProposalListPage } from './pages/proposal/ProposalListPage';
 import { ProposalDetailPage } from './pages/proposal/ProposalDetailPage';
 import { ProposalSubmissionPage } from './pages/proposal/ProposalSubmissionPage';
+import { Dates } from 'cafe-utility';
 
 // Define supported chain IDs for the dApp
 const SUPPORTED_CHAIN_IDS = [
@@ -88,7 +87,7 @@ export function App() {
                     
                     // Convert to GlobalState and save
                     const state = await getGlobalState(platformState);
-                    await save(state);
+                    localStorage.setItem('state', JSON.stringify(platformState));
                     setGlobalState(state);
                     
                 } catch (error) {
@@ -174,51 +173,56 @@ export function App() {
         return <div className="app-loading">Preparing ReligioDAO Platform...</div>;
     }
 
+    // Updated routing in App.tsx
+    // This ensures clear separation between blogs and proposals
+
     // Main application with routing
     return (
         <BrowserRouter>
             {/* Wrap application with enhanced WalletProvider with supported chain IDs */}
             <WalletProvider supportedChainIds={SUPPORTED_CHAIN_IDS}>
                 <GlobalStateProvider initialState={globalState} setGlobalState={setGlobalState}>
-                    <Routes>
-                        <Route
-                            path="/"
-                            element={
-                                <Layout 
-                                    isBeeRunning={isBeeRunning} 
-                                    hasPostageStamp={hasPostageStamp} 
-                                />
-                            }
-                        >
-                            {/* Home Page */}
-                            <Route index element={<HomePage />} />
-                            
-                            {/* Blog Editor Routes */}
-                            <Route path="editor">
-                                <Route index element={<BlogEditorPage />} />
-                                <Route path=":blogId" element={<BlogEditorPage />} />
-                            </Route>
-                            
-                            {/* Blog Viewer Routes */}
-                            <Route path="blogs">
-                                <Route index element={<BlogListPage />} />
-                                <Route path=":blogId" element={<BlogDetailPage />} />
-                            </Route>
-                            
-                            {/* Proposal Routes */}
-                            <Route path="proposals">
-                                <Route index element={<ProposalListPage />} />
-                                <Route path=":proposalId" element={<ProposalDetailPage />} />
-                            </Route>
-                            <Route path="submit-proposal" element={<ProposalSubmissionPage />} />
-                            
-                            {/* Settings */}
-                            <Route path="settings" element={<GlobalSettingsPage />} />
-                            
-                            {/* 404 Fallback */}
-                            <Route path="*" element={<Navigate to="/" replace />} />
+                <Routes>
+                    <Route
+                        path="/"
+                        element={
+                            <Layout 
+                                isBeeRunning={isBeeRunning} 
+                                hasPostageStamp={hasPostageStamp} 
+                            />
+                        }
+                    >
+                        {/* Make BlogListPage the landing page */}
+                        <Route index element={<BlogListPage />} />
+                        
+                        {/* Move HomePage to a different route */}
+                        <Route path="home" element={<HomePage />} />
+                        
+                        {/* Other routes remain the same */}
+                        <Route path="editor">
+                            <Route index element={<EditorPage mode="standard" />} />
+                            <Route path=":blogId" element={<EditorPage mode="standard" />} />
                         </Route>
-                    </Routes>
+                        
+                        <Route path="proposal-editor" element={<EditorPage mode="proposal" />} />
+                        
+                        <Route path="blogs">
+                            <Route index element={<BlogListPage />} />
+                            <Route path=":blogId" element={<BlogDetailPage />} />
+                        </Route>
+                        
+                        <Route path="proposals">
+                            <Route index element={<ProposalListPage />} />
+                            <Route path=":proposalId" element={<ProposalDetailPage />} />
+                        </Route>
+                        <Route path="submit-proposal" element={<ProposalSubmissionPage />} />
+                        
+                        <Route path="settings" element={<GlobalSettingsPage />} />
+                        
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Route>
+                </Routes>
+
                 </GlobalStateProvider>
             </WalletProvider>
         </BrowserRouter>

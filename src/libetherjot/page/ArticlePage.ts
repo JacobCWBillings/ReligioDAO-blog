@@ -14,6 +14,8 @@ import { createRelatedArticles } from '../html/RelatedArticles'
 import { createStyleSheet } from '../html/StyleSheet'
 import { createTagCloud } from '../html/TagCloud'
 import { createTwitterSvg } from '../html/TwitterSvg'
+import defaultImage from '../../assets/images/default.jpg'
+
 
 export async function createArticlePage(
     title: string,
@@ -40,7 +42,7 @@ export async function createArticlePage(
         : ``
     const head = `<title>${title} | ${globalState.configuration.title}</title>${createStyleSheet(2)}`
     const bannerAsset = banner ? globalState.assets.find(x => x.reference === banner) : null
-    const bannerSrc = bannerAsset ? '../'.repeat(2) + bannerAsset.name : '../'.repeat(2) + 'default.png'
+    const bannerSrc = bannerAsset ? '../'.repeat(2) + bannerAsset.name : '../'.repeat(2) + defaultImage
     const bannerHtml = `<div class="content-area onpage-banner">
                 <img src="${bannerSrc}" class="banner" />
             </div>`

@@ -1,0 +1,26 @@
+/* src/components/TextHighlighter.css */
+.text-highlight {
+    background-color: rgba(255, 138, 0, 0.3);
+    padding: 0 2px;
+    border-radius: 2px;
+    font-weight: normal;
+    color: inherit;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    transition: background-color 0.2s ease;
+  }
+  
+  .text-highlight:hover {
+    background-color: rgba(255, 138, 0, 0.5);
+  }
+  
+  .highlighted-title {
+    display: inline;
+    color: inherit;
+  }
+  
+  .highlighted-preview {
+    color: #666;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }

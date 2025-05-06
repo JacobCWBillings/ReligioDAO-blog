@@ -1,102 +1,134 @@
 /* src/components/proposal/BlogProposalMinting.css */
 .blog-proposal-minting {
+    padding: 20px;
     background-color: #f8f8f8;
     border-radius: 8px;
-    padding: 24px;
-    margin-top: 16px;
-  }
-  
-  .minting-info {
     margin-bottom: 20px;
   }
   
-  .minting-info p {
-    margin-bottom: 12px;
+  .execution-info {
+    margin-bottom: 20px;
   }
   
-  .blog-summary {
-    background-color: white;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    padding: 16px;
-    margin-top: 16px;
-  }
-  
-  .blog-summary h3 {
-    margin-top: 0;
-    margin-bottom: 16px;
-    font-size: 18px;
-    color: #333;
-  }
-  
-  .summary-item {
-    display: flex;
+  .execution-info p {
     margin-bottom: 10px;
   }
   
-  .summary-item .label {
-    font-weight: bold;
-    min-width: 100px;
-    color: #555;
+  .blog-info {
+    background-color: white;
+    padding: 15px;
+    border-radius: 6px;
+    margin: 15px 0;
+    border-left: 4px solid #ff8a00;
   }
   
-  .summary-item .value {
-    color: #333;
-    word-break: break-word;
+  .blog-info h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.2rem;
   }
   
-  .mint-button {
+  .blog-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  
+  .blog-category {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+  
+  .blog-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  
+  .blog-tag {
+    background-color: #f0f0f0;
+    color: #666;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+  
+  .blog-author {
+    font-size: 0.9rem;
+    color: #666;
+    margin-top: 10px;
+  }
+  
+  .execution-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+  
+  .execute-button {
     background-color: #ff8a00;
     color: white;
     border: none;
-    padding: 12px 24px;
+    padding: 12px 20px;
     border-radius: 6px;
     font-weight: bold;
     cursor: pointer;
-    width: 100%;
     transition: background-color 0.3s;
   }
   
-  .mint-button:hover {
+  .execute-button:hover {
     background-color: #ff9e2e;
   }
   
-  .mint-button:disabled {
+  .execute-button:disabled {
     background-color: #ccc;
     cursor: not-allowed;
   }
   
-  .mint-error {
-    margin-top: 16px;
-    color: #e53935;
-    background-color: rgba(229, 57, 53, 0.1);
-    padding: 12px;
-    border-radius: 6px;
-    font-size: 14px;
+  .execution-error {
+    color: #c62828;
+    background-color: #ffebee;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 0.9rem;
   }
   
-  .minting-success {
+  .execution-success {
     text-align: center;
-    padding: 20px 0;
-  }
-  
-  .minting-success h3 {
-    color: #2e7d32;
-    margin-bottom: 12px;
-  }
-  
-  .view-blog-button {
-    background-color: #ff8a00;
-    color: white;
-    border: none;
-    padding: 10px 20px;
+    padding: 25px;
+    background-color: #e8f5e9;
     border-radius: 6px;
-    font-weight: bold;
-    margin-top: 16px;
-    cursor: pointer;
-    transition: background-color 0.3s;
+    border-left: 4px solid #4caf50;
   }
   
-  .view-blog-button:hover {
-    background-color: #ff9e2e;
+  .execution-success h3 {
+    color: #2e7d32;
+    margin-bottom: 15px;
+  }
+  
+  .execution-success p {
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+  
+  .token-id-info {
+    margin-top: 15px;
+    background-color: #f5f5f5;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    display: inline-block;
+  }
+  
+  .token-id {
+    font-family: monospace;
+    font-weight: bold;
+    background-color: #e0f7fa;
+    padding: 3px 6px;
+    border-radius: 4px;
+    margin-left: 5px;
   }

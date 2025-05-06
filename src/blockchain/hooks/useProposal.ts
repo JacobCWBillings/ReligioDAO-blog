@@ -1,19 +1,18 @@
 // src/blockchain/hooks/useProposal.ts
 import { useState, useEffect, useCallback } from 'react';
-import { ethers } from 'ethers';
 import { useWallet } from '../../contexts/WalletContext';
 import { 
   BlogProposal, 
   Proposal, 
-  ProposalStatus, 
-  BlockchainErrorType, 
   BlockchainError, 
+  BlockchainErrorType, 
   TransactionStatus 
 } from '../../types/blockchain';
 import { ProposalService } from '../services/ProposalService';
 
 /**
- * Hook for interacting with the DAO's proposal system for blog minting
+ * React hook for interacting with the DAO's proposal system for blog minting
+ * Provides a React-friendly interface to ProposalService
  */
 export const useProposal = () => {
   const { provider, signer, account, chainId, isConnected } = useWallet();
@@ -30,7 +29,7 @@ export const useProposal = () => {
       const service = new ProposalService(provider, signer);
       
       const initService = async () => {
-        // Fix: Convert chainId which could be null to undefined
+        // Convert chainId which could be null to undefined
         await service.init(chainId ?? undefined);
         setProposalService(service);
         setError(null);
@@ -49,85 +48,34 @@ export const useProposal = () => {
 
   /**
    * Get proposal by ID
+   * 
+   * @param proposalId Proposal ID
+   * @returns Promise resolving to Proposal object or null
    */
   const getProposalById = useCallback(async (proposalId: string): Promise<Proposal | null> => {
     if (!proposalService) return null;
-
-    try {
-      const proposal = await proposalService.getProposal(proposalId);
-      
-      // Map status to enum
-      let status = ProposalStatus.Pending;
-      switch (Number(proposal.status)) {
-        case 0:
-          status = ProposalStatus.Pending;
-          break;
-        case 1:
-          status = ProposalStatus.Active;
-          break;
-        case 2:
-          status = ProposalStatus.Approved;
-          break;
-        case 3:
-          status = ProposalStatus.Rejected;
-          break;
-        case 4:
-          status = ProposalStatus.Executed;
-          break;
-        case 5:
-          status = ProposalStatus.Canceled;
-          break;
-      }
-      
-      return {
-        id: proposal.id,
-        title: proposal.title,
-        description: proposal.description,
-        proposer: proposal.proposer,
-        status,
-        createdAt: Number(proposal.createdAt) * 1000, // Convert to milliseconds
-        votingEnds: Number(proposal.votingEnds) * 1000, // Convert to milliseconds
-        votesFor: Number(proposal.votesFor),
-        votesAgainst: Number(proposal.votesAgainst),
-        executed: proposal.executed,
-        // Try to parse the callData to extract content reference
-        contentReference: extractContentReference(proposal.callData)
-      };
-    } catch (err) {
-      console.error(`Error fetching proposal ${proposalId}:`, err);
-      return null;
-    }
+    return await proposalService.getProposal(proposalId);
   }, [proposalService]);
 
   /**
    * Fetch all proposals
+   * 
+   * @returns Promise resolving to array of Proposal objects
    */
   const getAllProposals = useCallback(async (): Promise<Proposal[]> => {
     if (!proposalService) {
-      throw new BlockchainError(
-        'ProposalService not initialized',
-        BlockchainErrorType.ContractError
-      );
+      setLoading(true);
+      console.log("Proposal service not yet initialized, returning empty array");
+      return [];
     }
 
     setLoading(true);
     setError(null);
 
     try {
-      // Get all proposal IDs
-      const proposalIds = await proposalService.getAllProposalIds();
-      
-      // Create array of promises for parallel execution
-      const proposalPromises = proposalIds.map(id => getProposalById(id));
-      
-      // Wait for all promises to resolve at once
-      const allResults = await Promise.all(proposalPromises);
-      
-      // Filter out null values with type predicate
-      const validProposals = allResults.filter((proposal): proposal is Proposal => proposal !== null);
-      
-      setProposals(validProposals);
-      return validProposals;
+      const allProposals = await proposalService.getAllProposals();
+      setProposals(allProposals);
+      return allProposals;
     } catch (err) {
       console.error('Error fetching all proposals:', err);
       const blockchainError = new BlockchainError(
@@ -140,10 +88,13 @@ export const useProposal = () => {
     } finally {
       setLoading(false);
     }
-  }, [proposalService, getProposalById]);
+  }, [proposalService]);
 
   /**
    * Create a blog minting proposal
+   * 
+   * @param proposal BlogProposal object
+   * @returns Promise resolving to TransactionStatus
    */
   const createBlogProposal = useCallback(async (
     proposal: BlogProposal
@@ -169,6 +120,12 @@ export const useProposal = () => {
       return status;
     } catch (err) {
       console.error('Error creating proposal:', err);
+      
+      if (err instanceof BlockchainError) {
+        // If it's already a BlockchainError, just propagate it
+        setError(err);
+        throw err;
+      }
       
       // Determine error type
       let errorType = BlockchainErrorType.Unknown;
@@ -196,6 +153,10 @@ export const useProposal = () => {
 
   /**
    * Vote on a proposal
+   * 
+   * @param proposalId Proposal ID
+   * @param support True for supporting the proposal, false for opposing
+   * @returns Promise resolving to TransactionStatus
    */
   const voteOnProposal = useCallback(async (
     proposalId: string,
@@ -228,6 +189,12 @@ export const useProposal = () => {
     } catch (err) {
       console.error('Error voting on proposal:', err);
       
+      if (err instanceof BlockchainError) {
+        // If it's already a BlockchainError, just propagate it
+        setError(err);
+        throw err;
+      }
+      
       // Determine error type
       let errorType = BlockchainErrorType.Unknown;
       if (err instanceof Error) {
@@ -254,10 +221,13 @@ export const useProposal = () => {
 
   /**
    * Execute a proposal to mint the NFT
+   * 
+   * @param proposalId Proposal ID
+   * @returns Promise resolving to TransactionStatus with optional tokenId
    */
   const executeProposal = useCallback(async (
     proposalId: string
-  ): Promise<TransactionStatus> => {
+  ): Promise<TransactionStatus & { tokenId?: string }> => {
     if (!proposalService || !account) {
       throw new BlockchainError(
         'ProposalService not initialized or wallet not connected',
@@ -285,6 +255,12 @@ export const useProposal = () => {
     } catch (err) {
       console.error('Error executing proposal:', err);
       
+      if (err instanceof BlockchainError) {
+        // If it's already a BlockchainError, just propagate it
+        setError(err);
+        throw err;
+      }
+      
       // Determine error type
       let errorType = BlockchainErrorType.Unknown;
       if (err instanceof Error) {
@@ -311,6 +287,9 @@ export const useProposal = () => {
 
   /**
    * Check if a user has voted on a specific proposal
+   * 
+   * @param proposalId Proposal ID
+   * @returns Promise resolving to boolean indicating if the current account has voted
    */
   const hasVoted = useCallback(async (
     proposalId: string
@@ -328,36 +307,43 @@ export const useProposal = () => {
   }, [proposalService, account]);
 
   /**
-   * Extract content reference from calldata
-   * This is a helper function to try and parse the contentReference from the calldata
+   * Get all proposals that need votes
+   * 
+   * @returns Promise resolving to array of pending proposals
    */
-  const extractContentReference = (callData: string): string => {
-    try {
-      // This is a very simplified approach - in practice, you'd need to properly decode the ABI
-      // assuming mintTo(address, string) format
-      if (!callData || !callData.startsWith('0x')) return '';
-      
-      // Try to find the string data part - this is a simplification
-      const dataWithoutFunctionSelector = callData.slice(10);
-      
-      // The string data typically comes after the address (which is 32 bytes/64 hex chars)
-      // This is very approximate and might need adjustments based on actual contract encoding
-      const stringDataStart = 128; // Skip function selector (8 chars) + address param (64 chars) + offset (64 chars)
-      if (dataWithoutFunctionSelector.length < stringDataStart) return '';
-      
-      // Try to extract what might be the Swarm reference
-      const potentialReference = dataWithoutFunctionSelector.slice(stringDataStart, stringDataStart + 128);
-      
-      // Convert hex to UTF-8 string, filtering out non-printable characters
-      const bytes = ethers.toUtf8Bytes(`0x${potentialReference}`);
-      const reference = ethers.toUtf8String(bytes).replace(/[^\x20-\x7E]/g, '');
-      
-      return reference;
-    } catch (err) {
-      console.error('Error extracting content reference:', err);
-      return '';
+  const getPendingProposals = useCallback(async (): Promise<Proposal[]> => {
+    if (!proposalService) {
+      return [];
     }
-  };
+    
+    try {
+      return await proposalService.getPendingProposals();
+    } catch (err) {
+      console.error('Error getting pending proposals:', err);
+      return [];
+    }
+  }, [proposalService]);
+
+  /**
+   * Get NFT token ID for an executed proposal
+   * 
+   * @param proposalId Proposal ID
+   * @param executionTxHash Transaction hash of execution
+   * @returns Promise resolving to token ID or null
+   */
+  const getTokenIdForExecutedProposal = useCallback(async (
+    proposalId: string,
+    executionTxHash: string
+  ): Promise<string | null> => {
+    if (!proposalService) return null;
+    
+    try {
+      return await proposalService.getTokenIdForExecutedProposal(proposalId, executionTxHash);
+    } catch (err) {
+      console.error('Error getting token ID for executed proposal:', err);
+      return null;
+    }
+  }, [proposalService]);
 
   return {
     proposals,
@@ -368,7 +354,9 @@ export const useProposal = () => {
     createBlogProposal,
     voteOnProposal,
     executeProposal,
-    hasVoted
+    hasVoted,
+    getPendingProposals,
+    getTokenIdForExecutedProposal
   };
 };
 

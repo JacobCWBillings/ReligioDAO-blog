@@ -1,4 +1,5 @@
-import React from 'react';
+// src/components/WalletConnect.tsx
+import React, { useState } from 'react';
 import { useWallet } from '../contexts/WalletContext';
 import './WalletConnect.css';
 
@@ -15,6 +16,8 @@ export const WalletConnect: React.FC = () => {
         providerType,
         refreshBalance
     } = useWallet();
+    
+    const [showDropdown, setShowDropdown] = useState(false);
 
     // Format address to display only first 6 and last 4 characters
     const shortenedAddress = account ? 
@@ -31,6 +34,9 @@ export const WalletConnect: React.FC = () => {
             case 11155111: return 'Sepolia Testnet';
             case 100: return 'Gnosis Chain';
             case 31337: return 'Local Dev Chain';
+            case 35441: return 'Q Mainnet';
+            case 35442: return 'Q Devnet';
+            case 35443: return 'Q Testnet';
             default: return `Chain ID: ${chainId}`;
         }
     };
@@ -43,36 +49,62 @@ export const WalletConnect: React.FC = () => {
     // Handle disconnect button click
     const handleDisconnect = () => {
         disconnect();
+        setShowDropdown(false);
     };
     
-    // Refresh balance
-    const handleRefreshBalance = () => {
-        refreshBalance();
+    // Toggle dropdown menu
+    const toggleDropdown = () => {
+        setShowDropdown(!showDropdown);
     };
 
     return (
         <div className="wallet-connect-container">
             {isConnected ? (
                 <div className="wallet-connected" data-provider={providerType}>
-                    <div className="wallet-info">
-                        <div className="wallet-address" title={account || undefined}>
-                            {shortenedAddress}
-                        </div>
-                        <div className="wallet-network">
-                            {getChainName(chainId)}
-                        </div>
-                        {balance && (
-                            <div className="wallet-balance" onClick={handleRefreshBalance}>
-                                {parseFloat(balance).toFixed(4)} ETH
+                    <button 
+                        className="wallet-address-button"
+                        onClick={toggleDropdown}
+                        aria-expanded={showDropdown}
+                    >
+                        <div className="wallet-icon"></div>
+                        <span>{shortenedAddress}</span>
+                        <span className="dropdown-arrow">▼</span>
+                    </button>
+                    
+                    {showDropdown && (
+                        <div className="wallet-dropdown">
+                            <div className="dropdown-wallet">
+                                <span className="dropdown-label">Wallet:</span>
+                                <span className="dropdown-value">{providerType || 'Web3'}</span>
                             </div>
-                        )}
-                        <button 
-                            className="disconnect-button"
-                            onClick={handleDisconnect}
-                        >
-                            Disconnect
-                        </button>
-                    </div>
+                            
+                            <div className="dropdown-network">
+                                <span className="dropdown-label">Network:</span>
+                                <span className="dropdown-value">{getChainName(chainId)}</span>
+                            </div>
+                            
+                            <div className="dropdown-address">
+                                <span className="dropdown-label">Address:</span>
+                                <span className="dropdown-value">{shortenedAddress}</span>
+                            </div>
+                            
+                            {balance && (
+                                <div className="dropdown-balance">
+                                    <span className="dropdown-label">Balance:</span>
+                                    <span className="dropdown-value" onClick={refreshBalance}>
+                                        {parseFloat(balance).toFixed(4)} QGov
+                                    </span>
+                                </div>
+                            )}
+                            
+                            <button 
+                                className="disconnect-button"
+                                onClick={handleDisconnect}
+                            >
+                                Disconnect
+                            </button>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <button 

@@ -1,5 +1,7 @@
 import { Article, GlobalState } from '../engine/GlobalState'
 import { createPost } from './Post'
+import defaultImage from '../../assets/images/default.jpg'
+
 
 export function createRelatedArticles(
     globalState: GlobalState,
@@ -36,7 +38,7 @@ function buildArticle(
         x.tags,
         x.createdAt,
         x.path.replace('post/', ''),
-        x.banner || 'default.png',
+        x.banner || defaultImage,
         as,
         depth
     )

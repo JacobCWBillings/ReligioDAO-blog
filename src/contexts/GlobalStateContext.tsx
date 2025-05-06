@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+// src/contexts/GlobalStateContext.tsx
+import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 import { Optional } from 'cafe-utility';
 import { Article, Asset, GlobalState } from '../libetherjot';
 import { save } from '../Saver';
@@ -18,7 +19,7 @@ interface GlobalStateContextType {
 }
 
 const defaultContext: GlobalStateContextType = {
-    globalState: {} as GlobalState, // This is a placeholder, it will be replaced with actual state
+    globalState: {} as GlobalState,
     setGlobalState: () => {},
     updateGlobalState: async () => {},
     selectedArticle: null,
@@ -59,12 +60,11 @@ export const GlobalStateProvider: React.FC<GlobalStateProviderProps> = ({
     };
 
     // Helper function to update state with a function and save it
-    const updateGlobalState = async (updater: (state: GlobalState) => GlobalState) => {
-        const updatedState = updater(globalState);
+    const updateGlobalState = useCallback(async (updater: (state: GlobalState) => GlobalState) => {
+        const updatedState = updater({ ...globalState });
         setGlobalState(updatedState);
         await save(updatedState);
-        return;
-    };
+    }, [globalState, setGlobalState]);
 
     const value = {
         globalState,

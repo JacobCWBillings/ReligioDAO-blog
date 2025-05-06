@@ -1,15 +1,24 @@
-import React, { useRef, useCallback } from 'react';
+// src/NewPostPage.tsx
+import React, { useRef, useCallback, useEffect } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { insertImageAtCursor } from './utils/markdownUtils';
 import './NewPostPage.css';
 
 interface Props {
-    articleContent: string
-    setArticleContent: (content: string) => void
-    onInsertAsset?: (reference: string) => void
+    articleContent: string;
+    setArticleContent: (content: string) => void;
+    onInsertAsset?: (reference: string) => void;
+    contentReference?: string;
+    readOnly?: boolean;
 }
 
-export function NewPostPage({ articleContent, setArticleContent, onInsertAsset }: Props) {
+export function NewPostPage({ 
+    articleContent, 
+    setArticleContent, 
+    onInsertAsset,
+    contentReference,
+    readOnly = false 
+}: Props) {
     const editorRef = useRef<HTMLTextAreaElement | null>(null);
     
     // Find the textarea within the MDEditor component
@@ -49,19 +58,43 @@ export function NewPostPage({ articleContent, setArticleContent, onInsertAsset }
     }, [articleContent, setArticleContent, getTextAreaRef, onInsertAsset]);
     
     // Allow parent components to insert assets
-    React.useEffect(() => {
+    useEffect(() => {
         if (onInsertAsset) {
             onInsertAsset = handleInsertAsset;
         }
     }, [handleInsertAsset, onInsertAsset]);
 
+    // Display a read-only notice if content has already been uploaded to Swarm
+    const readOnlyNotice = contentReference && (
+        <div className="content-reference-note">
+            <p>Your content has been uploaded to Swarm with reference: {contentReference}</p>
+            <p className="reference-notice">
+                This content is now preserved in the Swarm network. To modify it, you'll need to create a new proposal.
+            </p>
+        </div>
+    );
+
+    // Define onChange handler that respects read-only mode
+    const handleChange = useCallback((value?: string) => {
+        if (!readOnly) {
+            setArticleContent(value || '');
+        }
+    }, [readOnly, setArticleContent]);
+
     return (
-        <MDEditor
-            value={articleContent}
-            onChange={x => setArticleContent(x || '')}
-            className="editor"
-            height="90vh"
-            data-color-mode="light"
-        />
+        <div className="editor-container">
+            {readOnlyNotice}
+            <MDEditor
+                value={articleContent}
+                onChange={handleChange}
+                className="editor"
+                height="90vh"
+                data-color-mode="light"
+                preview={readOnly ? 'preview' : 'edit'}
+                textareaProps={{ 
+                    readOnly: readOnly || !!contentReference,
+                }}
+            />
+        </div>
     );
 }

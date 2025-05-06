@@ -1,0 +1,230 @@
+/* src/components/proposal/ProposalCard.css */
+.proposal-card {
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    padding: 20px;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    margin-bottom: 20px;
+  }
+  
+  .proposal-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
+  }
+  
+  .proposal-card.needs-attention {
+    border-left: 4px solid #ff8a00;
+  }
+  
+  .proposal-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+  }
+  
+  .proposal-card-title-container {
+    flex: 1;
+  }
+  
+  .proposal-card-title {
+    margin: 0;
+    margin-bottom: 5px;
+    font-size: 1.2rem;
+    color: #333;
+  }
+  
+  .proposal-card-subtitle {
+    color: #666;
+    font-size: 0.9rem;
+    margin-top: 5px;
+  }
+  
+  .proposal-card-status {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-align: center;
+    white-space: nowrap;
+  }
+  
+  .status-green {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+  }
+  
+  .status-blue {
+    background-color: #e3f2fd;
+    color: #1976d2;
+  }
+  
+  .status-red {
+    background-color: #ffebee;
+    color: #c62828;
+  }
+  
+  .status-yellow {
+    background-color: #fff8e1;
+    color: #f57f17;
+  }
+  
+  .status-purple {
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+  }
+  
+  .status-gray {
+    background-color: #f5f5f5;
+    color: #757575;
+  }
+  
+  .proposal-card-metadata {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  
+  .proposal-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  
+  .proposal-card-label {
+    color: #666;
+    font-size: 0.85rem;
+  }
+  
+  .proposal-card-category {
+    font-size: 0.85rem;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .proposal-card-tags {
+    display: flex;
+    gap: 5px;
+  }
+  
+  .proposal-card-tag {
+    background-color: #f5f5f5;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+  }
+  
+  .proposal-card-voting {
+    margin: 15px 0;
+  }
+  
+  .proposal-card-quorum {
+    margin-bottom: 10px;
+  }
+  
+  .proposal-card-progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 5px;
+  }
+  
+  .proposal-card-progress-bar {
+    height: 8px;
+    background-color: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  
+  .proposal-card-progress-fill {
+    height: 100%;
+    background-color: #4caf50;
+    border-radius: 4px;
+  }
+  
+  .proposal-card-votes {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 5px;
+  }
+  
+  .proposal-card-vote {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+  }
+  
+  .proposal-card-vote-yes {
+    color: #4caf50;
+  }
+  
+  .proposal-card-vote-no {
+    color: #f44336;
+  }
+  
+  .proposal-card-footer {
+    display: flex;
+    justify-content: space-between;
+    margin-top: auto;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+    font-size: 0.85rem;
+    color: #666;
+    align-items: center;
+  }
+  
+  .proposal-card-proposer {
+    font-family: monospace;
+  }
+  
+  .proposal-card-date {
+    white-space: nowrap;
+  }
+  
+  .proposal-card-action-hint {
+    color: #ff8a00;
+    font-weight: 500;
+    font-size: 0.85rem;
+    background-color: rgba(255, 138, 0, 0.1);
+    padding: 4px 8px;
+    border-radius: 12px;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .proposal-card-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    
+    .proposal-card-status {
+      margin-top: 10px;
+      align-self: flex-start;
+    }
+    
+    .proposal-card-footer {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    
+    .proposal-card-date {
+      margin-top: 5px;
+    }
+    
+    .proposal-card-action-hint {
+      margin-top: 5px;
+      align-self: flex-start;
+    }
+  }
