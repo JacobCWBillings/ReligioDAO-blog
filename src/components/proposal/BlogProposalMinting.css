@@ -99,9 +99,10 @@
   
   .execution-success {
     text-align: center;
-    padding: 20px;
+    padding: 25px;
     background-color: #e8f5e9;
     border-radius: 6px;
+    border-left: 4px solid #4caf50;
   }
   
   .execution-success h3 {
@@ -111,19 +112,23 @@
   
   .execution-success p {
     margin-bottom: 20px;
+    line-height: 1.5;
   }
   
-  .view-blog-button {
-    display: inline-block;
-    background-color: #ff8a00;
-    color: white;
-    padding: 10px 20px;
+  .token-id-info {
+    margin-top: 15px;
+    background-color: #f5f5f5;
+    padding: 10px;
     border-radius: 6px;
-    text-decoration: none;
-    font-weight: bold;
-    transition: background-color 0.3s;
+    font-size: 0.95rem;
+    display: inline-block;
   }
   
-  .view-blog-button:hover {
-    background-color: #ff9e2e;
+  .token-id {
+    font-family: monospace;
+    font-weight: bold;
+    background-color: #e0f7fa;
+    padding: 3px 6px;
+    border-radius: 4px;
+    margin-left: 5px;
   }

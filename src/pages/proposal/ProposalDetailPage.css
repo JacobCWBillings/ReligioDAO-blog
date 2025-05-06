@@ -603,3 +603,64 @@
     display: none;
   }
 }
+
+/* Add these new styles to the end of src/pages/proposal/ProposalDetailPage.css */
+
+/* Content preview with show more/less functionality */
+.proposal-preview-container {
+  position: relative;
+  max-height: 400px;
+  overflow: hidden;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  transition: max-height 0.5s ease;
+}
+
+.proposal-preview-container.expanded {
+  max-height: none; /* Remove the height limit when expanded */
+}
+
+.proposal-content-preview {
+  padding: 20px;
+  font-family: 'FontArticle', serif;
+  line-height: 1.7;
+  color: #333;
+}
+
+.preview-fade {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background: linear-gradient(transparent, white);
+  pointer-events: none;
+}
+
+.content-toggle-button {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-top: 1px solid #eee;
+  padding: 10px;
+  text-align: center;
+  cursor: pointer;
+  font-weight: 500;
+  color: #ff8a00;
+  transition: background-color 0.3s;
+}
+
+.content-toggle-button:hover {
+  background-color: rgba(255, 255, 255, 1);
+  color: #ff9e2e;
+}
+
+.expanded .content-toggle-button {
+  position: relative;
+  margin-top: 20px;
+  border-top: none;
+  border-bottom: 1px solid #eee;
+}

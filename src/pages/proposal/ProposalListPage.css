@@ -367,3 +367,44 @@
       align-items: stretch;
     }
   }
+
+  /* Description for executed filter */
+.filter-description {
+  background-color: #f5f5f5;
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 15px;
+  text-align: center;
+}
+
+.filter-description p {
+  margin: 0;
+  color: #666;
+  font-style: italic;
+}
+
+/* Ensure proposal cards link only to proposal details */
+.proposal-card {
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Improve hover effect on proposal cards */
+.proposal-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-left: 3px solid #ff8a00;
+}
+
+/* Style for the executed status badge */
+.status-executed {
+  background-color: #e0f7fa;
+  color: #00838f;
+  position: relative;
+}
+
+/* Ensure consistent spacing within proposal cards */
+.proposal-meta {
+  margin-top: 15px;
+}

@@ -1,9 +1,7 @@
 // src/components/proposal/BlogProposalMinting.tsx
-// Updated BlogProposalMinting.tsx
 import React, { useState } from 'react';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
-import { Link } from 'react-router-dom';
 import './BlogProposalMinting.css';
 
 interface BlogProposalMintingProps {
@@ -78,17 +76,16 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
       {executeSuccess ? (
         <div className="execution-success">
           <h3>Proposal Executed Successfully!</h3>
-          <p>The blog post has been minted as an NFT and is now published.</p>
-          {/* Use the extracted token ID if available, otherwise fall back to proposal ID */}
-          <Link to={`/blogs/${nftTokenId || proposalId}`} className="view-blog-button">
-            View Blog Post
-          </Link>
+          <p>The blog content has been minted as an NFT and processed by the DAO.</p>
+          {nftTokenId && (
+            <p className="token-id-info">NFT Token ID: <span className="token-id">{nftTokenId}</span></p>
+          )}
         </div>
       ) : (
         <>
           <div className="execution-info">
             <p>This proposal has been approved and is ready to be executed.</p>
-            <p>Executing this proposal will mint an NFT for the blog and make it publicly available.</p>
+            <p>Executing this proposal will mint an NFT for the blog and complete the governance process.</p>
             
             <div className="blog-info">
               <h4>{title}</h4>

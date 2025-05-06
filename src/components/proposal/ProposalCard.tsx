@@ -1,4 +1,4 @@
-  // src/components/proposal/ProposalCard.tsx
+// src/components/proposal/ProposalCard.tsx
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Proposal, ProposalStatus } from '../../types/blockchain';
@@ -166,9 +166,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
     >
       <div className="proposal-card-header">
         <div className="proposal-card-title-container">
-          <h3 className="proposal-card-title">
-            {compact ? `Proposal ${proposal.id}` : proposal.title}
-          </h3>
+          <h3 className="proposal-card-title"></h3>
           {!compact && blogInfo.blogTitle && (
             <div className="proposal-card-subtitle">
               Blog: {blogInfo.blogTitle}
@@ -242,7 +240,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
           {formatDate(proposal.createdAt)}
         </div>
         
-        {/* Call-to-action hints based on status */}
+        {/* Call-to-action hints based on status - removed "View blog post" hint */}
         {displayStatus === ProposalStatus.Active && (
           <div className="proposal-card-action-hint">Click to vote</div>
         )}
@@ -250,11 +248,11 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
           <div className="proposal-card-action-hint">Ready to execute</div>
         )}
         {displayStatus === ProposalStatus.Executed && (
-          <div className="proposal-card-action-hint">View blog post</div>
+          <div className="proposal-card-action-hint">Proposal completed</div>
         )}
       </div>
     </Link>
   );
 };
 
-// export default ProposalCard;
+export default ProposalCard;

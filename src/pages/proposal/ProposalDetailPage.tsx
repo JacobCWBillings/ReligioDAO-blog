@@ -30,6 +30,9 @@ export const ProposalDetailPage: React.FC = () => {
   
   // Add state for the NFT token ID after execution
   const [nftTokenId, setNftTokenId] = useState<string | null>(null);
+  
+  // New state to control content expansion
+  const [showFullContent, setShowFullContent] = useState<boolean>(false);
 
   // Load proposal data
   useEffect(() => {
@@ -184,6 +187,11 @@ export const ProposalDetailPage: React.FC = () => {
     }
   };
   
+  // Toggle full content display
+  const toggleContentDisplay = () => {
+    setShowFullContent(!showFullContent);
+  };
+  
   // Calculate displayed status based on contract state and execution status
   const displayStatus = useMemo(() => {
     if (!proposal) return null;
@@ -306,7 +314,7 @@ export const ProposalDetailPage: React.FC = () => {
       <div className="proposal-header">
         <div className="proposal-status-banner">
           <div className={`proposal-status-indicator status-${statusInfo.color}`}></div>
-          <h1>{proposal.title}</h1>
+          <h1></h1>
           <div className={`proposal-status status-${statusInfo.color}`}>
             {statusInfo.label}
           </div>
@@ -361,7 +369,7 @@ export const ProposalDetailPage: React.FC = () => {
             </div>
           </div>
           
-          {/* Content Preview Section */}
+          {/* Content Preview Section - Modified with pulldown tab */}
           {proposal.contentReference && (
             <div className="proposal-section">
               <h2>Blog Content Preview</h2>
@@ -382,12 +390,18 @@ export const ProposalDetailPage: React.FC = () => {
                   </button>
                 </div>
               ) : proposalContent ? (
-                <div className="proposal-preview-container">
+                <div className={`proposal-preview-container ${showFullContent ? 'expanded' : ''}`}>
                   <div 
                     className="proposal-content-preview"
                     dangerouslySetInnerHTML={{ __html: proposalContent }}
                   />
-                  <div className="preview-fade"></div>
+                  {!showFullContent && <div className="preview-fade"></div>}
+                  <button 
+                    className="content-toggle-button"
+                    onClick={toggleContentDisplay}
+                  >
+                    {showFullContent ? 'Show Less' : 'Show More'}
+                  </button>
                 </div>
               ) : (
                 <p>No content preview available.</p>
@@ -412,27 +426,13 @@ export const ProposalDetailPage: React.FC = () => {
             </div>
           )}
           
-          {/* Executed proposal section */}
+          {/* Executed proposal section - removed view blog post buttons */}
           {proposal.executed && (
             <div className="proposal-section executed-section">
               <h2>Proposal Executed</h2>
               <div className="execution-success-message">
                 <div className="success-icon">✓</div>
                 <p>This proposal has been executed successfully and minted as an NFT.</p>
-              </div>
-              
-              <div className="view-blog-container">
-                {nftTokenId ? (
-                  // Use the extracted NFT token ID when available
-                  <Link to={`/blogs/${nftTokenId}`} className="view-blog-button">
-                    View Blog Post
-                  </Link>
-                ) : (
-                  // Fall back to proposal ID if token ID not available
-                  <Link to={`/blogs/${proposal.id}`} className="view-blog-button">
-                    View Blog Post
-                  </Link>
-                )}
               </div>
             </div>
           )}

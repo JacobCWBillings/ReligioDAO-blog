@@ -187,21 +187,19 @@ export const ProposalListPage: React.FC = () => {
     
     try {
       // Format proposals for download - simplify and clean up data
-      // const downloadData = filteredProposals.map(p => ({
-      //   id: p.id,
-      //   title: p.title,
-      //   description: p.description,
-      //   proposer: p.proposer,
-      //   status: p.status,
-      //   executed: p.executed,
-      //   votesFor: p.votesFor,
-      //   votesAgainst: p.votesAgainst,
-      //   createdAt: p.createdAt,
-      //   votingEnds: p.votingEnds,
-      //   contentReference: p.contentReference || null
-      // }));
-
-      const downloadData = proposals
+      const downloadData = filteredProposals.map(p => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        proposer: p.proposer,
+        status: p.status,
+        executed: p.executed,
+        votesFor: p.votesFor,
+        votesAgainst: p.votesAgainst,
+        createdAt: p.createdAt,
+        votingEnds: p.votingEnds,
+        contentReference: p.contentReference || null
+      }));
       
       // Convert to JSON string with proper formatting
       const jsonData = JSON.stringify(downloadData, null, 2);
@@ -234,6 +232,11 @@ export const ProposalListPage: React.FC = () => {
     } finally {
       setDownloading(false);
     }
+  };
+
+  // Add a description caption to executed proposals
+  const getExecutedDescription = () => {
+    return "Proposals have been executed and processed by the DAO.";
   };
 
   return (
@@ -352,6 +355,13 @@ export const ProposalListPage: React.FC = () => {
             </div>
           </div>
         )}
+        
+        {/* Add description for Executed filter when selected */}
+        {statusFilter === ProposalStatus.Executed && (
+          <div className="filter-description">
+            <p>{getExecutedDescription()}</p>
+          </div>
+        )}
       </div>
       
       {loading && !refreshing ? (
@@ -388,6 +398,7 @@ export const ProposalListPage: React.FC = () => {
                     proposal={proposal}
                     showVotingProgress={true}
                     needsAttention={needsAttention(proposal)}
+                    // Note: No blog post link props are passed
                   />
                 ))}
               </div>
