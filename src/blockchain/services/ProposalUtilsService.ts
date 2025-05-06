@@ -177,4 +177,48 @@ import {
   ${description}
       `.trim();
     }
+
+
+/**
+ * Check if a proposal matches the target voting situation
+ * 
+ * @param rawProposal Raw proposal data from contract
+ * @param targetVotingSituation Voting situation name from config
+ * @returns Boolean indicating if the proposal matches the target situation
+ */
+public doesProposalMatchVotingSituation(
+  rawProposal: any,
+  targetVotingSituation?: string
+): boolean {
+  // If no target voting situation is provided, accept all proposals
+  if (!targetVotingSituation) {
+    return true;
   }
+  
+  // Check if the proposal's related voting situation matches the target
+  return rawProposal.relatedVotingSituation === targetVotingSituation;
+}
+
+/**
+ * Filter an array of raw proposals by voting situation
+ * 
+ * @param rawProposals Array of raw proposals from contract
+ * @param targetVotingSituation Voting situation name from config
+ * @returns Filtered array of proposals
+ */
+public filterProposalsByVotingSituation(
+  rawProposals: any[],
+  targetVotingSituation?: string
+  ): any[] {
+    if (!targetVotingSituation) {
+      console.warn('No target voting situation provided, returning all proposals');
+      return rawProposals;
+    }
+    
+    return rawProposals.filter(proposal => 
+      this.doesProposalMatchVotingSituation(proposal, targetVotingSituation)
+    );
+  }
+}
+
+  

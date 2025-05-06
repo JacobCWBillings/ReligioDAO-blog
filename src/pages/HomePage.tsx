@@ -1,5 +1,5 @@
-// src/pages/HomePage.tsx
-import React, { useState, useEffect } from 'react';
+// Updated src/pages/HomePage.tsx
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import { useBlogNFT } from '../blockchain/hooks/useBlogNFT';
@@ -7,45 +7,48 @@ import { useProposal } from '../blockchain/hooks/useProposal';
 import { BlogCard } from '../components/BlogCard';
 import TrendingBlogs from '../components/TrendingBlogs';
 import { formatAddress } from '../blockchain/utils/walletUtils';
+import { BlogListSkeleton } from '../components/skeletons/Skeleton';
 import './HomePage.css';
 
 export const HomePage: React.FC = () => {
   const { account, isConnected, connect } = useWallet();
-  const { getRecentNFTs, totalSupply } = useBlogNFT();
-  const { getPendingProposals } = useProposal();
+  const { getRecentNFTs, totalSupply, loading: blogsLoading, error: blogsError } = useBlogNFT();
+  const { getPendingProposals, loading: proposalsLoading } = useProposal();
   
   const [recentBlogs, setRecentBlogs] = useState<any[]>([]);
   const [pendingProposals, setPendingProposals] = useState<any[]>([]);
   const [totalBlogs, setTotalBlogs] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Load recent blogs, stats, and any pending proposals needing votes
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        
-        // Get most recent 3 blogs
-        const recent = await getRecentNFTs(3);
-        setRecentBlogs(recent);
-        
-        // Get total blog count
-        setTotalBlogs(totalSupply);
-        
-        // If user is connected, get proposals needing votes
-        if (isConnected) {
-          const pending = await getPendingProposals();
-          setPendingProposals(pending);
-        }
-      } catch (err) {
-        console.error('Error loading homepage data:', err);
-      } finally {
-        setLoading(false);
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      
+      // Get most recent 3 blogs
+      const recent = await getRecentNFTs(3);
+      setRecentBlogs(recent);
+      
+      // Get total blog count
+      setTotalBlogs(totalSupply);
+      
+      // If user is connected, get proposals needing votes
+      if (isConnected) {
+        const pending = await getPendingProposals();
+        setPendingProposals(pending);
       }
-    };
-    
-    loadData();
+    } catch (err) {
+      console.error('Error loading homepage data:', err);
+      setError('Failed to load homepage data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, [getRecentNFTs, totalSupply, getPendingProposals, isConnected]);
+  
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
   
   return (
     <div className="home-page">
@@ -98,9 +101,11 @@ export const HomePage: React.FC = () => {
             </div>
             
             {loading ? (
-              <div className="loading-container">
-                <div className="loading-spinner"></div>
-                <p>Loading latest content...</p>
+              <BlogListSkeleton />
+            ) : error ? (
+              <div className="error-container">
+                <p>{error}</p>
+                <button onClick={loadData} className="retry-button">Try Again</button>
               </div>
             ) : recentBlogs.length > 0 ? (
               <div className="recent-blogs-grid">
@@ -109,7 +114,6 @@ export const HomePage: React.FC = () => {
                     key={blog.tokenId} 
                     blog={blog}
                     showRecentIndicator={true}
-                    showProposalStatus={true}
                   />
                 ))}
               </div>
@@ -224,7 +228,7 @@ export const HomePage: React.FC = () => {
             <Link to="/blogs" className="primary-button">
               Browse Blogs
             </Link>
-            <a href="https://github.com/yourusername/religiodao-blog" target="_blank" rel="noopener noreferrer" className="secondary-button">
+            <a href="https://github.com/religiodao/religiodao-blog" target="_blank" rel="noopener noreferrer" className="secondary-button">
               View Source Code
             </a>
           </div>

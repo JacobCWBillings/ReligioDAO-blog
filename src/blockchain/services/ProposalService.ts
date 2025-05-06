@@ -223,6 +223,14 @@ export class ProposalService extends BaseContractService {
     try {
       // Get proposal data from contract
       const rawProposal = await this.daoVotingService.getRawProposal(blockchainProposalId);
+      
+      // Check if the proposal matches our target voting situation
+      const votingSituation = this.daoVotingService.getVotingSituation();
+      if (!this.proposalUtils.doesProposalMatchVotingSituation(rawProposal, votingSituation)) {
+        console.log(`Proposal ${proposalId} skipped: voting situation "${rawProposal.relatedVotingSituation}" doesn't match target "${votingSituation}"`);
+        return null; // Skip proposals that don't match
+      }
+      
       const statusNum = await this.daoVotingService.getProposalStatus(blockchainProposalId);
       
       // Format proposal data

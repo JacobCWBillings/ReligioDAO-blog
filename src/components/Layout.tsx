@@ -5,6 +5,8 @@ import { Header } from './Header';
 import { AssetBrowser } from '../asset-browser/AssetBrowser';
 import { AssetPicker } from '../asset-browser/AssetPicker';
 import { useGlobalState } from '../contexts/GlobalStateContext';
+import { useWallet } from '../contexts/WalletContext';
+import { BeeWarningBanner } from './BeeWarningBanner';
 import './Layout.css';
 
 interface LayoutProps {
@@ -21,6 +23,8 @@ export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp })
         showAssetPicker,
         assetPickerCallback
     } = useGlobalState();
+    
+    const { isConnected } = useWallet(); // Add this to check wallet connection
 
     // Function to insert asset in the current editor context
     const insertAsset = (reference: string) => {
@@ -53,6 +57,14 @@ export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp })
                 isBeeRunning={isBeeRunning} 
                 hasPostageStamp={hasPostageStamp}
             />
+            
+            {/* Show warning only to connected users who need to interact with Swarm */}
+            {isConnected && (!isBeeRunning || !hasPostageStamp) && (
+                <BeeWarningBanner 
+                    isBeeRunning={isBeeRunning} 
+                    hasPostageStamp={hasPostageStamp} 
+                />
+            )}
             
             <main className="content-container">
                 <Outlet />

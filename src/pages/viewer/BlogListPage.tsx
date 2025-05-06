@@ -19,7 +19,7 @@ export const BlogListPage: React.FC = () => {
     getPopularCategories
   } = useBlogNFT();
   
-  const { isConnected } = useWallet();
+  const { isConnected, connect } = useWallet();
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -65,11 +65,14 @@ export const BlogListPage: React.FC = () => {
         sortOption
       );
       
-      setBlogs(result.items);
-      setTotalPages(Math.ceil(result.total / pageSize));
+      setBlogs(result.items || []);
+      setTotalPages(Math.ceil((result.total || 0) / pageSize));
     } catch (err) {
       console.error('Error loading blogs:', err);
       setHasError('Failed to load blogs. Please try again.');
+      // Set empty blog list on error
+      setBlogs([]);
+      setTotalPages(1);
     } finally {
       setIsLoading(false);
     }
@@ -85,9 +88,11 @@ export const BlogListPage: React.FC = () => {
     const fetchPopularCategories = async () => {
       try {
         const popular = await getPopularCategories(5);
-        setPopularCategories(popular);
+        setPopularCategories(popular || []);
       } catch (err) {
         console.error('Error getting popular categories:', err);
+        // Set empty categories on error
+        setPopularCategories([]);
       }
     };
     
@@ -157,18 +162,121 @@ export const BlogListPage: React.FC = () => {
     setShowFilters(prev => !prev);
   };
   
-  // Render loading state
-  if (loading && isLoading && currentPage === 1) {
-    return (
-      <div className="blog-list-page">
-        <div className="blogs-header">
-          <h1>Blog Posts</h1>
-          <p>Discover community-approved content</p>
+  // Render content based on current state
+  const renderContent = () => {
+    // If in loading state and it's the first page
+    if (loading && isLoading && currentPage === 1) {
+      return <BlogListSkeleton />;
+    }
+    
+    // If there's an error
+    if (hasError) {
+      return (
+        <div className="error-message">
+          <h3>Error Loading Blogs</h3>
+          <p>{hasError}</p>
+          <button onClick={loadBlogs} className="retry-button">
+            Try Again
+          </button>
         </div>
-        <BlogListSkeleton />
+      );
+    }
+    
+    // If there are blogs to display
+    if (blogs.length > 0) {
+      return (
+        <>
+          <div className="blog-count-info">
+            <p>
+              Showing {blogs.length} {blogs.length === 1 ? 'blog' : 'blogs'}
+              {totalSupply > 0 ? ` of ${totalSupply} total` : ''}
+              {Object.keys(activeFilter).length > 0 ? ' (filtered)' : ''}
+            </p>
+          </div>
+          
+          <div className="blog-grid">
+            {blogs.map(blog => (
+              <BlogCard 
+                key={blog.tokenId} 
+                blog={blog}
+                showProposalStatus={true}
+              />
+            ))}
+          </div>
+          
+          {/* Show loading indicator when fetching more blogs */}
+          {isLoading && currentPage > 1 && (
+            <div className="loading-more">
+              <div className="loading-spinner"></div>
+              <p>Loading more blogs...</p>
+            </div>
+          )}
+          
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button
+                className="pagination-button"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1 || isLoading}
+              >
+                Previous
+              </button>
+              
+              <span className="page-info">
+                Page {currentPage} of {totalPages}
+              </span>
+              
+              <button
+                className="pagination-button"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages || isLoading}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
+      );
+    }
+    
+    // If no blogs are found
+    return (
+      <div className="no-blogs">
+        <h3>{Object.keys(activeFilter).length > 0 ? 'No Blogs Found' : 'Welcome to ReligioDAO Blog'}</h3>
+        
+        {Object.keys(activeFilter).length > 0 ? (
+          <>
+            <p>No blogs match your current filters.</p>
+            <button onClick={resetFilters} className="clear-filters-button">
+              Clear Filters
+            </button>
+          </>
+        ) : (
+          <div className="welcome-content">
+            <p>This is a decentralized platform for community-approved content where members vote on blog proposals.</p>
+            <div className="platform-features">
+              <div className="feature">
+                <div className="feature-icon">🔍</div>
+                <h4>Community Curated</h4>
+                <p>Content is approved through democratic voting by DAO members</p>
+              </div>
+              <div className="feature">
+                <div className="feature-icon">🔗</div>
+                <h4>Blockchain Powered</h4>
+                <p>Content is stored on Swarm with NFT representation for permanence</p>
+              </div>
+              <div className="feature">
+                <div className="feature-icon">📝</div>
+                <h4>Submit Proposals</h4>
+                <p>Anyone can submit blog proposals for the community to review</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
-  }
+  };
   
   return (
     <div className="blog-list-page">
@@ -207,7 +315,7 @@ export const BlogListPage: React.FC = () => {
             <div className="filter-group">
               <label>Category</label>
               <div className="category-filters">
-                {categories.map(category => (
+                {categories && categories.length > 0 ? categories.map(category => (
                   <button
                     key={category}
                     className={`category-filter ${selectedCategory === category ? 'active' : ''}`}
@@ -215,7 +323,9 @@ export const BlogListPage: React.FC = () => {
                   >
                     {category}
                   </button>
-                ))}
+                )) : (
+                  <p className="no-categories">No categories available yet</p>
+                )}
               </div>
             </div>
             
@@ -228,7 +338,7 @@ export const BlogListPage: React.FC = () => {
                 className="filter-select"
               >
                 <option value="">All Tags</option>
-                {tags.map(tag => (
+                {tags && tags.length > 0 && tags.map(tag => (
                   <option key={tag} value={tag}>{tag}</option>
                 ))}
               </select>
@@ -283,99 +393,27 @@ export const BlogListPage: React.FC = () => {
         )}
       </div>
       
-      {/* Blog grid or empty state */}
-      {hasError ? (
-        <div className="error-message">
-          <h3>Error</h3>
-          <p>{hasError}</p>
-          <button onClick={loadBlogs}>Try Again</button>
-        </div>
-      ) : blogs.length > 0 ? (
-        <>
-          <div className="blog-count-info">
-            <p>
-              Showing {blogs.length} {blogs.length === 1 ? 'blog' : 'blogs'}
-              {totalSupply > 0 ? ` of ${totalSupply} total` : ''}
-              {Object.keys(activeFilter).length > 0 ? ' (filtered)' : ''}
-            </p>
-          </div>
-          
-          <div className="blog-grid">
-            {blogs.map(blog => (
-              <BlogCard 
-                key={blog.tokenId} 
-                blog={blog}
-                showProposalStatus={true}
-              />
-            ))}
-          </div>
-          
-          {/* Show loading indicator when fetching more blogs */}
-          {isLoading && currentPage > 1 && (
-            <div className="loading-more">
-              <div className="loading-spinner"></div>
-              <p>Loading more blogs...</p>
-            </div>
-          )}
-          
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="pagination">
-              <button
-                className="pagination-button"
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1 || isLoading}
-              >
-                Previous
-              </button>
-              
-              <span className="page-info">
-                Page {currentPage} of {totalPages}
-              </span>
-              
-              <button
-                className="pagination-button"
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages || isLoading}
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="no-blogs">
-          <h3>No Blogs Found</h3>
-          {Object.keys(activeFilter).length > 0 ? (
-            <>
-              <p>No blogs match your current filters.</p>
-              <button onClick={resetFilters} className="clear-filters-button">
-                Clear Filters
-              </button>
-            </>
-          ) : totalSupply === 0 ? (
-            <p>No blogs have been published yet. Be the first to contribute!</p>
-          ) : (
-            <p>Try adjusting your search or check back later for new content.</p>
-          )}
-        </div>
-      )}
+      {/* Render content based on state */}
+      {renderContent()}
       
       {/* CTA for submitting new blogs */}
-      {isConnected ? (
-        <div className="submit-blog-cta">
-          <h3>Have something to share?</h3>
-          <p>Submit your blog post to be reviewed by the ReligioDAO community.</p>
+      <div className={isConnected ? "submit-blog-cta" : "connect-wallet-cta"}>
+        <h3>{isConnected ? "Have something to share?" : "Want to contribute?"}</h3>
+        <p>
+          {isConnected 
+            ? "Submit your blog post to be reviewed by the ReligioDAO community." 
+            : "Connect your wallet to submit blog posts for community review."}
+        </p>
+        {isConnected ? (
           <Link to="/submit-proposal" className="submit-blog-button">
             Submit New Blog
           </Link>
-        </div>
-      ) : (
-        <div className="connect-wallet-cta">
-          <h3>Want to contribute?</h3>
-          <p>Connect your wallet to submit blog posts for community review.</p>
-        </div>
-      )}
+        ) : (
+          <button onClick={connect} className="connect-button">
+            Connect Wallet
+          </button>
+        )}
+      </div>
     </div>
   );
 };

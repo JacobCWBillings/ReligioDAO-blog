@@ -600,8 +600,8 @@ export const useBlogNFT = () => {
       return {
         items: [],
         total: 0,
-        page: validPage,
-        pageSize: validPageSize,
+        page: page,
+        pageSize: pageSize,
         hasMore: false
       };
     }

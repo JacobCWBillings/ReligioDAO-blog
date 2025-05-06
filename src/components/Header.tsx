@@ -24,32 +24,34 @@ export const Header: React.FC<HeaderProps> = ({ isBeeRunning, hasPostageStamp })
             </div>
 
             <nav className="header-nav">
-                <Link to="/">Home</Link>
-                <Link to="/blogs">Blogs</Link>
-                {isConnected && <Link to="/editor">Submit Blog</Link>}
+                <Link to="/">Blogs</Link>
                 <Link to="/proposals">Proposals</Link>
+                {isConnected && <Link to="/submit-proposal">Submit Blog</Link>}
             </nav>
 
             <div className="header-right">
                 <div>
-                    <div className="status-indicators">
-                        <div className="status-indicator">
-                            <span>Bee</span>
-                            <img 
-                                className="status-image" 
-                                src={isBeeRunning ? yesImage : noImage} 
-                                alt={isBeeRunning ? 'Connected' : 'Disconnected'} 
-                            />
+                    {/* Only show Bee status to connected users who might need to interact with Swarm */}
+                    {isConnected && (
+                        <div className="status-indicators">
+                            <div className="status-indicator">
+                                <span>Bee</span>
+                                <img 
+                                    className="status-image" 
+                                    src={isBeeRunning ? yesImage : noImage} 
+                                    alt={isBeeRunning ? 'Connected' : 'Disconnected'} 
+                                />
+                            </div>
+                            <div className="status-indicator">
+                                <span>Stamp</span>
+                                <img 
+                                    className="status-image" 
+                                    src={hasPostageStamp ? yesImage : noImage} 
+                                    alt={hasPostageStamp ? 'Available' : 'Unavailable'} 
+                                />
+                            </div>
                         </div>
-                        <div className="status-indicator">
-                            <span>Stamp</span>
-                            <img 
-                                className="status-image" 
-                                src={hasPostageStamp ? yesImage : noImage} 
-                                alt={hasPostageStamp ? 'Available' : 'Unavailable'} 
-                            />
-                        </div>
-                    </div>
+                    )}
                     <WalletConnect />
                 </div>
             </div>

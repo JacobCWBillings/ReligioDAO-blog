@@ -192,35 +192,33 @@ export function App() {
                             />
                         }
                     >
-                        {/* Home Page */}
-                        <Route index element={<HomePage />} />
+                        {/* Make BlogListPage the landing page */}
+                        <Route index element={<BlogListPage />} />
                         
-                        {/* Editor Routes - Consolidated */}
+                        {/* Move HomePage to a different route */}
+                        <Route path="home" element={<HomePage />} />
+                        
+                        {/* Other routes remain the same */}
                         <Route path="editor">
                             <Route index element={<EditorPage mode="standard" />} />
                             <Route path=":blogId" element={<EditorPage mode="standard" />} />
                         </Route>
                         
-                        {/* Proposal Editor Route */}
                         <Route path="proposal-editor" element={<EditorPage mode="proposal" />} />
                         
-                        {/* Blog Viewer Routes */}
                         <Route path="blogs">
                             <Route index element={<BlogListPage />} />
                             <Route path=":blogId" element={<BlogDetailPage />} />
                         </Route>
                         
-                        {/* Proposal Routes */}
                         <Route path="proposals">
                             <Route index element={<ProposalListPage />} />
                             <Route path=":proposalId" element={<ProposalDetailPage />} />
                         </Route>
                         <Route path="submit-proposal" element={<ProposalSubmissionPage />} />
                         
-                        {/* Settings */}
                         <Route path="settings" element={<GlobalSettingsPage />} />
                         
-                        {/* 404 Fallback */}
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Route>
                 </Routes>
