@@ -26,13 +26,12 @@ export const useProposal = () => {
   // Initialize ProposalService
   useEffect(() => {
     const activeProvider = provider || readOnlyProvider;
-    if (!activeProvider || !signer || !isConnected) return;
+    if (!activeProvider) return;
 
     try {
       // For write operations, we'll need the connected wallet signer
       // For read operations, the read-only signer will be sufficient
-      const activeSigner = isConnected ? signer : readOnlySigner || undefined;
-
+      const activeSigner = isConnected && signer ? signer : (readOnlySigner || undefined);
       const service = new ProposalService(activeProvider, activeSigner);
       
       const initService = async () => {
