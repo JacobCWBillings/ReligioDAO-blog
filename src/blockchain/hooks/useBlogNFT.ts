@@ -22,7 +22,7 @@ import QRC721PlusABI from '../abis/QRC721Plus.json';
  * Provides React-friendly access to reading NFT data with pagination and caching
  */
 export const useBlogNFT = () => {
-  const { provider, signer, account, chainId, isConnected } = useWallet();
+  const { provider, readOnlyProvider, signer, readOnlySigner, account, chainId, isConnected } = useWallet();
   const { getConstrainedChainId, isCorrectChain, chainError } = useChainConstraint();
   const [contract, setContract] = useState<ethers.Contract | null>(null);
   const [nfts, setNfts] = useState<BlogNFT[]>([]);
@@ -44,7 +44,9 @@ export const useBlogNFT = () => {
   
   // Initialize contract when provider is available
   useEffect(() => {
-    if (!provider) return;
+    const activeProvider = provider || readOnlyProvider;
+    
+    if (!activeProvider) return;
 
     try {
       // Use the constrained chain ID instead of the wallet's chain ID
@@ -53,7 +55,9 @@ export const useBlogNFT = () => {
       
       // For read-only operations, we can use the provider directly
       // For operations that require signing, we'll use the signer if available
-      const contractProvider = signer || provider;
+      // Use available signer - prefer connected wallet, fall back to read-only
+      const activeSigner = signer || readOnlySigner;
+      const contractProvider = activeSigner || activeProvider;
       
       const nftContract = new ethers.Contract(
         addresses.blogNFT,
@@ -76,7 +80,7 @@ export const useBlogNFT = () => {
         err instanceof Error ? err : new Error(String(err))
       ));
     }
-  }, [provider, signer, chainId, isConnected]);
+  }, [provider, readOnlyProvider, signer, chainId, isConnected]);
 
   // Function to get the total supply of NFTs
   const getTotalSupply = useCallback(async (): Promise<number> => {

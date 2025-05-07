@@ -22,6 +22,7 @@ import { GlobalSettingsPage } from './pages/GlobalSettingsPage';
 import { ProposalListPage } from './pages/proposal/ProposalListPage';
 import { ProposalDetailPage } from './pages/proposal/ProposalDetailPage';
 import { ProposalSubmissionPage } from './pages/proposal/ProposalSubmissionPage';
+import DiagnosticPage from './pages/DiagnosticPage';
 import { Dates } from 'cafe-utility';
 
 // Define supported chain IDs for the dApp
@@ -222,6 +223,9 @@ export function App() {
                         
                         {/* Settings */}
                         <Route path="settings" element={<GlobalSettingsPage />} />
+
+                        {/* Add Diagnostic Route */}
+                        <Route path="diagnostics" element={<DiagnosticPage />} />
                         
                         {/* 404 Fallback */}
                         <Route path="*" element={<Navigate to="/" replace />} />

@@ -10,10 +10,15 @@ export abstract class BaseContractService {
   protected provider: ethers.Provider;
   protected signer: ethers.Signer | null;
   protected isInitialized: boolean = false;
+  protected isRealWalletConnected: boolean = false;
 
   constructor(provider: ethers.Provider, signer?: ethers.Signer) {
     this.provider = provider;
     this.signer = signer || null;
+    
+    // Determine if we have a real wallet connected
+    // Read-only signers will not have a private key that can sign transactions
+    this.isRealWalletConnected = Boolean(signer && !(signer instanceof ethers.VoidSigner));
   }
 
   /**
@@ -114,5 +119,20 @@ export abstract class BaseContractService {
     }
     
     return BlockchainErrorType.Unknown;
+  }
+
+  // Add a method to check if we're using a real wallet
+  protected isUsingRealWallet(): boolean {
+    return this.isRealWalletConnected;
+  }
+  
+  // For methods that require a real signer, add a check
+  protected ensureRealWallet(): void {
+    if (!this.isRealWalletConnected) {
+      throw new BlockchainError(
+        'This operation requires a connected wallet',
+        BlockchainErrorType.UserRejected
+      );
+    }
   }
 }

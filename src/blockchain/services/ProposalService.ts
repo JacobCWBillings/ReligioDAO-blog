@@ -64,6 +64,7 @@ export class ProposalService extends BaseContractService {
     proposal: BlogProposal
   ): Promise<TransactionStatus & { proposalId?: string }> {
     this.ensureInitialized();
+    this.ensureRealWallet(); // Check if we have a real wallet connected
     
     const votingSituation = this.daoVotingService.getVotingSituation();
     if (!votingSituation) {
@@ -149,7 +150,8 @@ export class ProposalService extends BaseContractService {
     support: boolean
   ): Promise<TransactionStatus> {
     this.ensureInitialized();
-    
+    this.ensureRealWallet(); // Check if we have a real wallet connected
+
     // Convert UI proposal ID to blockchain ID
     const blockchainProposalId = this.proposalUtils.uiToBlockchainProposalId(proposalId);
     
@@ -171,7 +173,8 @@ export class ProposalService extends BaseContractService {
     proposalId: string
   ): Promise<TransactionStatus & { tokenId?: string }> {
     this.ensureInitialized();
-    
+    this.ensureRealWallet(); // Check if we have a real wallet connected
+
     // Convert UI proposal ID to blockchain ID
     const blockchainProposalId = this.proposalUtils.uiToBlockchainProposalId(proposalId);
     

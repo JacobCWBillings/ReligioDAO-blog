@@ -16,7 +16,7 @@ import { ProposalService } from '../services/ProposalService';
  * Provides a React-friendly interface to ProposalService
  */
 export const useProposal = () => {
-  const { provider, signer, account, chainId, isConnected } = useWallet();
+  const { provider, readOnlyProvider, signer, readOnlySigner, account, chainId, isConnected } = useWallet();
   const { getConstrainedChainId, isCorrectChain, chainError } = useChainConstraint();
   const [proposalService, setProposalService] = useState<ProposalService | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -25,10 +25,15 @@ export const useProposal = () => {
 
   // Initialize ProposalService
   useEffect(() => {
-    if (!provider || !signer || !isConnected) return;
+    const activeProvider = provider || readOnlyProvider;
+    if (!activeProvider || !signer || !isConnected) return;
 
     try {
-      const service = new ProposalService(provider, signer);
+      // For write operations, we'll need the connected wallet signer
+      // For read operations, the read-only signer will be sufficient
+      const activeSigner = isConnected ? signer : readOnlySigner || undefined;
+
+      const service = new ProposalService(activeProvider, activeSigner);
       
       const initService = async () => {
         // Use the constrained chain ID instead of the wallet's chain ID
