@@ -1,0 +1,54 @@
+/* Add to src/App.css */
+.chain-warning-banner {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 12px 16px;
+    border: 1px solid #ffeeba;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    display: block;
+    width: 100%;
+  }
+  
+  .chain-warning-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  
+  .chain-warning-icon {
+    font-size: 24px;
+    margin-right: 16px;
+  }
+  
+  .chain-warning-text {
+    flex: 1;
+  }
+  
+  .chain-warning-text p {
+    margin: 0;
+  }
+  
+  .chain-warning-text p:first-child {
+    font-weight: 600;
+  }
+  
+  .chain-switch-button {
+    background-color: #ff8a00;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  
+  .chain-switch-button:hover {
+    background-color: #ff9e2e;
+  }
+  
+  .chain-switch-button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+  }

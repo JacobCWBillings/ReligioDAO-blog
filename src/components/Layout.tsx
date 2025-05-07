@@ -5,6 +5,7 @@ import { Header } from './Header';
 import { AssetBrowser } from '../asset-browser/AssetBrowser';
 import { AssetPicker } from '../asset-browser/AssetPicker';
 import { useGlobalState } from '../contexts/GlobalStateContext';
+import ChainWarning from './ChainWarning';
 import { useWallet } from '../contexts/WalletContext';
 import { BeeWarningBanner } from './BeeWarningBanner';
 import './Layout.css';
@@ -65,6 +66,9 @@ export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp })
                     hasPostageStamp={hasPostageStamp} 
                 />
             )}
+
+            {/* Show chain warning only if wallet is connected */}
+            {isConnected && <ChainWarning />}
             
             <main className="content-container">
                 <Outlet />

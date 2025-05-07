@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ethers } from 'ethers';
 import { useWallet } from '../../contexts/WalletContext';
+import { useChainConstraint } from './useChainConstraint';
 import { 
   BlogNFT, 
   BlogFilter,
@@ -22,6 +23,7 @@ import QRC721PlusABI from '../abis/QRC721Plus.json';
  */
 export const useBlogNFT = () => {
   const { provider, signer, account, chainId, isConnected } = useWallet();
+  const { getConstrainedChainId, isCorrectChain, chainError } = useChainConstraint();
   const [contract, setContract] = useState<ethers.Contract | null>(null);
   const [nfts, setNfts] = useState<BlogNFT[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,8 +47,9 @@ export const useBlogNFT = () => {
     if (!provider) return;
 
     try {
-      // Convert chainId which could be null to undefined
-      const addresses = getContractAddresses(chainId ?? undefined);
+      // Use the constrained chain ID instead of the wallet's chain ID
+      const constrainedChainId = getConstrainedChainId();
+      const addresses = getContractAddresses(constrainedChainId);
       
       // For read-only operations, we can use the provider directly
       // For operations that require signing, we'll use the signer if available
@@ -59,7 +62,12 @@ export const useBlogNFT = () => {
       );
       
       setContract(nftContract);
-      setError(null);
+      // Set error from chain validation if there is one
+      if (chainError) {
+        setError(chainError);
+      } else {
+        setError(null);
+      }
     } catch (err) {
       console.error('Error initializing NFT contract:', err);
       setError(new BlockchainError(
@@ -708,6 +716,7 @@ export const useBlogNFT = () => {
     isEmpty,
     hasMoreData,
     totalSupply,
+    isCorrectChain, // New property to show if user is on correct chain
     categories: useMemo(() => getAllCategories(), [getAllCategories]),
     tags: useMemo(() => getAllTags(), [getAllTags]),
     authors,
