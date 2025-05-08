@@ -16,9 +16,6 @@ export const ReadOnlyMode: React.FC = () => {
           <h4>You're in Read-Only Mode</h4>
           <p>Connect your wallet to submit proposals, vote, and participate in governance</p>
         </div>
-        <button className="connect-wallet-button" onClick={connect}>
-          Connect Wallet
-        </button>
       </div>
     </div>
   );

@@ -14,6 +14,20 @@ interface Props {
 }
 
 export function Thumbnail({ globalState, name, contentType, reference, insertAsset, rerender }: Props) {
+    // Function to generate image URL based on reference
+    const getImageUrl = (ref: string): string => {
+        // Clean any protocol prefixes
+        const cleanRef = ref
+            .replace('bzz://', '')
+            .replace('bytes://', '')
+            .trim();
+
+        // Ensure we're using the correct endpoint format
+        return `http://localhost:1633/bzz/${cleanRef}`;
+    };
+
+    console.log(reference)
+
     async function onRename() {
         const newName = await Swal.fire({
             title: 'New Name',
@@ -24,8 +38,13 @@ export function Thumbnail({ globalState, name, contentType, reference, insertAss
         if (!newName.value) {
             return;
         }
-        globalState.assets.find(x => x.reference === reference)!.name = newName.value!;
-        rerender(x => x + 1);
+        const asset = globalState.assets.find(x => x.reference === reference);
+        if (asset) {
+            asset.name = newName.value;
+            // Update localStorage directly to avoid problematic save
+            localStorage.setItem('state', JSON.stringify(globalState));
+            rerender(x => x + 1);
+        }
     }
 
     async function onDelete() {
@@ -38,14 +57,13 @@ export function Thumbnail({ globalState, name, contentType, reference, insertAss
             return;
         }
         globalState.assets = globalState.assets.filter(x => x.reference !== reference);
+        // Update localStorage directly to avoid problematic save
+        localStorage.setItem('state', JSON.stringify(globalState));
         rerender(x => x + 1);
     }
 
     function onInsert() {
-        // Insert the Swarm reference URL into the editor
-        const swarmUrl = `http://localhost:1633/bytes/${reference}`;
-        
-        // Use the reference directly to ensure it works in the DAO context
+        // Insert the asset reference
         insertAsset(reference);
         
         // Provide confirmation to the user
@@ -59,7 +77,17 @@ export function Thumbnail({ globalState, name, contentType, reference, insertAss
 
     return (
         <div className="thumbnail">
-            <img src={`http://localhost:1633/bytes/${reference}`} alt={name} />
+            <img 
+                src={getImageUrl(reference)} 
+                alt={name} 
+                onError={(e) => {
+                    // Fallback if image fails to load
+                    const target = e.target as HTMLImageElement;
+                    target.onerror = null; // Prevent infinite loop
+                    target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='20' fill='%23999'%3EImage Error%3C/text%3E%3C/svg%3E";
+                    console.error(`Failed to load image with reference: ${reference}`);
+                }}
+            />
             <div className="thumbnail-name">{name}</div>
             <Horizontal gap={8}>
                 <button className="button-xs" onClick={onInsert}>

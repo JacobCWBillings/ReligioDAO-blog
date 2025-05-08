@@ -47,7 +47,7 @@ export function NewPostPage({
             setArticleContent(textarea.value);
         } else {
             // Fallback if we can't find the textarea
-            const imageMarkdown = `![Image](http://localhost:1633/bytes/${reference})`;
+            const imageMarkdown = `![Image](https://api.gateway.ethswarm.org/bZZ/${reference})`;
             setArticleContent(articleContent + '\n' + imageMarkdown);
         }
         

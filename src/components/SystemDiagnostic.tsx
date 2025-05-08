@@ -586,7 +586,7 @@ const SystemDiagnostic: React.FC = () => {
             'warning',
             'No postage stamps found',
             'No postage stamps exist on the local Bee node.',
-            'Create a new postage stamp using: curl -X POST http://localhost:1635/stamps/100000000/24'
+            'Create a new postage stamp using: curl -X POST http://localhost:1633/stamps/100000000/24'
           );
           return false;
         }
@@ -632,7 +632,7 @@ const SystemDiagnostic: React.FC = () => {
             'error',
             'Error checking postage stamps',
             `Error: ${error instanceof Error ? error.message : String(error)}`,
-            'Check if Bee debug API is accessible at http://localhost:1635'
+            'Check if Bee debug API is accessible at http://localhost:1633'
           );
         }
         return false;

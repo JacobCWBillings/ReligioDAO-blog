@@ -201,8 +201,8 @@ export function App() {
                         
                         {/* Editor Routes - Consolidated */}
                         <Route path="editor">
-                            <Route index element={<EditorPage mode="standard" />} />
-                            <Route path=":blogId" element={<EditorPage mode="standard" />} />
+                            <Route index element={<EditorPage mode="proposal" />} />
+                            <Route path=":blogId" element={<EditorPage mode="proposal" />} />
                         </Route>
                         
                         {/* Proposal Editor Route */}

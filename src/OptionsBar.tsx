@@ -254,7 +254,7 @@ export function OptionsBar({
             </Vertical>
             <Vertical left gap={2} full>
                 <label>Banner image</label>
-                {articleBanner && <img src={`http://localhost:1633/bytes/${articleBanner}`} alt="Banner preview" />}
+                {articleBanner && <img src={`http://localhost:1633/bzz/${articleBanner}`} alt="Banner preview" />}
                 <button
                     onClick={() => {
                         setShowAssetPicker(true);

@@ -230,7 +230,7 @@ export class ProposalService extends BaseContractService {
       // Check if the proposal matches our target voting situation
       const votingSituation = this.daoVotingService.getVotingSituation();
       if (!this.proposalUtils.doesProposalMatchVotingSituation(rawProposal, votingSituation)) {
-        console.log(`Proposal ${proposalId} skipped: voting situation "${rawProposal.relatedVotingSituation}" doesn't match target "${votingSituation}"`);
+        // console.log(`Proposal ${proposalId} skipped: voting situation "${rawProposal.relatedVotingSituation}" doesn't match target "${votingSituation}"`);
         return null; // Skip proposals that don't match
       }
       

@@ -226,7 +226,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({ mode = 'standard' }) => 
                     setShowAssetBrowser={setShowAssetBrowser}
                     insertAsset={(reference: string) => {
                         // Insert image at cursor in editor
-                        const imageMarkdown = `![Image](http://localhost:1633/bytes/${reference})`;
+                        const imageMarkdown = `![Image](https://gateway.ethswarm.org/bzz/${reference})`;
                         setArticleContent(articleContent + '\n' + imageMarkdown);
                     }}
                 />

@@ -57,7 +57,7 @@ const DiagnosticPage: React.FC = () => {
           <p>For local development, you need a running Bee node. Download it from <a href="https://github.com/ethersphere/bee/releases" target="_blank" rel="noopener noreferrer">GitHub</a> and run:</p>
           <pre>./bee dev --cors-allowed-origins="*"</pre>
           <p>After starting Bee, create a postage stamp:</p>
-          <pre>curl -X POST http://localhost:1635/stamps/100000000/24</pre>
+          <pre>curl -X POST http://localhost:1633/stamps/100000000/24</pre>
         </div>
         
         <div className="issue-card">
