@@ -5,7 +5,7 @@ import { createStyle } from '../html/Style'
 import { createFrontPage } from '../page/FrontPage'
 import { GlobalState } from './GlobalState'
 import { createArticleSlug } from './Utility'
-import defaultImage from '../../assets/images/default.jpg'
+import defaultImage from '../../static/media/default.jpg'
 
 
 export async function recreateMantaray(globalState: GlobalState): Promise<void> {

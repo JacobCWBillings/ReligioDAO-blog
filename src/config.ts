@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 // import QRC721Plus from './blockchain/abis/QRC721Plus.json';
 // import GeneralDAOVoting from './blockchain/abis/GeneralDAOVoting.json';
 // import NFTMintingModulePlus from './blockchain/abis/NFTMintingModulePlus.json';
-import defaultImage from './assets/images/default.jpg'
+import defaultImage from './static/media/default.jpg'
 
 // Constants for voting parameters
 export const FIVE_PERCENTAGE = '50000000000000000000000000';

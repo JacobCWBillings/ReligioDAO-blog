@@ -4,8 +4,8 @@ import { Link } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import { WalletConnect } from './WalletConnect';
 import './Header.css';
-import yesImage from '../assets/images/yes.png';
-import noImage from '../assets/images/no.png';
+import yesImage from '../static/media/yes.png';
+import noImage from '../static/media/no.png';
 
 interface HeaderProps {
     isBeeRunning: boolean;

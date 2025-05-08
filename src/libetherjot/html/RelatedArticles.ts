@@ -1,6 +1,6 @@
 import { Article, GlobalState } from '../engine/GlobalState'
 import { createPost } from './Post'
-import defaultImage from '../../assets/images/default.jpg'
+import defaultImage from '../../static/media/default.jpg'
 
 
 export function createRelatedArticles(

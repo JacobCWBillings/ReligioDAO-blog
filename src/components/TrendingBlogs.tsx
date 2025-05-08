@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { BlogNFT } from '../types/blockchain';
 import { useBlogNFT } from '../blockchain/hooks/useBlogNFT';
 import { formatAddress } from '../blockchain/utils/walletUtils';
-import defaultImage from '../assets/images/default.jpg'
+import defaultImage from '../static/media/default.jpg'
 import './TrendingBlogs.css';
 
 interface TrendingBlogsProps {

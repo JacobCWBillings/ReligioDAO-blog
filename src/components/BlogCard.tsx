@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { BlogNFT } from '../types/blockchain';
 import { formatAddress } from '../blockchain/utils/walletUtils';
 import { HighlightedTitle, HighlightedPreview } from './TextHighlighter';
-import defaultImage from '../assets/images/default.jpg'
+import defaultImage from '../static/media/default.jpg'
 import './BlogCard.css';
 
 interface BlogCardProps {

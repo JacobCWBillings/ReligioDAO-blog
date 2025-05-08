@@ -7,7 +7,7 @@ import { useWallet } from '../../contexts/WalletContext';
 import { formatAddress } from '../../blockchain/utils/walletUtils';
 import { BlogDetailSkeleton } from '../../components/skeletons/Skeleton';
 import swarmContentService from '../../services/SwarmContentService';
-import defaultImage from '../../assets/images/default.jpg';
+import defaultImage from '../../static/media/default.jpg';
 import './BlogDetailPage.css';
 
 export const BlogDetailPage: React.FC = () => {
