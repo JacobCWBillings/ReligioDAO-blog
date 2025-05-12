@@ -25,8 +25,9 @@ import { ProposalSubmissionPage } from './pages/proposal/ProposalSubmissionPage'
 import DiagnosticPage from './pages/DiagnosticPage';
 import { Dates } from 'cafe-utility';
 
-// Import DiagnosticPanel
+// Diagnostic Components
 import DiagnosticPanel from './components/DiagnosticPanel';
+import DiagnosticButton from './components/DiagnosticButton';
 
 // Define supported chain IDs for the dApp
 const SUPPORTED_CHAIN_IDS = [
@@ -46,89 +47,94 @@ export function App() {
     const [initializingPlatform, setInitializingPlatform] = useState(false);
     const [initError, setInitError] = useState<string | null>(null);
     const [diagnosticMode, setDiagnosticMode] = useState(false);
+    const [initAttemptCount, setInitAttemptCount] = useState(0);
 
     // Diagnostic utility functions
     const diagnoseEnvironment = () => {
-      console.log("==== ENVIRONMENT DIAGNOSTICS ====");
-      console.log("User Agent:", navigator.userAgent);
-      console.log("Protocol:", window.location.protocol);
-      console.log("Host:", window.location.host);
-      console.log("Path:", window.location.pathname);
-      console.log("NODE_ENV:", process.env.NODE_ENV);
-      console.log("PUBLIC_URL:", process.env.PUBLIC_URL);
-      console.log("Local Storage Available:", isLocalStorageAvailable());
-      console.log("Local Storage Items:", Object.keys(localStorage).length);
+        console.log("==== ENVIRONMENT DIAGNOSTICS ====");
+        console.log("User Agent:", navigator.userAgent);
+        console.log("Protocol:", window.location.protocol);
+        console.log("Host:", window.location.host);
+        console.log("Path:", window.location.pathname);
+        console.log("NODE_ENV:", process.env.NODE_ENV);
+        console.log("PUBLIC_URL:", process.env.PUBLIC_URL);
+        console.log("Local Storage Available:", isLocalStorageAvailable());
+        console.log("Local Storage Items:", Object.keys(localStorage).length);
     };
 
     const isLocalStorageAvailable = () => {
-      try {
-        const test = "test";
-        localStorage.setItem(test, test);
-        localStorage.removeItem(test);
-        return true;
-      } catch(e) {
-        return false;
-      }
+        try {
+            const test = "test";
+            localStorage.setItem(test, test);
+            localStorage.removeItem(test);
+            return true;
+        } catch(e) {
+            return false;
+        }
     };
 
     const diagnoseLocalStorage = () => {
-      console.log("==== LOCAL STORAGE DIAGNOSTICS ====");
-      try {
-        const keys = Object.keys(localStorage);
-        console.log("Total items:", keys.length);
-        console.log("Keys:", keys);
-        
-        // Check if 'state' exists
-        if (localStorage.getItem('state')) {
-          try {
-            const stateSize = localStorage.getItem('state')!.length;
-            console.log("State size (chars):", stateSize);
-            const parsedState = JSON.parse(localStorage.getItem('state')!);
-            console.log("State parsed successfully");
-            console.log("State top-level keys:", Object.keys(parsedState));
-            console.log("Collections:", parsedState.collections);
-          } catch (e) {
-            console.error("Error parsing state:", e);
-          }
-        } else {
-          console.log("No state found in localStorage");
+        console.log("==== LOCAL STORAGE DIAGNOSTICS ====");
+        try {
+            const keys = Object.keys(localStorage);
+            console.log("Total items:", keys.length);
+            console.log("Keys:", keys);
+            
+            // Check if 'state' exists
+            if (localStorage.getItem('state')) {
+                try {
+                    const stateSize = localStorage.getItem('state')!.length;
+                    console.log("State size (chars):", stateSize);
+                    const parsedState = JSON.parse(localStorage.getItem('state')!);
+                    console.log("State parsed successfully");
+                    console.log("State top-level keys:", Object.keys(parsedState));
+                    console.log("Collections:", parsedState.collections);
+                } catch (e) {
+                    console.error("Error parsing state:", e);
+                }
+            } else {
+                console.log("No state found in localStorage");
+            }
+        } catch (e) {
+            console.error("Error accessing localStorage:", e);
         }
-      } catch (e) {
-        console.error("Error accessing localStorage:", e);
-      }
     };
 
     // Create a minimal state without Swarm dependencies
-    const createMinimalState = () => {
-      // Create a minimal state that doesn't depend on Swarm
-      const wallet = ethers.Wallet.createRandom();
-      return {
-          beeApi: 'https://download.gateway.ethswarm.org',
-          postageBatchId: '',
-          privateKey: wallet.privateKey,
-          pages: [],
-          articles: [],
-          feed: wallet.address.toLowerCase(),
-          configuration: {
-              title: 'ReligioDAO Blog Platform',
-              header: {
-                  title: 'ReligioDAO',
-                  logo: '',
-                  description: 'A decentralized blogging platform (Emergency Mode)',
-                  linkLabel: 'Governance',
-                  linkAddress: '/proposals'
-              },
-              main: { highlight: 'Featured' },
-              footer: {
-                  description: 'Running in emergency mode without Swarm integration',
-                  links: { discord: '', twitter: '', github: '', youtube: '', reddit: '' }
-              },
-              extensions: { ethereumAddress: '', donations: false, comments: false }
-          },
-          collections: {},
-          assets: []
-      };
-  };
+    const createMinimalState = async () => {
+        // Create a deterministic wallet for consistent results
+        const PLATFORM_SEED = "ReligioDAO blog. Default seed.";
+        const privateKeyBytes = ethers.keccak256(ethers.toUtf8Bytes(PLATFORM_SEED));
+        const privateKey = privateKeyBytes.substring(2);
+        const wallet = new ethers.Wallet(privateKey);
+        
+        return {
+            beeApi: 'https://download.gateway.ethswarm.org',
+            postageBatchId: '',
+            privateKey: wallet.privateKey,
+            pages: [],
+            articles: [],
+            feed: wallet.address.toLowerCase(),
+            configuration: {
+                title: 'ReligioDAO Blog Platform',
+                header: {
+                    title: 'ReligioDAO',
+                    logo: '',
+                    description: 'A decentralized blogging platform (Emergency Mode)',
+                    linkLabel: 'Governance',
+                    linkAddress: '/proposals'
+                },
+                main: { highlight: 'Featured' },
+                footer: {
+                    description: 'Running in emergency mode without Swarm integration',
+                    links: { discord: '', twitter: '', github: '', youtube: '', reddit: '' }
+                },
+                extensions: { ethereumAddress: '', donations: false, comments: false }
+            },
+            collections: {},
+            assets: []
+        };
+    };
 
     // Load existing state from localStorage with diagnostics
     useEffect(() => {
@@ -172,17 +178,33 @@ export function App() {
             setInitializingPlatform(true);
             
             const initializeReligioDAOPlatform = async () => {
+                setInitAttemptCount(prev => prev + 1);
+                console.log("Initializing platform (attempt #" + (initAttemptCount + 1) + ")");
+                
                 try {
                     // Always use false for useLocalBee in production builds
                     const isProduction = process.env.NODE_ENV === 'production';
                     const useLocalBee = !isProduction && isBeeRunning && hasPostageStamp;
                     
-                    console.log("Initializing platform with settings:", {
+                    console.log("Initialization settings:", {
                         useLocalBee,
                         beeApi: useLocalBee ? 'http://localhost:1633' : 'https://download.gateway.ethswarm.org',
-                        environment: process.env.NODE_ENV
+                        environment: process.env.NODE_ENV,
+                        attemptCount: initAttemptCount + 1
                     });
                     
+                    // If we've already tried once with full functionality, try minimal state on retry
+                    if (initAttemptCount > 0) {
+                        console.log("Using minimal state approach for retry attempt");
+                        const minimalState = await createMinimalState();
+                        const state = await getGlobalState(minimalState);
+                        localStorage.setItem('state', JSON.stringify(minimalState));
+                        setGlobalState(state);
+                        setInitializingPlatform(false);
+                        return;
+                    }
+                    
+                    // First attempt: try full functionality
                     // Create a default global state for the ReligioDAO platform
                     const platformState = await createReligioDAOState("ReligioDAO Blog Platform", {
                         useLocalBee,
@@ -209,9 +231,16 @@ export function App() {
                 } catch (error) {
                     // For critical platform initialization errors, provide a recovery option
                     console.error("Failed to initialize ReligioDAO platform:", error);
-                    setInitError("Platform initialization failed. You can try one of the recovery options below.");
-                } finally {
-                    setInitializingPlatform(false);
+                    
+                    // If this was the first attempt, try again with minimal state
+                    if (initAttemptCount === 0) {
+                        console.log("First attempt failed, retrying with minimal state");
+                        setInitializingPlatform(false);
+                        // This will trigger another run of this effect
+                    } else {
+                        setInitError("Platform initialization failed after multiple attempts. You can try one of the recovery options below.");
+                        setInitializingPlatform(false);
+                    }
                 }
             };
             
@@ -221,6 +250,12 @@ export function App() {
                     try {
                         const bee = new Bee('http://localhost:1633');
                         const stamps = await bee.getAllPostageBatch();
+                        
+                        // Add safety check for empty array to avoid possible reduce error
+                        if (!stamps || stamps.length === 0) {
+                            return '';
+                        }
+                        
                         const usableStamp = stamps.find(stamp => stamp.usable);
                         return usableStamp?.batchID || '';
                     } catch (error) {
@@ -233,7 +268,7 @@ export function App() {
             
             initializeReligioDAOPlatform();
         }
-    }, [initialized, globalState, isBeeRunning, hasPostageStamp]);
+    }, [initialized, globalState, isBeeRunning, hasPostageStamp, initAttemptCount]);
 
     // Check Bee node connectivity
     async function checkBee() {
@@ -242,13 +277,25 @@ export function App() {
                 if (!isBeeRunning) {
                     setBeeRunning(true);
                 }
-                const bee = new Bee('http://localhost:1633');
-                const stamps = await bee.getAllPostageBatch();
-                if (stamps.some(x => x.usable)) {
-                    if (!hasPostageStamp) {
-                        setHasPostageStamp(true);
+                try {
+                    const bee = new Bee('http://localhost:1633');
+                    const stamps = await bee.getAllPostageBatch();
+                    
+                    // Add safety check for empty array
+                    if (!stamps || stamps.length === 0) {
+                        setHasPostageStamp(false);
+                        return;
                     }
-                } else {
+                    
+                    if (stamps.some(x => x.usable)) {
+                        if (!hasPostageStamp) {
+                            setHasPostageStamp(true);
+                        }
+                    } else {
+                        setHasPostageStamp(false);
+                    }
+                } catch (error) {
+                    console.warn("Error checking postage stamps:", error);
                     setHasPostageStamp(false);
                 }
             })
@@ -301,18 +348,25 @@ export function App() {
                             Retry Initialization
                         </button>
                         <button 
-                            onClick={() => {
+                            onClick={async () => {
                                 // Create minimal state without Swarm dependencies
-                                const minimalState = createMinimalState();
-                                const globalMinimalState = getGlobalState(minimalState as any);
-                                globalMinimalState.then(state => {
-                                    setGlobalState(state);
+                                setInitializingPlatform(true);
+                                try {
+                                    const minimalState = await createMinimalState();
+                                    const state = await getGlobalState(minimalState);
                                     localStorage.setItem('state', JSON.stringify(minimalState));
-                                });
+                                    setGlobalState(state);
+                                } catch (e) {
+                                    console.error("Failed to create minimal state:", e);
+                                    setInitError("All recovery options failed. Please clear your browser data and try again.");
+                                } finally {
+                                    setInitializingPlatform(false);
+                                }
                             }} 
                             className="continue-button"
+                            disabled={initializingPlatform}
                         >
-                            Continue Without Swarm
+                            {initializingPlatform ? "Creating Minimal State..." : "Continue Without Swarm"}
                         </button>
                     </div>
                     
@@ -385,7 +439,7 @@ export function App() {
                             {/* Settings */}
                             <Route path="settings" element={<GlobalSettingsPage />} />
 
-                            {/* Add Diagnostic Route */}
+                            {/* Diagnostic Route */}
                             <Route path="diagnostics" element={<DiagnosticPage />} />
                             
                             {/* 404 Fallback */}
@@ -393,7 +447,7 @@ export function App() {
                         </Route>
                     </Routes>
 
-                    {/* Add the diagnostic panel - always rendered but only visible when activated */}
+                    {/* Add the diagnostic panel */}
                     <DiagnosticPanel 
                         isBeeRunning={isBeeRunning}
                         hasPostageStamp={hasPostageStamp}
@@ -401,6 +455,16 @@ export function App() {
                         isVisible={diagnosticMode}
                         onClose={() => setDiagnosticMode(false)}
                     />
+
+                    {/* Add the floating diagnostic button for easy access */}
+                    <div style={{
+                        position: 'fixed',
+                        bottom: '10px',
+                        right: '10px',
+                        zIndex: 1000
+                    }}>
+                        <DiagnosticButton />
+                    </div>
 
                 </GlobalStateProvider>
             </WalletProvider>
