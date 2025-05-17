@@ -33,9 +33,7 @@ export const ProposalListPage: React.FC = () => {
   useEffect(() => {
     const loadProposals = async () => {
       try {
-        if (isConnected) {
-          await getAllProposals();
-        }
+        await getAllProposals();
       } catch (err) {
         console.error('Error loading proposals:', err);
       }

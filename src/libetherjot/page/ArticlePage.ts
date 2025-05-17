@@ -14,7 +14,7 @@ import { createRelatedArticles } from '../html/RelatedArticles'
 import { createStyleSheet } from '../html/StyleSheet'
 import { createTagCloud } from '../html/TagCloud'
 import { createTwitterSvg } from '../html/TwitterSvg'
-import defaultImage from '../../assets/images/default.jpg'
+import defaultImage from '../../static/media/default.jpg'
 
 
 export async function createArticlePage(

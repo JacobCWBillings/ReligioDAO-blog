@@ -1,0 +1,65 @@
+/* src/components/ReadOnlyMode.css */
+.read-only-banner {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    padding: 8px 16px;
+    margin-bottom: 20px;
+  }
+  
+  .read-only-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  
+  .read-only-icon {
+    font-size: 24px;
+    margin-right: 15px;
+  }
+  
+  .read-only-text {
+    flex: 1;
+  }
+  
+  .read-only-text h4 {
+    margin: 0;
+    color: #495057;
+  }
+  
+  .read-only-text p {
+    margin: 4px 0 0;
+    font-size: 14px;
+    color: #6c757d;
+  }
+  
+  .connect-wallet-button {
+    background-color: #ff8a00;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+  }
+  
+  .connect-wallet-button:hover {
+    background-color: #ff9e2e;
+  }
+  
+  @media (max-width: 768px) {
+    .read-only-content {
+      flex-direction: column;
+      text-align: center;
+    }
+    
+    .read-only-icon {
+      margin: 0 0 10px 0;
+    }
+    
+    .read-only-text {
+      margin-bottom: 10px;
+    }
+  }

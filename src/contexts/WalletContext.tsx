@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ethers } from 'ethers';
 import { useWalletProvider, WalletProvider as ProviderType, ExtendedEthereumProvider } from '../hooks/useWalletProvider';
+import config from '../config';
 
 // Define wallet error types
 export enum WalletErrorType {
@@ -17,9 +18,11 @@ interface WalletContextType {
   isConnected: boolean;
   isConnecting: boolean;
   provider: ethers.BrowserProvider | null;
+  readOnlyProvider: ethers.JsonRpcProvider | null;
   signer: ethers.JsonRpcSigner | null;
+  readOnlySigner: ethers.Signer | null;
   network: ethers.Network | null;
-  chainId: number | null;
+  chainId: number;
   providerType: ProviderType;
   balance: string | null;
   error: Error | null;
@@ -36,9 +39,11 @@ const defaultContext: WalletContextType = {
   isConnected: false,
   isConnecting: false,
   provider: null,
+  readOnlyProvider: null,
   signer: null,
+  readOnlySigner: null,
   network: null,
-  chainId: null,
+  chainId: config.defaultNetworkId,
   providerType: 'none',
   balance: null,
   error: null,
@@ -61,7 +66,6 @@ interface WalletProviderProps {
   supportedChainIds?: number[]; // Optional array of supported chain IDs
 }
 
-// Provider component
 export const WalletProvider: React.FC<WalletProviderProps> = ({ 
   children,
   supportedChainIds = [] // Default to all chains supported
@@ -72,11 +76,48 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
+  const [readOnlyProvider, setReadOnlyProvider] = useState<ethers.JsonRpcProvider | null>(null);
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
+  const [readOnlySigner, setReadOnlySigner] = useState<ethers.Signer | null>(null);
   const [network, setNetwork] = useState<ethers.Network | null>(null);
-  const [chainId, setChainId] = useState<number | null>(null);
+  const [chainId, setChainId] = useState<number>(config.defaultNetworkId);
   const [balance, setBalance] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
+
+  // Initialize read-only provider on mount
+  useEffect(() => {
+    const initReadOnlyProvider = async () => {
+      try {
+        // Get the default network from config
+        const defaultNetworkId = config.defaultNetworkId;
+        const networkConfig = config.networks[defaultNetworkId];
+
+        
+        
+        // Create a read-only provider with the default RPC URL
+        const readOnly = new ethers.JsonRpcProvider(networkConfig.rpcUrl);
+        
+        // Get network information
+        const network = await readOnly.getNetwork();
+        
+        // Create a read-only signer with a dummy wallet
+        // This is ONLY for read operations - it can't sign real transactions
+        const dummyWallet = ethers.Wallet.createRandom().connect(readOnly);
+        
+        setReadOnlyProvider(readOnly);
+        setReadOnlySigner(dummyWallet);
+        
+        if (!network || !chainId) {
+          setNetwork(network);
+          setChainId(Number(network.chainId));
+        }
+      } catch (err) {
+        console.error("Failed to initialize read-only provider:", err);
+      }
+    };
+
+    initReadOnlyProvider();
+  }, []);
 
   // Check if wallet was previously connected and attempt to reconnect
   useEffect(() => {
@@ -248,7 +289,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({
       setProvider(null);
       setSigner(null);
       setNetwork(null);
-      setChainId(null);
+      setChainId(config.defaultNetworkId);
       setBalance(null);
     } finally {
       setIsConnecting(false);
@@ -262,7 +303,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({
     setProvider(null);
     setSigner(null);
     setNetwork(null);
-    setChainId(null);
+    setChainId(config.defaultNetworkId);
     setBalance(null);
     setError(null);
   };
@@ -349,7 +390,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({
     isConnected,
     isConnecting,
     provider,
+    readOnlyProvider, // Expose the read-only provider
     signer,
+    readOnlySigner,
     network,
     chainId,
     providerType,

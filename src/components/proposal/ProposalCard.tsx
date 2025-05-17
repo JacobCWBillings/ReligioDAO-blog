@@ -166,12 +166,10 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
     >
       <div className="proposal-card-header">
         <div className="proposal-card-title-container">
-          <h3 className="proposal-card-title"></h3>
-          {!compact && blogInfo.blogTitle && (
-            <div className="proposal-card-subtitle">
-              Blog: {blogInfo.blogTitle}
-            </div>
-          )}
+        <h3 className="proposal-card-title">
+            {blogInfo.blogTitle || 'Untitled Blog Proposal'}
+          </h3>
+          {!compact && proposal.title && blogInfo.blogTitle !== proposal.title}
         </div>
         <div className={`proposal-card-status status-${statusInfo.color}`}>
           {statusInfo.label}

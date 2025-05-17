@@ -2,11 +2,14 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Header } from './Header';
+import { ReadOnlyMode } from './ReadOnlyMode';
 import { AssetBrowser } from '../asset-browser/AssetBrowser';
 import { AssetPicker } from '../asset-browser/AssetPicker';
 import { useGlobalState } from '../contexts/GlobalStateContext';
+import ChainWarning from './ChainWarning';
 import { useWallet } from '../contexts/WalletContext';
 import { BeeWarningBanner } from './BeeWarningBanner';
+import DiagnosticButton from './DiagnosticButton';
 import './Layout.css';
 
 interface LayoutProps {
@@ -65,10 +68,18 @@ export const Layout: React.FC<LayoutProps> = ({ isBeeRunning, hasPostageStamp })
                     hasPostageStamp={hasPostageStamp} 
                 />
             )}
+
+            {/* Show chain warning only if wallet is connected */}
+            {isConnected && <ChainWarning />}
             
+            <ReadOnlyMode />
+
             <main className="content-container">
                 <Outlet />
             </main>
+
+            <DiagnosticButton />
+
         </div>
     );
 };

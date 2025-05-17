@@ -1,6 +1,6 @@
 import { GlobalState } from '../engine/GlobalState'
 import { createTagCloud } from './TagCloud'
-import defaultImage from '../../assets/images/default.jpg'
+import defaultImage from '../../static/media/default.jpg'
 
 export function createPost(
     globalState: GlobalState,

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ethers } from 'ethers';
 import { useWallet } from '../../contexts/WalletContext';
+import { useChainConstraint } from './useChainConstraint';
 import { 
   BlogNFT, 
   BlogFilter,
@@ -21,7 +22,8 @@ import QRC721PlusABI from '../abis/QRC721Plus.json';
  * Provides React-friendly access to reading NFT data with pagination and caching
  */
 export const useBlogNFT = () => {
-  const { provider, signer, account, chainId, isConnected } = useWallet();
+  const { provider, readOnlyProvider, signer, readOnlySigner, account, chainId, isConnected } = useWallet();
+  const { getConstrainedChainId, isCorrectChain, chainError } = useChainConstraint();
   const [contract, setContract] = useState<ethers.Contract | null>(null);
   const [nfts, setNfts] = useState<BlogNFT[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,15 +44,20 @@ export const useBlogNFT = () => {
   
   // Initialize contract when provider is available
   useEffect(() => {
-    if (!provider) return;
+    const activeProvider = provider || readOnlyProvider;
+    
+    if (!activeProvider) return;
 
     try {
-      // Convert chainId which could be null to undefined
-      const addresses = getContractAddresses(chainId ?? undefined);
+      // Use the constrained chain ID instead of the wallet's chain ID
+      const constrainedChainId = getConstrainedChainId();
+      const addresses = getContractAddresses(constrainedChainId);
       
       // For read-only operations, we can use the provider directly
       // For operations that require signing, we'll use the signer if available
-      const contractProvider = signer || provider;
+      // Use available signer - prefer connected wallet, fall back to read-only
+      const activeSigner = signer || readOnlySigner;
+      const contractProvider = activeSigner || activeProvider;
       
       const nftContract = new ethers.Contract(
         addresses.blogNFT,
@@ -59,7 +66,12 @@ export const useBlogNFT = () => {
       );
       
       setContract(nftContract);
-      setError(null);
+      // Set error from chain validation if there is one
+      if (chainError) {
+        setError(chainError);
+      } else {
+        setError(null);
+      }
     } catch (err) {
       console.error('Error initializing NFT contract:', err);
       setError(new BlockchainError(
@@ -68,7 +80,7 @@ export const useBlogNFT = () => {
         err instanceof Error ? err : new Error(String(err))
       ));
     }
-  }, [provider, signer, chainId, isConnected]);
+  }, [provider, readOnlyProvider, signer, chainId, isConnected]);
 
   // Function to get the total supply of NFTs
   const getTotalSupply = useCallback(async (): Promise<number> => {
@@ -708,6 +720,7 @@ export const useBlogNFT = () => {
     isEmpty,
     hasMoreData,
     totalSupply,
+    isCorrectChain, // New property to show if user is on correct chain
     categories: useMemo(() => getAllCategories(), [getAllCategories]),
     tags: useMemo(() => getAllTags(), [getAllTags]),
     authors,

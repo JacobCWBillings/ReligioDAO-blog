@@ -71,7 +71,7 @@ For development with local Swarm storage:
 1. Download Bee v1.16.1 from [releases](https://github.com/ethersphere/bee/releases/tag/v1.16.1)
 2. Provide execution permissions: `chmod +x <downloaded_binary_name>`
 3. Start Bee in dev mode: `./bee dev --cors-allowed-origins="*"`
-4. Generate a postage batch: `curl -X POST http://localhost:1635/stamps/100000000/24`
+4. Generate a postage batch: `curl -X POST http://localhost:1633/stamps/100000000/24`
 
 ## Workflow
 

@@ -1,6 +1,7 @@
 // src/blockchain/hooks/useProposal.ts
 import { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
+import { useChainConstraint } from './useChainConstraint';
 import { 
   BlogProposal, 
   Proposal, 
@@ -15,24 +16,36 @@ import { ProposalService } from '../services/ProposalService';
  * Provides a React-friendly interface to ProposalService
  */
 export const useProposal = () => {
-  const { provider, signer, account, chainId, isConnected } = useWallet();
+  const { provider, readOnlyProvider, signer, readOnlySigner, account, chainId, isConnected } = useWallet();
+  const { getConstrainedChainId, isCorrectChain, chainError } = useChainConstraint();
   const [proposalService, setProposalService] = useState<ProposalService | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<BlockchainError | null>(null);
 
-  // Initialize ProposalService when provider and signer are available
+  // Initialize ProposalService
   useEffect(() => {
-    if (!provider || !signer || !isConnected) return;
+    const activeProvider = provider || readOnlyProvider;
+    if (!activeProvider) return;
 
     try {
-      const service = new ProposalService(provider, signer);
+      // For write operations, we'll need the connected wallet signer
+      // For read operations, the read-only signer will be sufficient
+      const activeSigner = isConnected && signer ? signer : (readOnlySigner || undefined);
+      const service = new ProposalService(activeProvider, activeSigner);
       
       const initService = async () => {
-        // Convert chainId which could be null to undefined
-        await service.init(chainId ?? undefined);
+        // Use the constrained chain ID instead of the wallet's chain ID
+        const constrainedChainId = getConstrainedChainId();
+        await service.init(constrainedChainId);
         setProposalService(service);
-        setError(null);
+        
+        // Set error from chain validation if there is one
+        if (chainError) {
+          setError(chainError);
+        } else {
+          setError(null);
+        }
       };
       
       initService();
@@ -349,6 +362,7 @@ export const useProposal = () => {
     proposals,
     loading,
     error,
+    isCorrectChain, // New property to indicate if on correct chain
     getAllProposals,
     getProposalById,
     createBlogProposal,

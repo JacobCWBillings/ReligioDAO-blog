@@ -1,39 +1,179 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="utf-8" />
-        <link rel="icon" href="%PUBLIC_URL%/favicon.png" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#000000" />
-        <meta name="description" content="Web site created using create-react-app" />
-        <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-        <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
-        <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-        <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
-
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-        <title>Etherjot</title>
-    </head>
-    <body>
-        <noscript>You need to enable JavaScript to run this app.</noscript>
-        <div id="root"></div>
-        <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    --></body>
+<head>
+    <meta charset="utf-8" />
+    <base href="%PUBLIC_URL%/">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ff8a00" />
+    <meta
+        name="description"
+        content="ReligioDAO Blog - A decentralized blogging platform governed by the ReligioDAO community"
+    />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    
+    <!-- Import Space Grotesk font -->
+    <link rel="preload" href="%PUBLIC_URL%/space-grotesk.woff2" as="font" type="font/woff2" crossorigin />
+    
+    <!-- Open Graph / Social Media Meta Tags -->
+    <meta property="og:title" content="ReligioDAO Blog" />
+    <meta property="og:description" content="A decentralized blogging platform governed by DAO voting." />
+    <meta property="og:image" content="%PUBLIC_URL%/og-image.jpg" />
+    <meta property="og:url" content="https://blog.religiodao.org" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    
+    <title>ReligioDAO Blog</title>
+    
+    <style>
+        @font-face {
+            font-family: 'Space Grotesk';
+            src: url('%PUBLIC_URL%/space-grotesk.woff2') format('woff2');
+            font-weight: 400 700;
+            font-style: normal;
+            font-display: swap;
+        }
+        
+        .app-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100vw;
+            background-color: #f8f8f8;
+            font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+                Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+        
+        .app-loading-logo {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 24px;
+            animation: pulse 2s infinite;
+        }
+        
+        .app-loading-text {
+            font-size: 1.5rem;
+            color: #ff8a00;
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+        
+        .app-loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 138, 0, 0.3);
+            border-radius: 50%;
+            border-top-color: #ff8a00;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.05);
+                opacity: 0.8;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        .app-loading-message {
+            margin-top: 16px;
+            color: #666;
+            max-width: 400px;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+        
+        .app-loading-requirements {
+            margin-top: 24px;
+            padding: 16px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            background-color: #fff;
+            max-width: 400px;
+        }
+        
+        .app-loading-requirements h3 {
+            margin: 0 0 12px 0;
+            font-size: 1rem;
+            color: #333;
+        }
+        
+        .app-loading-requirements ul {
+            margin: 0;
+            padding: 0 0 0 20px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .app-loading-requirements li {
+            margin-bottom: 8px;
+        }
+        
+        .app-loading-requirements a {
+            color: #ff8a00;
+            text-decoration: none;
+        }
+        
+        .app-loading-requirements a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <noscript>You need to enable JavaScript to run this application.</noscript>
+    <div id="root">
+        <!-- Loading state that will be shown until the app is loaded -->
+        <div class="app-loading">
+            <img src="%PUBLIC_URL%/logo.svg" alt="ReligioDAO Logo" class="app-loading-logo" />
+            <div class="app-loading-text">Loading ReligioDAO Blog</div>
+            <div class="app-loading-spinner"></div>
+            <div class="app-loading-message">
+                Initializing the decentralized blogging platform governed by the ReligioDAO community...
+            </div>
+            
+            <div class="app-loading-requirements">
+                <h3>System Requirements</h3>
+                <ul>
+                    <li>Web3 wallet extension (MetaMask, WalletConnect, etc.)</li>
+                    <li>Connection to Q Network for governance</li>
+                    <li>For content creators: Access to Swarm for decentralized storage</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Web3 related scripts -->
+    <script>
+        // Check if Web3 provider is available
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                // This timeout gives the main app time to initialize
+                // If it hasn't loaded after 10 seconds, we'll show a helpful message
+                if (document.querySelector('.app-loading')) {
+                    var loadingMessage = document.querySelector('.app-loading-message');
+                    if (loadingMessage) {
+                        loadingMessage.innerHTML = 'Taking longer than expected? Make sure you have a Web3 wallet installed and are connected to the correct network.';
+                    }
+                }
+            }, 10000);
+        });
+    </script>
+</body>
 </html>
