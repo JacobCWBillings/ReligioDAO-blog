@@ -1,0 +1,24 @@
+.bee-sync-button {
+  transition: background-color 0.3s ease;
+}
+
+.bee-sync-button:hover:not(:disabled) {
+  background-color: #ff9e2e !important;
+}
+
+.bee-sync-button-local {
+  transition: background-color 0.3s ease;
+}
+
+.bee-sync-button-local:hover:not(:disabled) {
+  background-color: #ff9e2e !important;
+}
+
+.sync-message {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
