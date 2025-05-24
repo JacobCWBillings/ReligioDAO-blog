@@ -4,6 +4,10 @@ import { Link, useLocation } from 'react-router-dom';
 import { WalletConnect } from './WalletConnect';
 import { useSimpleApp } from '../contexts/SimpleAppContext';
 import { useWallet } from '../contexts/WalletContext';
+// import yesImage from '../static/media/yes.png';
+// import noImage from '../static/media/no.png';
+// yesImage : noImage
+
 import './Header.css';
 
 interface HeaderProps {

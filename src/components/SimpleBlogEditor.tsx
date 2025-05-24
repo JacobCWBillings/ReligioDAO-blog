@@ -4,6 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import MDEditor from '@uiw/react-md-editor';
 import { useWallet } from '../contexts/WalletContext';
 import { beeBlogService, BlogDraft } from '../services/BeeBlogService';
+import { assetService } from '../services/AssetService';
+import { EnhancedAssetBrowser } from './EnhancedAssetBrowser';
 import './SimpleBlogEditor.css';
 
 interface SimpleBlogEditorProps {
@@ -35,13 +37,17 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     nodeRunning: false,
     hasStamp: false,
     gateway: '',
-    postageBatchId: ''
+    postageBatchId: '',
+    publicGateway: ''
   });
   
   // Draft management
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<BlogDraft[]>([]);
   const [showDrafts, setShowDrafts] = useState(false);
+  
+  // Asset browser
+  const [showAssetBrowser, setShowAssetBrowser] = useState(false);
   
   // File upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -213,10 +219,27 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
         setCurrentDraftId(draftId);
       }
       
+      // Process content to use public gateway URLs for published content
+      const processedContent = assetService.processMarkdownForPublication(content);
+      
+      // Update the draft with processed content before publishing
+      beeBlogService.saveDraft({
+        id: draftId,
+        title: title.trim(),
+        content: processedContent, // Use processed content with public URLs
+        category: category.trim(),
+        tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+        banner,
+        authorAddress: account!
+      });
+      
       // Publish to Swarm
       const { draft, contentReference } = await beeBlogService.publishDraft(draftId);
       
       setSuccess(`Content published to Swarm! Reference: ${contentReference.substring(0, 10)}...`);
+      
+      // Update the editor content to show the processed version
+      setContent(processedContent);
       
       // Call callback if provided (for proposal mode)
       if (onContentPublished) {
@@ -239,10 +262,10 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     }
   };
   
-  // Handle image upload
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle quick image upload (for simple usage)
+  const handleQuickImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file || !account) return;
     
     if (!file.type.startsWith('image/')) {
       setError('Please select an image file');
@@ -256,20 +279,38 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     
     setLoading(true);
     try {
-      const imageReference = await beeBlogService.uploadAsset(file);
-      const imageUrl = beeBlogService.getContentUrl(imageReference);
+      const asset = await assetService.uploadAsset(file, account);
+      
+      // Generate markdown with public gateway for published content
+      const imageMarkdown = assetService.generateAssetMarkdown(
+        asset, 
+        undefined, // Use default alt text
+        mode === 'proposal' // Use public gateway for proposals, local for drafts
+      );
       
       // Insert image markdown at cursor position
-      const imageMarkdown = `![${file.name}](${imageUrl})`;
       setContent(prev => prev + '\n\n' + imageMarkdown);
       
-      setSuccess('Image uploaded successfully!');
+      setSuccess('Image uploaded and inserted successfully!');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to upload image');
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Handle asset insertion from browser
+  const handleAssetInsertion = (markdownCode: string) => {
+    // Insert the markdown at the current cursor position or at the end
+    setContent(prev => {
+      // If there's a way to get cursor position, insert there
+      // For now, just append with proper spacing
+      return prev + '\n\n' + markdownCode;
+    });
+    
+    setSuccess('Asset inserted successfully!');
+    setTimeout(() => setSuccess(null), 2000);
   };
   
   // Load a draft from the sidebar
@@ -314,8 +355,16 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     setSuccess(null);
   };
 
+  // Preview content with public URLs (for proposal mode)
+  const getPreviewContent = () => {
+    if (mode === 'proposal') {
+      return assetService.processMarkdownForPublication(content);
+    }
+    return content;
+  };
+
   return (
-    <div className="simple-blog-editor">
+    <div className="simple-blog-editor" data-mode={mode}>
       <div className="editor-layout">
         {/* Sidebar */}
         <aside className="editor-sidebar">
@@ -340,6 +389,33 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
               <p>Start your local Bee node to publish content</p>
             </div>
           )}
+          
+          {/* Gateway Info */}
+          <div className="sidebar-section">
+            <h3>🌐 Gateway Settings</h3>
+            <div className="gateway-info">
+              <div className="gateway-item">
+                <span className="gateway-label">Local:</span>
+                <span className="gateway-value">{serviceStatus.gateway}</span>
+                <span className={`gateway-status ${serviceStatus.nodeRunning ? 'online' : 'offline'}`}>
+                  {serviceStatus.nodeRunning ? '🟢' : '🔴'}
+                </span>
+              </div>
+              <div className="gateway-item">
+                <span className="gateway-label">Public:</span>
+                <span className="gateway-value">{serviceStatus.publicGateway}</span>
+                <span className="gateway-status online">🟢</span>
+              </div>
+              <div className="gateway-note">
+                <small>
+                  {mode === 'proposal' 
+                    ? '📤 Proposals use public gateway URLs for universal access'
+                    : '🏠 Drafts use local gateway for development'
+                  }
+                </small>
+              </div>
+            </div>
+          </div>
           
           {/* Drafts */}
           {isConnected && (
@@ -451,7 +527,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
                 ref={fileInputRef}
                 style={{ display: 'none' }}
                 accept="image/*"
-                onChange={handleImageUpload}
+                onChange={handleQuickImageUpload}
               />
               
               <button 
@@ -459,7 +535,15 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
                 onClick={() => fileInputRef.current?.click()}
                 disabled={loading}
               >
-                📷 Upload Image
+                📷 Quick Upload
+              </button>
+              
+              <button 
+                className="asset-browser-btn"
+                onClick={() => setShowAssetBrowser(true)}
+                disabled={loading}
+              >
+                🗂️ Asset Library
               </button>
               
               <button 
@@ -489,7 +573,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
           
           <div className="editor-container">
             <MDEditor
-              value={content}
+              value={mode === 'proposal' ? getPreviewContent() : content}
               onChange={(value) => setContent(value || '')}
               height="calc(100vh - 200px)"
               data-color-mode="light"
@@ -498,6 +582,13 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
           </div>
         </main>
       </div>
+      
+      {/* Enhanced Asset Browser */}
+      <EnhancedAssetBrowser
+        isOpen={showAssetBrowser}
+        onClose={() => setShowAssetBrowser(false)}
+        onInsertAsset={handleAssetInsertion}
+      />
     </div>
   );
 };

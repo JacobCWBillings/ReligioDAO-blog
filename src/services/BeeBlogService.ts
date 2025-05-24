@@ -36,17 +36,37 @@ export interface BlogContent {
 }
 
 /**
+ * Gateway configuration for different use cases
+ */
+export interface GatewayConfig {
+  local: string;          // For uploads and development
+  public: string;         // For public content viewing
+  fallbacks: string[];    // Backup gateways
+}
+
+/**
  * Service for managing blog content using bee-js directly
- * Replaces etherjot dependencies with direct Swarm integration
+ * Handles both local development and public gateway scenarios
  */
 export class BeeBlogService {
   private bee: Bee;
   private postageBatchId: string;
-  private gateway: string;
+  private gateways: GatewayConfig;
   
-  constructor(gateway: string = 'http://localhost:1633', postageBatchId?: string) {
-    this.gateway = gateway;
-    this.bee = new Bee(gateway);
+  constructor(
+    gateways: GatewayConfig = {
+      local: 'http://localhost:1633',
+      public: 'https://download.gateway.ethswarm.org',
+      fallbacks: [
+        'https://api.gateway.ethswarm.org',
+        'https://gateway.ethswarm.org',
+        'https://bee-8.gateway.ethswarm.org'
+      ]
+    },
+    postageBatchId?: string
+  ) {
+    this.gateways = gateways;
+    this.bee = new Bee(gateways.local);
     this.postageBatchId = postageBatchId || '';
   }
 
@@ -156,7 +176,7 @@ export class BeeBlogService {
   }
 
   /**
-   * Upload blog content to Swarm and return the reference
+   * Upload blog content to Swarm using uploadFile method
    */
   async uploadBlogContent(blogContent: BlogContent): Promise<string> {
     if (!this.postageBatchId) {
@@ -175,10 +195,17 @@ export class BeeBlogService {
       // Convert to JSON string
       const contentJson = JSON.stringify(contentWithMetadata, null, 2);
       
-      // Upload to Swarm - removed contentType since uploadData doesn't support it
-      const uploadResult = await this.bee.uploadData(
+      // Convert string to Uint8Array which is accepted by uploadFile
+      const contentBytes = new TextEncoder().encode(contentJson);
+      
+      // Upload using uploadFile method with Uint8Array
+      const uploadResult = await this.bee.uploadFile(
         this.postageBatchId,
-        Buffer.from(contentJson, 'utf-8')
+        contentBytes,
+        'blog-content.json',
+        {
+          contentType: 'application/json'
+        }
       );
 
       return uploadResult.reference;
@@ -189,20 +216,33 @@ export class BeeBlogService {
   }
 
   /**
-   * Download blog content from Swarm
+   * Download blog content from Swarm using downloadFile method
    */
   async downloadBlogContent(reference: string): Promise<BlogContent> {
     try {
-      const data = await this.bee.downloadData(reference);
-      const contentJson = new TextDecoder().decode(data);
-      const parsedContent = JSON.parse(contentJson);
+      // Try local gateway first, then public gateways
+      const gateways = [this.gateways.local, this.gateways.public, ...this.gateways.fallbacks];
       
-      // Validate the content structure
-      if (!parsedContent.title || !parsedContent.content) {
-        throw new Error('Invalid blog content structure');
+      for (const gateway of gateways) {
+        try {
+          const bee = new Bee(gateway);
+          const fileData = await bee.downloadFile(reference);
+          const contentJson = fileData.data.text();
+          const parsedContent = JSON.parse(contentJson);
+          
+          // Validate the content structure
+          if (!parsedContent.title || !parsedContent.content) {
+            throw new Error('Invalid blog content structure');
+          }
+          
+          return parsedContent as BlogContent;
+        } catch (error) {
+          console.warn(`Failed to download from ${gateway}:`, error);
+          continue;
+        }
       }
       
-      return parsedContent as BlogContent;
+      throw new Error('Failed to download from all available gateways');
     } catch (error) {
       console.error('Error downloading blog content:', error);
       throw new Error(`Failed to download content from Swarm: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -249,7 +289,7 @@ export class BeeBlogService {
   }
 
   /**
-   * Upload an asset (image, etc.) to Swarm
+   * Upload an asset (image, etc.) to Swarm using uploadFile
    */
   async uploadAsset(file: File): Promise<string> {
     if (!this.postageBatchId) {
@@ -257,7 +297,7 @@ export class BeeBlogService {
     }
 
     try {
-      // Use uploadFile instead of uploadData to preserve file type information
+      // Use uploadFile method as recommended
       const uploadResult = await this.bee.uploadFile(
         this.postageBatchId,
         file,
@@ -297,10 +337,48 @@ export class BeeBlogService {
   }
 
   /**
-   * Get a URL for accessing content through the Swarm gateway
+   * Get a URL for accessing content through a specific gateway
+   * @param reference Swarm reference
+   * @param usePublicGateway Whether to use public gateway (for public viewing)
    */
-  getContentUrl(reference: string): string {
-    return `${this.gateway}/bytes/${reference}`;
+  getContentUrl(reference: string, usePublicGateway: boolean = false): string {
+    const gateway = usePublicGateway ? this.gateways.public : this.gateways.local;
+    return `${gateway}/bytes/${reference}`;
+  }
+
+  /**
+   * Get URLs for content with fallbacks for public viewing
+   * Returns both local and public URLs for different use cases
+   */
+  getContentUrls(reference: string): {
+    local: string;
+    public: string;
+    fallbacks: string[];
+  } {
+    return {
+      local: `${this.gateways.local}/bytes/${reference}`,
+      public: `${this.gateways.public}/bytes/${reference}`,
+      fallbacks: this.gateways.fallbacks.map(gateway => `${gateway}/bytes/${reference}`)
+    };
+  }
+
+  /**
+   * Process markdown content to replace localhost URLs with public gateway URLs
+   * This ensures content is viewable by anyone, not just local development
+   */
+  processMarkdownForPublicViewing(markdown: string): string {
+    // Replace localhost image URLs with public gateway URLs
+    return markdown.replace(
+      /!\[(.*?)\]\(http:\/\/localhost:1633\/bytes\/(.*?)\)/g,
+      (match, alt, reference) => {
+        return `![${alt}](${this.gateways.public}/bytes/${reference})`;
+      }
+    ).replace(
+      /<img\s+[^>]*src="http:\/\/localhost:1633\/bytes\/(.*?)"([^>]*)>/g,
+      (match, reference, attrs) => {
+        return `<img src="${this.gateways.public}/bytes/${reference}"${attrs}>`;
+      }
+    );
   }
 
   /**
@@ -335,6 +413,7 @@ export class BeeBlogService {
     hasStamp: boolean;
     gateway: string;
     postageBatchId: string;
+    publicGateway: string;
   }> {
     const nodeRunning = await this.isNodeRunning();
     const hasStamp = nodeRunning ? await this.hasUsableStamp() : false;
@@ -342,9 +421,22 @@ export class BeeBlogService {
     return {
       nodeRunning,
       hasStamp,
-      gateway: this.gateway,
-      postageBatchId: this.postageBatchId
+      gateway: this.gateways.local,
+      postageBatchId: this.postageBatchId,
+      publicGateway: this.gateways.public
     };
+  }
+
+  /**
+   * Update gateway configuration
+   */
+  updateGateways(newGateways: Partial<GatewayConfig>): void {
+    this.gateways = { ...this.gateways, ...newGateways };
+    
+    // Update the Bee instance to use the new local gateway
+    if (newGateways.local) {
+      this.bee = new Bee(newGateways.local);
+    }
   }
 }
 
