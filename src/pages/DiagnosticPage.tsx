@@ -1,6 +1,5 @@
 import React from 'react';
 import SystemDiagnostic from '../components/SystemDiagnostic';
-import BeeSyncButton from '../components/BeeSyncButton';
 import './DiagnosticPage.css';
 
 const DiagnosticPage: React.FC = () => {
@@ -11,11 +10,6 @@ const DiagnosticPage: React.FC = () => {
         This page helps you diagnose issues with your ReligioDAO blog platform setup.
         Check the status of all system components and find solutions to common problems.
       </p>
-      
-      {/* Add the BeeSyncButton at the top of the diagnostics page */}
-      <div className="sync-section">
-        <BeeSyncButton />
-      </div>
 
       <SystemDiagnostic />
       

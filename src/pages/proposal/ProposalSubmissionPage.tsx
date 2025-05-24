@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useWallet } from '../../contexts/WalletContext';
 import { useProposal } from '../../blockchain/hooks/useProposal';
-import { useGlobalState } from '../../contexts/GlobalStateContext';
+import { useSimpleApp } from '../../contexts/SimpleAppContext';
 import { useProposalSubmissionGuard } from '../../hooks/useNavigationGuard';
-import { Swarm } from '../../libswarm';
+import { beeBlogService, BlogDraft } from '../../services/BeeBlogService';
 import { BlogProposal } from '../../types/blockchain';
 import { extractProposalIdFromReceipt } from '../../blockchain/utils/transactionUtils';
 import { marked } from 'marked';
@@ -21,7 +21,7 @@ export const ProposalSubmissionPage: React.FC = () => {
   
   const { isConnected, account } = useWallet();
   const { createBlogProposal, loading, error } = useProposal();
-  const { globalState } = useGlobalState();
+  const { state: appState } = useSimpleApp();
   
   // Form state
   const [title, setTitle] = useState('');
@@ -36,6 +36,7 @@ export const ProposalSubmissionPage: React.FC = () => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [proposalId, setProposalId] = useState<string | null>(null);
+  const [loadedDraft, setLoadedDraft] = useState<BlogDraft | null>(null);
   
   // Form validation
   const [formErrors, setFormErrors] = useState<{
@@ -47,69 +48,58 @@ export const ProposalSubmissionPage: React.FC = () => {
   
   const [showPreview, setShowPreview] = useState(false);
 
-  // Validate draft exists in localStorage
+  // Validate draft exists and load it
   useEffect(() => {
-    if (!draftId) return;
+    if (!draftId) {
+      console.log('No draftId provided, redirecting to editor');
+      navigate('/editor');
+      return;
+    }
     
-    const draftKey = `blog-draft-${draftId}`;
-    const draftJson = localStorage.getItem(draftKey);
+    // Load draft using BeeBlogService
+    const draft = beeBlogService.loadDraft(draftId);
     
-    if (!draftJson) {
-      console.log('Draft not found in localStorage, redirecting to editor');
+    if (!draft) {
+      console.log('Draft not found, redirecting to editor');
       navigate('/editor');
       return;
     }
     
     // Validate draft has required fields
-    try {
-      const draft = JSON.parse(draftJson);
-      if (!draft.contentReference || !draft.title) {
-        console.warn('Draft is missing critical fields (contentReference or title)');
-        navigate('/editor');
-        return;
-      }
-    } catch (err) {
-      console.error('Error parsing draft:', err);
+    if (!draft.title || !draft.content) {
+      console.warn('Draft is missing critical fields (title or content)');
       navigate('/editor');
       return;
     }
+    
+    setLoadedDraft(draft);
   }, [draftId, navigate]);
 
-  // Load draft if draftId is provided
+  // Populate form from loaded draft
   useEffect(() => {
-    if (!draftId) return;
+    if (!loadedDraft) return;
     
-    const draftJson = localStorage.getItem(`blog-draft-${draftId}`);
-    if (draftJson) {
-      try {
-        const draft = JSON.parse(draftJson);
-        setTitle(draft.title || '');
-        setContent(draft.content || '');
-        setContentReference(draft.contentReference || '');
-        setPreview(draft.preview || '');
-        setBanner(draft.banner || null);
-        setCategory(draft.category || '');
-        
-        // Handle tags - if it's an array, join it; if it's a string, use it
-        if (draft.tags) {
-          if (Array.isArray(draft.tags)) {
-            setTags(draft.tags.join(', '));
-          } else if (typeof draft.tags === 'string') {
-            setTags(draft.tags);
-          }
-        }
-        
-        // Generate a default description if none exists
-        if (!description) {
-          setDescription(`A blog post about ${draft.category || 'various topics'} by ${account || 'a community member'}`);
-        }
-      } catch (err) {
-        console.error('Error parsing draft:', err);
-        setUploadError('Failed to load draft. Please create a new blog in the editor.');
-        navigate('/editor');
+    setTitle(loadedDraft.title);
+    setContent(loadedDraft.content);
+    setPreview(loadedDraft.preview);
+    setBanner(loadedDraft.banner || null);
+    setCategory(loadedDraft.category);
+    setContentReference(loadedDraft.contentReference || '');
+    
+    // Handle tags - if it's an array, join it; if it's a string, use it
+    if (loadedDraft.tags) {
+      if (Array.isArray(loadedDraft.tags)) {
+        setTags(loadedDraft.tags.join(', '));
+      } else if (typeof loadedDraft.tags === 'string') {
+        setTags(loadedDraft.tags);
       }
     }
-  }, [draftId, account, description, navigate]);
+    
+    // Generate a default description if none exists
+    if (!description && account) {
+      setDescription(`A blog post about ${loadedDraft.category || 'various topics'} by ${account.substring(0, 6)}...${account.substring(38)}`);
+    }
+  }, [loadedDraft, account, description]);
   
   // Redirect if not connected
   useEffect(() => {
@@ -118,7 +108,7 @@ export const ProposalSubmissionPage: React.FC = () => {
     }
   }, [isConnected, navigate]);
   
-  // Generate preview from content
+  // Generate preview from content if not already set
   useEffect(() => {
     if (content && !preview) {
       // Generate a preview (first ~150 characters without markdown)
@@ -138,10 +128,8 @@ export const ProposalSubmissionPage: React.FC = () => {
       errors.title = 'Title is required';
     }
     
-    if (!contentReference) {
-      // We now require a content reference from the draft
-      // The editor flow should have created this
-      errors.content = 'Content reference is missing. Please go back to the editor.';
+    if (!content.trim()) {
+      errors.content = 'Content is required';
     }
     
     if (!category.trim()) {
@@ -156,7 +144,7 @@ export const ProposalSubmissionPage: React.FC = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // Upload content to Swarm if we don't already have a content reference
+  // Upload content to Swarm using BeeBlogService
   const uploadToSwarm = async (): Promise<string> => {
     // If we already have a content reference from the draft, use that
     if (contentReference) {
@@ -167,24 +155,48 @@ export const ProposalSubmissionPage: React.FC = () => {
     setUploadError(null);
     
     try {
-      const swarm = new Swarm({
-        beeApi: 'http://localhost:1633',
-        postageBatchId: globalState.postageBatchId
-      });
+      // Check if BeeBlogService is ready
+      const serviceStatus = await beeBlogService.getServiceStatus();
+      if (!serviceStatus.nodeRunning) {
+        throw new Error('Bee node is not running. Please start your local Bee node.');
+      }
       
-      // Upload blog content to Swarm with standardized filename
-      const resource = await swarm.newResource(
-        'content.md', // Standardized filename
+      // Create blog content object for upload
+      const blogContent = {
+        title,
         content,
-        'text/markdown'
-      );
+        metadata: {
+          author: account || '',
+          category,
+          tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
+          createdAt: Date.now(),
+          banner: banner || undefined
+        }
+      };
       
-      const result = await resource.save();
+      // Upload using BeeBlogService
+      const reference = await beeBlogService.uploadBlogContent(blogContent);
       
-      return result.hash;
+      // Update the draft with the content reference
+      if (loadedDraft && draftId) {
+        const updatedDraft = {
+          ...loadedDraft,
+          contentReference: reference,
+          title,
+          content,
+          category,
+          tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
+          lastModified: Date.now()
+        };
+        
+        beeBlogService.saveDraft(updatedDraft);
+      }
+      
+      return reference;
     } catch (err) {
       console.error('Error uploading to Swarm:', err);
-      setUploadError('Failed to upload content to Swarm. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to upload content to Swarm';
+      setUploadError(errorMessage);
       throw err;
     } finally {
       setIsUploading(false);
@@ -205,13 +217,9 @@ export const ProposalSubmissionPage: React.FC = () => {
     }
     
     try {
-      // 1. Use existing content reference or upload to Swarm if needed
-      const reference = contentReference || await uploadToSwarm();
-      
-      // Set contentReference in state if it wasn't already set
-      if (!contentReference) {
-        setContentReference(reference);
-      }
+      // 1. Upload content to Swarm or use existing reference
+      const reference = await uploadToSwarm();
+      setContentReference(reference);
       
       // 2. Create the blog proposal
       const tagsArray = tags
@@ -242,20 +250,30 @@ export const ProposalSubmissionPage: React.FC = () => {
           const extractedProposalId = extractProposalIdFromReceipt(result.receipt);
           if (extractedProposalId) {
             setProposalId(extractedProposalId);
-          } else {
-            // Fallback to a default or placeholder
-            setProposalId('1');
           }
         }
         
-        // Remove the draft from localStorage if it exists
+        // Mark draft as published and remove from localStorage
         if (draftId) {
-          localStorage.removeItem(`blog-draft-${draftId}`);
+          // Update draft to mark as published
+          if (loadedDraft) {
+            const publishedDraft = {
+              ...loadedDraft,
+              isPublished: true,
+              contentReference: reference,
+              lastModified: Date.now()
+            };
+            beeBlogService.saveDraft(publishedDraft);
+          }
+          
+          // Optionally remove the draft after successful submission
+          // beeBlogService.deleteDraft(draftId);
         }
       }
     } catch (err) {
       console.error('Error submitting proposal:', err);
-      setUploadError(err instanceof Error ? err.message : 'Unknown error occurred');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setUploadError(errorMessage);
     }
   };
 
@@ -274,14 +292,24 @@ export const ProposalSubmissionPage: React.FC = () => {
     }
   };
 
+  // Check if platform is ready for content upload
+  const isPlatformReady = appState.isInitialized && appState.status.beeNodeRunning;
+
   return (
     <div className="proposal-submission-page">
       <h1>Submit Blog Proposal</h1>
+      
+      {!isPlatformReady && (
+        <div className="platform-warning">
+          <p>⚠️ Platform not ready for content upload. Please ensure your Bee node is running.</p>
+        </div>
+      )}
       
       {submitSuccess ? (
         <div className="success-message">
           <h2>Proposal Submitted Successfully!</h2>
           <p>Your blog proposal has been submitted to the DAO for voting.</p>
+          <p>Content Reference: <code>{contentReference}</code></p>
           <button className="primary-button" onClick={viewProposal}>
             View Proposal
           </button>
@@ -399,12 +427,11 @@ export const ProposalSubmissionPage: React.FC = () => {
                   onChange={(e) => setContent(e.target.value)}
                   placeholder="Write your blog content in Markdown format..."
                   rows={15}
-                  disabled={!!contentReference} // Disable if we have a content reference
                 />
                 {contentReference && (
                   <div className="content-reference-note">
-                    <p>Your content has been uploaded to Swarm with reference: {contentReference}</p>
-                    <p className="reference-notice">This reference ensures the content remains available even if Swarm postage stamps expire.</p>
+                    <p>✅ Content uploaded to Swarm: <code>{contentReference}</code></p>
+                    <p className="reference-notice">This reference ensures your content is permanently stored on the decentralized web.</p>
                   </div>
                 )}
                 {formErrors.content && <div className="error-message">{formErrors.content}</div>}
@@ -427,9 +454,9 @@ export const ProposalSubmissionPage: React.FC = () => {
                 <button
                   type="submit"
                   className="submit-button"
-                  disabled={isUploading || loading}
+                  disabled={isUploading || loading || !isPlatformReady}
                 >
-                  {isUploading ? 'Uploading...' : loading ? 'Submitting...' : 'Submit Proposal'}
+                  {isUploading ? 'Uploading to Swarm...' : loading ? 'Submitting Proposal...' : 'Submit Proposal'}
                 </button>
               </div>
             </form>
