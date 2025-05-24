@@ -26,7 +26,7 @@ export const BlogDetailPage: React.FC = () => {
   const [fetchAttempted, setFetchAttempted] = useState<boolean>(false);
   const [relatedBlogs, setRelatedBlogs] = useState<any[]>([]);
 
-  // Fetch blog content from Swarm using our service
+  // Fetch blog content from Swarm using our service with web-friendly approach
   const fetchBlogContent = useCallback(async (contentReference: string) => {
     if (!contentReference || contentReference.trim() === '') {
       setError('Blog content reference not found');
@@ -42,7 +42,8 @@ export const BlogDetailPage: React.FC = () => {
       setContentLoading(true);
       console.log(`Fetching blog content for reference: ${contentReference}`);
       
-      // Use standardized SwarmContentService
+      // Use web-optimized approach via SwarmContentService
+      // This will first try bzz endpoint for HTML/web content
       const html = await swarmContentService.getContentAsHtml(contentReference);
       
       if (!html || html.trim() === '') {
@@ -205,12 +206,25 @@ export const BlogDetailPage: React.FC = () => {
 
   // Handle share button click
   const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
-    // Show a toast or alert
-    alert('Link copied to clipboard!');
+    // If we have a direct Swarm link, offer to share that too
+    if (blog?.contentReference) {
+      const appLink = window.location.href;
+      const swarmDirectLink = `https://gateway.ethswarm.org/bzz/${blog.contentReference}/`;
+      
+      if (window.confirm('Copy application link (OK) or direct Swarm link (Cancel)?')) {
+        navigator.clipboard.writeText(appLink);
+        alert('Application link copied to clipboard!');
+      } else {
+        navigator.clipboard.writeText(swarmDirectLink);
+        alert('Direct Swarm link copied to clipboard!');
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert('Link copied to clipboard!');
+    }
   };
   
-  // Handle retry content loading
+  // Handle retry content loading with web-first approach
   const handleRetryContentLoad = async () => {
     if (!blog) return;
     
@@ -225,6 +239,12 @@ export const BlogDetailPage: React.FC = () => {
     if (contentRef.trim()) {
       // Clear from cache to force fresh fetch
       swarmContentService.removeFromCache(contentRef);
+      
+      // Try to offer direct web link if content fails to load in the app
+      const webUrl = `https://gateway.ethswarm.org/bzz/${contentRef}/`;
+      console.log(`Direct web access URL: ${webUrl}`);
+      
+      // Continue with in-app fetch
       fetchBlogContent(contentRef);
     } else {
       setError('Blog content reference is missing');
@@ -336,6 +356,8 @@ export const BlogDetailPage: React.FC = () => {
           <div className="content-debug-info" style={{background: '#f8f8f8', padding: '10px', marginBottom: '20px', fontSize: '12px', fontFamily: 'monospace'}}>
             <div>Content Reference: {blog.contentReference || 'Not directly available'}</div>
             <div>Nested Reference: {blog.metadata?.properties?.contentReference || 'Not available in properties'}</div>
+            <div>Web URL: {blog.contentReference ? `https://gateway.ethswarm.org/bzz/${blog.contentReference}/` : 'Not available'}</div>
+            <div>Bytes URL: {blog.contentReference ? `https://gateway.ethswarm.org/bytes/${blog.contentReference}` : 'Not available'}</div>
           </div>
         )}
         
@@ -351,6 +373,17 @@ export const BlogDetailPage: React.FC = () => {
             <button onClick={handleRetryContentLoad} className="retry-button">
               Retry Loading Content
             </button>
+            {blog?.contentReference && (
+              <a 
+                href={`https://gateway.ethswarm.org/bzz/${blog.contentReference}/`}
+                target="_blank"
+                rel="noreferrer"
+                className="direct-link-button"
+                style={{marginLeft: '10px', textDecoration: 'underline'}}
+              >
+                Open Directly in Browser
+              </a>
+            )}
           </div>
         ) : blogContent ? (
           <div 

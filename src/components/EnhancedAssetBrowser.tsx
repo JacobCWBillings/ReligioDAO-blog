@@ -29,6 +29,7 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
       
       // Get all possible URLs for this asset
       const urls = assetService.getAssetUrls(asset);
+      // For images, always use bytes endpoint for direct access
       const allUrls = [urls.local, urls.public, ...urls.fallbacks];
       
       // Try each URL until one works
@@ -73,6 +74,7 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
 
   const handleInsertAsset = () => {
     // Always use public gateway for inserted assets so they're viewable by everyone
+    // For images and binary assets, we should use bytes endpoint for direct access
     onInsert(asset);
   };
 
@@ -154,10 +156,12 @@ const GatewayStatusIndicator: React.FC<{ asset: Asset }> = ({ asset }) => {
   const [status, setStatus] = useState<{
     local: boolean;
     public: boolean;
+    web: boolean;  // For web endpoint accessibility
     checking: boolean;
   }>({
     local: false,
     public: false,
+    web: false,
     checking: false
   });
 
@@ -171,10 +175,11 @@ const GatewayStatusIndicator: React.FC<{ asset: Asset }> = ({ asset }) => {
       setStatus({
         local: validation.workingUrls.includes(urls.local),
         public: validation.workingUrls.includes(urls.public),
+        web: validation.workingUrls.includes(urls.webAccessible),
         checking: false
       });
     } catch (error) {
-      setStatus({ local: false, public: false, checking: false });
+      setStatus({ local: false, public: false, web: false, checking: false });
     }
   };
 
@@ -200,6 +205,14 @@ const GatewayStatusIndicator: React.FC<{ asset: Asset }> = ({ asset }) => {
       >
         {status.public ? '🟢' : '🔴'} Public
       </span>
+      {!asset.contentType.startsWith('image/') && (
+        <span
+          className={`gateway-indicator ${status.web ? 'available' : 'unavailable'}`}
+          title={`Web access: ${status.web ? 'Available' : 'Unavailable'}`}
+        >
+          {status.web ? '🟢' : '🔴'} Web
+        </span>
+      )}
     </div>
   );
 };
@@ -222,6 +235,7 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>('date');
   const [gatewayMode, setGatewayMode] = useState<'local' | 'public'>('public');
+  const [endpointMode, setEndpointMode] = useState<'auto' | 'bzz' | 'bytes'>('auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load assets when browser opens or account changes
@@ -411,6 +425,16 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
                   <option value="public">🌐 Public Gateway</option>
                   <option value="local">🏠 Local Gateway</option>
                 </select>
+                <select
+                  value={endpointMode}
+                  onChange={(e) => setEndpointMode(e.target.value as 'auto' | 'bzz' | 'bytes')}
+                  className="endpoint-select"
+                  title="Choose endpoint type"
+                >
+                  <option value="auto">🔄 Auto Endpoint</option>
+                  <option value="bzz">🌍 Web (bzz)</option>
+                  <option value="bytes">📁 Binary (bytes)</option>
+                </select>
               </div>
             </div>
 
@@ -421,7 +445,9 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
                 <span>{(stats.totalSize / (1024 * 1024)).toFixed(1)} MB total</span>
                 <span>•</span>
                 <span className="gateway-mode-indicator">
-                  Using {gatewayMode === 'public' ? 'public' : 'local'} gateway for insertions
+                    Using {gatewayMode === 'public' ? 'public' : 'local'} gateway | 
+                    {endpointMode === 'auto' ? ' Auto endpoint' : 
+                     endpointMode === 'bzz' ? ' Web (bzz)' : ' Binary (bytes)'}
                 </span>
               </div>
             )}

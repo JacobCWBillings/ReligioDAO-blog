@@ -1,4 +1,4 @@
-// src/services/SwarmContentService.ts - standardized approach
+// src/services/SwarmContentService.ts - web-optimized approach
 import { Bee } from '@ethersphere/bee-js';
 import { getContentUrl } from '../config';
 import { marked } from 'marked';
@@ -8,6 +8,7 @@ interface CachedContent {
   content: string;
   html: string;
   timestamp: number;
+  contentType?: string;
 }
 
 // List of backup gateways to try when primary fails
@@ -18,12 +19,20 @@ const BACKUP_GATEWAYS = [
   'https://download.gateway.ethswarm.org'
 ];
 
-// Standard file name for all markdown content
-export const STANDARD_CONTENT_FILENAME = '';
+// Swarm endpoint types
+export const ENDPOINTS = {
+  BZZ: 'bzz',    // Web content endpoint (HTML, markdown, etc.)
+  BYTES: 'bytes' // Raw data endpoint (binary files)
+};
+
+// Standard file names for different content types
+export const STANDARD_CONTENT_FILENAME = 'index.html'; // Web content
+export const STANDARD_MARKDOWN_FILENAME = 'content.md'; // Markdown content
+export const STANDARD_JSON_FILENAME = 'content.json';   // JSON metadata
 
 /**
  * Service for retrieving and caching content from Swarm
- * Uses a standardized approach for content references
+ * Uses a web-first approach that prioritizes bzz endpoint for blog content
  */
 class SwarmContentService {
   private contentCache: Map<string, CachedContent>;
@@ -37,27 +46,34 @@ class SwarmContentService {
   
   /**
    * Retrieve content from Swarm with caching
+   * Uses a web-first approach prioritizing bzz endpoint
+   * 
    * @param contentReference Swarm content reference
+   * @param forceFresh Whether to force a fresh fetch (bypass cache)
    * @returns Promise resolving to the content string
    */
-  public async getContent(contentReference: string): Promise<string> {
+  public async getContent(contentReference: string, forceFresh: boolean = false): Promise<string> {
     // Check if content is in cache and not expired
     const cachedContent = this.contentCache.get(contentReference);
     const now = Date.now();
     
-    if (cachedContent && (now - cachedContent.timestamp) < this.cacheExpiryTime) {
+    if (!forceFresh && cachedContent && (now - cachedContent.timestamp) < this.cacheExpiryTime) {
       return cachedContent.content;
     }
     
-    // Content not in cache or expired, fetch from Swarm
+    // Content not in cache, expired, or force fresh requested
     try {
       const content = await this.fetchContent(contentReference);
+      
+      // Detect content type for better rendering
+      const contentType = this.detectContentType(content);
       
       // Add to cache
       this.contentCache.set(contentReference, {
         content,
         html: marked(content),
-        timestamp: now
+        timestamp: now,
+        contentType
       });
       
       return content;
@@ -71,6 +87,38 @@ class SwarmContentService {
       // No cached content available, rethrow the error
       throw error;
     }
+  }
+  
+  /**
+   * Detect content type from the content itself
+   * Helps determine how to best render the content
+   */
+  private detectContentType(content: string): string {
+    // Try to detect HTML
+    if (content.trim().startsWith('<!DOCTYPE html>') || 
+        content.trim().startsWith('<html') ||
+        (content.includes('<body') && content.includes('</body>'))) {
+      return 'text/html';
+    }
+    
+    // Try to detect JSON
+    try {
+      JSON.parse(content);
+      return 'application/json';
+    } catch (e) {
+      // Not JSON
+    }
+    
+    // Check for markdown indicators
+    if (content.match(/^#+ /m) || // Headers
+        content.match(/\[.+\]\(.+\)/) || // Links
+        content.match(/\*\*.+\*\*/) || // Bold
+        content.match(/```[^`]*```/)) { // Code blocks
+      return 'text/markdown';
+    }
+    
+    // Default to plain text
+    return 'text/plain';
   }
   
   /**
@@ -90,13 +138,38 @@ class SwarmContentService {
     // Content not in cache or expired, fetch from Swarm
     try {
       const content = await this.fetchContent(contentReference);
-      const html = marked(content);
+      
+      // Determine if this is already HTML content
+      const contentType = this.detectContentType(content);
+      let html: string;
+      
+      if (contentType === 'text/html') {
+        // Content is already HTML
+        html = content;
+      } else if (contentType === 'application/json') {
+        // Try to extract content from JSON and render that
+        try {
+          const jsonData = JSON.parse(content);
+          if (jsonData.content && typeof jsonData.content === 'string') {
+            html = marked(jsonData.content);
+          } else {
+            // Fallback to rendering the JSON as code
+            html = `<pre>${content}</pre>`;
+          }
+        } catch {
+          html = marked(content);
+        }
+      } else {
+        // Assume markdown or plain text
+        html = marked(content);
+      }
       
       // Add to cache
       this.contentCache.set(contentReference, {
         content,
         html,
-        timestamp: now
+        timestamp: now,
+        contentType
       });
       
       return html;
@@ -123,7 +196,9 @@ class SwarmContentService {
   }
   
   /**
-   * Fetch content from Swarm using the standardized path approach
+   * Fetch content from Swarm using web-first approach
+   * Prioritizes bzz endpoint for web content with fallbacks
+   * 
    * @param contentReference Swarm content reference
    * @returns Promise resolving to the content string
    */
@@ -140,43 +215,87 @@ class SwarmContentService {
     // Try with primary gateway and then backup gateways
     const gateways = ['http://localhost:1633', ...BACKUP_GATEWAYS];
     
-    // Try each gateway
+    // Try each gateway with multiple approaches
     for (const gateway of gateways) {
       try {
-        // Use standard path pattern
-        const url = `${gateway}/bzz/${cleanReference}/${STANDARD_CONTENT_FILENAME}`;
-        console.log(`Trying URL: ${url}`);
+        // Create bee instance for this gateway
+        const bee = new Bee(gateway);
         
-        const response = await fetch(url, { 
-          signal: AbortSignal.timeout(5000),
-          headers: {'Accept': 'text/markdown, text/plain, */*'}
-        });
-        
-        if (response.ok) {
-          const content = await response.text();
-          console.log(`Successfully retrieved content from ${url}`);
-          return content;
-        } else {
-          console.warn(`Failed to fetch from ${url} with status: ${response.status}`);
+        // First approach: Try downloadFile and access index.html
+        try {
+          console.log(`Trying to download as file from ${gateway}/bzz/${cleanReference}`);
+          const file = await bee.downloadFile(cleanReference, STANDARD_CONTENT_FILENAME);
+          if (file && file.data) {
+            // Extract text content
+            let content;
+            if (file.data instanceof Blob) {
+              content = await file.data.text();
+            } else if (typeof file.data.text === 'function') {
+              content = file.data.text();
+            } else {
+              throw new Error('Unsupported file data format');
+            }
+            console.log(`Successfully retrieved content from ${gateway}/bzz/${cleanReference}/${STANDARD_CONTENT_FILENAME}`);
+            return content;
+          }
+        } catch (fileError) {
+          console.warn(`Failed to download as file: ${fileError}`);
         }
-      } catch (error) {
-        console.warn(`Failed to fetch from gateway ${gateway}: ${error}`);
+        
+        // Second approach: Try direct bytes download
+        try {
+          console.log(`Trying to download as raw data from ${gateway}/bytes/${cleanReference}`);
+          const data = await bee.downloadData(cleanReference);
+          const content = new TextDecoder().decode(data);
+          console.log(`Successfully retrieved content as raw data`);
+          return content;
+        } catch (bytesError) {
+          console.warn(`Failed to download as bytes: ${bytesError}`);
+        }
+        
+        // If specific gateway approaches fail, continue to the next gateway
+      } catch (gatewayError) {
+        console.warn(`Failed to use gateway ${gateway}: ${gatewayError}`);
         // Continue to next gateway
       }
     }
     
-    // If we've exhausted all gateways, try one last approach with bee-js
-    try {
-      console.log(`Trying bee-js with localhost gateway`);
-      const bee = new Bee('http://localhost:1633');
-      const data = await bee.downloadData(cleanReference);
-      const content = new TextDecoder().decode(data);
-      return content;
-    } catch (error) {
-      console.warn(`bee-js approach failed: ${error}`);
+    // If direct bee-js methods don't work, try regular fetch as fallback
+    for (const gateway of gateways) {
+      try {
+        // Try different possible endpoints
+        const endpointsToTry = [
+          `${gateway}/bzz/${cleanReference}/${STANDARD_CONTENT_FILENAME}`,
+          `${gateway}/bzz/${cleanReference}/${STANDARD_MARKDOWN_FILENAME}`,
+          `${gateway}/bzz/${cleanReference}/${STANDARD_JSON_FILENAME}`,
+          `${gateway}/bzz/${cleanReference}/`,
+          `${gateway}/bytes/${cleanReference}`
+        ];
+        
+        for (const url of endpointsToTry) {
+          try {
+            console.log(`Trying fetch fallback: ${url}`);
+            const response = await fetch(url, { 
+              signal: AbortSignal.timeout(5000),
+              headers: {'Accept': 'text/html, text/markdown, application/json, text/plain, */*'}
+            });
+            
+            if (response.ok) {
+              const content = await response.text();
+              console.log(`Successfully retrieved content from ${url}`);
+              return content;
+            }
+          } catch (fetchError) {
+            console.warn(`Fetch fallback failed for ${url}: ${fetchError}`);
+            // Continue to next URL
+          }
+        }
+      } catch (error) {
+        // Continue to next gateway
+      }
     }
     
-    throw new Error(`Failed to fetch content using reference ${contentReference} after trying all gateways`);
+    throw new Error(`Failed to fetch content using reference ${contentReference} after trying all methods`);
   }
   
   /**
@@ -196,32 +315,82 @@ class SwarmContentService {
   
   /**
    * Pre-fetch and cache content from Swarm
+   * Uses web-first approach for better user experience
+   * 
    * @param contentReferences Array of Swarm content references to pre-fetch
+   * @param priority Optional priority order (references to fetch first)
    */
-  public async prefetchContent(contentReferences: string[]): Promise<void> {
-    // Create an array of promises, but don't wait for them to complete
-    const prefetchPromises = contentReferences.map(async (reference) => {
-      try {
-        // Only fetch if not already in cache or expired
-        const cachedContent = this.contentCache.get(reference);
-        const now = Date.now();
-        
-        if (!cachedContent || (now - cachedContent.timestamp) >= this.cacheExpiryTime) {
-          const content = await this.fetchContent(reference);
-          this.contentCache.set(reference, {
-            content,
-            html: marked(content),
-            timestamp: now
-          });
-        }
-      } catch (error) {
-        // Log error but don't fail the entire prefetch operation
-        console.warn(`Failed to prefetch content for ${reference}:`, error);
-      }
-    });
+  public async prefetchContent(
+    contentReferences: string[], 
+    priority: string[] = []
+  ): Promise<void> {
+    if (!contentReferences || contentReferences.length === 0) {
+      return;
+    }
     
-    // Wait for all prefetch operations to complete
-    await Promise.all(prefetchPromises);
+    // Process priority items first
+    const priorityItems = contentReferences.filter(ref => priority.includes(ref));
+    const regularItems = contentReferences.filter(ref => !priority.includes(ref));
+    
+    // Process items in priority order
+    const orderedReferences = [...priorityItems, ...regularItems];
+    
+    // Track which references we successfully prefetched
+    const prefetchResults: Record<string, boolean> = {};
+    
+    // Process in batches to avoid overwhelming the network
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < orderedReferences.length; i += BATCH_SIZE) {
+      const batch = orderedReferences.slice(i, i + BATCH_SIZE);
+      
+      // Create a batch of promises with error handling
+      const batchPromises = batch.map(async (reference) => {
+        if (!reference) return;
+        
+        try {
+          // Only fetch if not already in cache or expired
+          const cachedContent = this.contentCache.get(reference);
+          const now = Date.now();
+          
+          if (!cachedContent || (now - cachedContent.timestamp) >= this.cacheExpiryTime) {
+            try {
+              const content = await this.fetchContent(reference);
+              const contentType = this.detectContentType(content);
+              
+              this.contentCache.set(reference, {
+                content,
+                html: marked(content),
+                timestamp: now,
+                contentType
+              });
+              
+              prefetchResults[reference] = true;
+            } catch (fetchError) {
+              console.warn(`Error fetching content for prefetch: ${fetchError}`);
+              prefetchResults[reference] = false;
+            }
+          } else {
+            // Already cached and valid
+            prefetchResults[reference] = true;
+          }
+        } catch (error) {
+          // Log error but don't fail the entire prefetch operation
+          console.warn(`Failed to process prefetch for ${reference}:`, error);
+          prefetchResults[reference] = false;
+        }
+      });
+      
+      try {
+        // Wait for current batch to complete before starting the next
+        await Promise.all(batchPromises);
+      } catch (batchError) {
+        console.error(`Error processing prefetch batch: ${batchError}`);
+        // Continue with next batch even if this one had errors
+      }
+    }
+    
+    const successCount = Object.values(prefetchResults).filter(Boolean).length;
+    console.log(`Prefetch completed: ${successCount}/${contentReferences.length} successful`);
   }
 }
 

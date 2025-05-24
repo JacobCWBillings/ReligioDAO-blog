@@ -46,6 +46,11 @@ interface SwarmConfig {
   gateway: string;
   defaultPostageBatchTTL: number; // Time to live in seconds
   defaultDepth: number;
+  publicGateway?: string; // Public gateway for sharing content
+  endpoints?: {
+    content: string; // Endpoint for web content (bzz)
+    assets: string;  // Endpoint for binary assets (bytes)
+  };
 }
 
 /**
@@ -146,6 +151,11 @@ const config: AppConfig = {
     gateway: 'http://localhost:1633', // Local Bee node
     defaultPostageBatchTTL: 31536000, // 1 year in seconds
     defaultDepth: 20,
+    publicGateway: 'https://gateway.ethswarm.org', // Public gateway for sharing
+    endpoints: {
+      content: 'bzz', // Web content should use bzz endpoint
+      assets: 'bytes', // Binary assets use bytes endpoint
+    }
   },
   
   // IPFS gateway for fallback
@@ -237,12 +247,45 @@ export const getSwarmGateway = (): string => {
   return config.swarm.gateway;
 };
 
-// Helper to generate a Swarm URL
-export const getSwarmUrl = (reference: string): string => {
-  return `${config.swarm.gateway}/bzz/${reference}/`;
+/**
+ * Helper to generate a web-friendly Swarm URL with bzz endpoint
+ * Use this for blog content that should be web-accessible
+ */
+export const getSwarmUrl = (reference: string, path: string = ''): string => {
+  const cleanPath = path ? `/${path}` : '/';
+  return `${config.swarm.gateway}/bzz/${reference}${cleanPath}`;
 };
 
-// Helper to generate a content reference URL
-export const getContentUrl = (reference: string, gateway?: string): string => {
+/**
+ * Helper to generate a content URL based on content type
+ * @param reference Swarm content reference
+ * @param contentType Optional content type to determine endpoint
+ * @param gateway Optional custom gateway
+ * @returns URL appropriate for the content type
+ */
+export const getContentUrl = (
+  reference: string, 
+  contentType?: string,
+  gateway?: string
+): string => {
+  const useGateway = gateway || config.swarm.gateway;
+  
+  // Web content (HTML, markdown, etc.) should use bzz endpoint
+  if (contentType && (
+    contentType.includes('text/html') || 
+    contentType.includes('text/markdown') ||
+    contentType.includes('application/json')
+  )) {
+    return `${useGateway}/bzz/${reference}/`;
+  }
+  
+  // Default to bytes for binary content
+  return `${useGateway}/bytes/${reference}`;
+};
+
+/**
+ * Helper specifically for asset URLs (images, etc.)
+ */
+export const getAssetUrl = (reference: string, gateway?: string): string => {
   return `${gateway || config.swarm.gateway}/bytes/${reference}`;
 };

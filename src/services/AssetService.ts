@@ -127,7 +127,8 @@ export class AssetService {
    */
   generateAssetMarkdown(asset: Asset, altText?: string, usePublicGateway: boolean = true): string {
     // For published content, always use public gateway so anyone can view the images
-    const imageUrl = beeBlogService.getContentUrl(asset.reference, usePublicGateway);
+    // Always use bytes endpoint for binary assets like images for direct access
+    const imageUrl = beeBlogService.getContentUrl(asset.reference, usePublicGateway, asset.contentType);
     const alt = altText || asset.name.split('.')[0]; // Remove extension for alt text
     return `![${alt}](${imageUrl})`;
   }
@@ -138,7 +139,9 @@ export class AssetService {
    * @param usePublicGateway Whether to use public gateway (default: false for development)
    */
   getAssetUrl(asset: Asset, usePublicGateway: boolean = false): string {
-    return beeBlogService.getContentUrl(asset.reference, usePublicGateway);
+    // Use content type to determine the appropriate endpoint
+    // Most assets (images, etc.) should use the bytes endpoint
+    return beeBlogService.getContentUrl(asset.reference, usePublicGateway, asset.contentType);
   }
 
   /**
@@ -149,8 +152,14 @@ export class AssetService {
     local: string;
     public: string;
     fallbacks: string[];
+    webAccessible: string;
   } {
-    return beeBlogService.getContentUrls(asset.reference);
+    // Determine if this should be treated as web content
+    const isBlogContent = asset.contentType.includes('text/html') || 
+                         asset.contentType.includes('text/markdown') ||
+                         asset.contentType.includes('application/json');
+    
+    return beeBlogService.getContentUrls(asset.reference, isBlogContent);
   }
 
   /**
@@ -202,6 +211,7 @@ export class AssetService {
   /**
    * Validate if an asset reference is accessible
    * Tries multiple gateways to ensure the asset is available
+   * Also tries both bytes and bzz endpoints for maximum compatibility
    */
   async validateAssetAccess(asset: Asset): Promise<{
     accessible: boolean;
@@ -210,6 +220,11 @@ export class AssetService {
   }> {
     const urls = this.getAssetUrls(asset);
     const allUrls = [urls.local, urls.public, ...urls.fallbacks];
+    
+    // Also add web-accessible URL for testing
+    if (!allUrls.includes(urls.webAccessible)) {
+      allUrls.push(urls.webAccessible);
+    }
     
     const workingUrls: string[] = [];
     const failedUrls: string[] = [];

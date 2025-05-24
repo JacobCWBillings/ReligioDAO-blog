@@ -176,7 +176,8 @@ export class BeeBlogService {
   }
 
   /**
-   * Upload blog content to Swarm using uploadFile method
+   * Upload blog content to Swarm as a web-friendly HTML file with embedded JSON metadata
+   * Uses bzz endpoint for direct browser access
    */
   async uploadBlogContent(blogContent: BlogContent): Promise<string> {
     if (!this.postageBatchId) {
@@ -192,31 +193,93 @@ export class BeeBlogService {
         uploadedAt: new Date().toISOString()
       };
 
-      // Convert to JSON string
+      // Convert to JSON string for embedding
       const contentJson = JSON.stringify(contentWithMetadata, null, 2);
       
-      // Convert string to Uint8Array which is accepted by uploadFile
-      const contentBytes = new TextEncoder().encode(contentJson);
+      // Create an HTML file that contains both the rendered content and embedded JSON data
+      // This makes it both web-friendly and compatible with our app
+      const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${blogContent.title}</title>
+  <meta name="description" content="${blogContent.content.substring(0, 160).replace(/"/g, '&quot;')}">
+  <meta property="og:title" content="${blogContent.title}">
+  <meta property="og:type" content="article">
+  <meta name="author" content="${blogContent.metadata.author}">
+  <meta name="category" content="${blogContent.metadata.category}">
+  <meta name="created-date" content="${new Date(blogContent.metadata.createdAt).toISOString()}">
+  <!-- Embedded data for application use -->
+  <script type="application/ld+json" id="religiodao-blog-data">
+${contentJson}
+  </script>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }
+    img { max-width: 100%; height: auto; }
+    h1 { font-size: 2em; margin-bottom: 0.5em; }
+    .metadata { color: #555; margin-bottom: 2em; font-size: 0.9em; }
+    pre.markdown-source { display: none; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1>${blogContent.title}</h1>
+    <div class="metadata">
+      <div>By: ${blogContent.metadata.author}</div>
+      <div>Category: ${blogContent.metadata.category}</div>
+      <div>Date: ${new Date(blogContent.metadata.createdAt).toLocaleDateString()}</div>
+      ${blogContent.metadata.tags && blogContent.metadata.tags.length > 0 ? 
+        `<div>Tags: ${blogContent.metadata.tags.join(', ')}</div>` : ''}
+    </div>
+    <div class="content">
+      ${this.processMarkdownToHtml(blogContent.content)}
+    </div>
+  </article>
+  <!-- Original markdown source hidden for application use -->
+  <pre class="markdown-source" id="religiodao-markdown-content">${blogContent.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+</body>
+</html>`;
       
-      // Upload using uploadFile method with Uint8Array
+      // Convert HTML to bytes
+      const htmlBytes = new TextEncoder().encode(htmlContent);
+      
+      // Upload as a single file with index.html name for web accessibility
       const uploadResult = await this.bee.uploadFile(
-        this.postageBatchId,
-        contentBytes,
-        'blog-content.json',
-        {
-          contentType: 'application/json'
-        }
+        this.postageBatchId, 
+        new File([htmlBytes], 'index.html', { type: 'text/html' })
       );
-
+      
       return uploadResult.reference;
     } catch (error) {
       console.error('Error uploading blog content:', error);
       throw new Error(`Failed to upload content to Swarm: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
+  
+  /**
+   * Simple markdown to HTML converter for blog preview
+   * For a full application, consider using a proper markdown library
+   */
+  private processMarkdownToHtml(markdown: string): string {
+    // This is a very basic implementation - in a real app use a proper markdown parser
+    return markdown
+      .replace(/#{6}\s+(.*?)\n/g, '<h6>$1</h6>\n')
+      .replace(/#{5}\s+(.*?)\n/g, '<h5>$1</h5>\n')
+      .replace(/#{4}\s+(.*?)\n/g, '<h4>$1</h4>\n')
+      .replace(/#{3}\s+(.*?)\n/g, '<h3>$1</h3>\n')
+      .replace(/#{2}\s+(.*?)\n/g, '<h2>$1</h2>\n')
+      .replace(/#{1}\s+(.*?)\n/g, '<h1>$1</h1>\n')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1">')
+      .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>')
+      .replace(/\n\n/g, '<br><br>');
+  }
 
   /**
-   * Download blog content from Swarm using downloadFile method
+   * Download blog content from Swarm using web-friendly approach
+   * Extracts content from the HTML file with embedded metadata
    */
   async downloadBlogContent(reference: string): Promise<BlogContent> {
     try {
@@ -226,18 +289,99 @@ export class BeeBlogService {
       for (const gateway of gateways) {
         try {
           const bee = new Bee(gateway);
-          const fileData = await bee.downloadFile(reference);
-          const contentJson = fileData.data.text();
-          const parsedContent = JSON.parse(contentJson);
           
-          // Validate the content structure
-          if (!parsedContent.title || !parsedContent.content) {
-            throw new Error('Invalid blog content structure');
+          // Try to download the HTML file first (new format)
+          try {
+            console.log(`Trying to download HTML from ${gateway}/bzz/${reference}/`);
+            
+            // First try with bee-js
+            try {
+              const fileData = await bee.downloadFile(reference, 'index.html');
+              
+              if (fileData && fileData.data) {
+                const htmlContent = await new Response(fileData.data).text();
+                
+                // Try to extract the embedded JSON data
+                const jsonMatch = htmlContent.match(/<script type="application\/ld\+json" id="religiodao-blog-data">([\s\S]*?)<\/script>/);
+                
+                if (jsonMatch && jsonMatch[1]) {
+                  const jsonData = JSON.parse(jsonMatch[1].trim());
+                  
+                  // Validate the content structure
+                  if (jsonData.title && jsonData.content) {
+                    return jsonData as BlogContent;
+                  }
+                }
+                
+                // If we couldn't find the JSON data, try to extract content from HTML structure
+                const titleMatch = htmlContent.match(/<title>(.*?)<\/title>/);
+                const contentMatch = htmlContent.match(/<pre class="markdown-source" id="religiodao-markdown-content">([\s\S]*?)<\/pre>/);
+                
+                if (titleMatch && contentMatch) {
+                  const title = titleMatch[1];
+                  const content = contentMatch[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+                  
+                  // Extract author from meta tag
+                  const authorMatch = htmlContent.match(/<meta name="author" content="(.*?)">/);
+                  const categoryMatch = htmlContent.match(/<meta name="category" content="(.*?)">/);
+                  const dateMatch = htmlContent.match(/<meta name="created-date" content="(.*?)">/);
+                  
+                  return {
+                    title,
+                    content,
+                    metadata: {
+                      author: authorMatch ? authorMatch[1] : 'Unknown',
+                      category: categoryMatch ? categoryMatch[1] : '',
+                      tags: [],
+                      createdAt: dateMatch ? new Date(dateMatch[1]).getTime() : Date.now()
+                    }
+                  };
+                }
+              }
+            } catch (beeError) {
+              console.warn(`Failed to download with bee-js: ${beeError}`);
+              
+              // Try direct fetch as fallback
+              try {
+                const response = await fetch(`${gateway}/bzz/${reference}/index.html`);
+                if (response.ok) {
+                  const htmlContent = await response.text();
+                  
+                  // Try to extract the embedded JSON data
+                  const jsonMatch = htmlContent.match(/<script type="application\/ld\+json" id="religiodao-blog-data">([\s\S]*?)<\/script>/);
+                  
+                  if (jsonMatch && jsonMatch[1]) {
+                    const jsonData = JSON.parse(jsonMatch[1].trim());
+                    
+                    // Validate the content structure
+                    if (jsonData.title && jsonData.content) {
+                      return jsonData as BlogContent;
+                    }
+                  }
+                }
+              } catch (fetchError) {
+                console.warn(`Failed direct fetch: ${fetchError}`);
+              }
+            }
+          } catch (htmlError) {
+            console.warn(`Failed to parse HTML content: ${htmlError}`);
           }
           
-          return parsedContent as BlogContent;
-        } catch (error) {
-          console.warn(`Failed to download from ${gateway}:`, error);
+          // Fall back to downloading raw data for backward compatibility
+          try {
+            const data = await bee.downloadData(reference);
+            const contentJson = new TextDecoder().decode(data);
+            const parsedContent = JSON.parse(contentJson);
+            
+            // Validate the content structure
+            if (parsedContent.title && parsedContent.content) {
+              return parsedContent as BlogContent;
+            }
+          } catch (dataError) {
+            console.warn(`Failed to download raw data: ${dataError}`);
+          }
+        } catch (gatewayError) {
+          console.warn(`Failed to use gateway ${gateway}: ${gatewayError}`);
           continue;
         }
       }
@@ -297,14 +441,10 @@ export class BeeBlogService {
     }
 
     try {
-      // Use uploadFile method as recommended
+      // Use uploadFile method as per bee-js API
       const uploadResult = await this.bee.uploadFile(
         this.postageBatchId,
-        file,
-        file.name,
-        {
-          contentType: file.type
-        }
+        file
       );
 
       return uploadResult.reference;
@@ -338,47 +478,118 @@ export class BeeBlogService {
 
   /**
    * Get a URL for accessing content through a specific gateway
+   * Uses bzz endpoint for blog content and bytes for binary data
+   * 
    * @param reference Swarm reference
    * @param usePublicGateway Whether to use public gateway (for public viewing)
+   * @param contentType Optional content type to determine appropriate endpoint
    */
-  getContentUrl(reference: string, usePublicGateway: boolean = false): string {
+  getContentUrl(
+    reference: string, 
+    usePublicGateway: boolean = false,
+    contentType?: string
+  ): string {
     const gateway = usePublicGateway ? this.gateways.public : this.gateways.local;
+    
+    // Blog content (HTML, markdown, JSON) should use bzz endpoint for web access
+    if (contentType && (
+      contentType.includes('text/html') || 
+      contentType.includes('text/markdown') ||
+      contentType.includes('application/json')
+    )) {
+      return `${gateway}/bzz/${reference}/`;
+    }
+    
+    // Default to bytes endpoint for binary content
     return `${gateway}/bytes/${reference}`;
+  }
+  
+  /**
+   * Get a web-friendly URL for blog content that can be shared and accessed directly
+   * 
+   * @param reference Swarm reference to the blog content
+   * @param usePublicGateway Whether to use public gateway (recommended for sharing)
+   */
+  getBlogUrl(reference: string, usePublicGateway: boolean = true): string {
+    const gateway = usePublicGateway ? this.gateways.public : this.gateways.local;
+    // Always use bzz endpoint for blog content to ensure web accessibility
+    return `${gateway}/bzz/${reference}/`;
   }
 
   /**
    * Get URLs for content with fallbacks for public viewing
    * Returns both local and public URLs for different use cases
+   * 
+   * @param reference Swarm reference
+   * @param isBlogContent Whether this is blog content (uses bzz endpoint if true)
    */
-  getContentUrls(reference: string): {
+  getContentUrls(
+    reference: string,
+    isBlogContent: boolean = false
+  ): {
     local: string;
     public: string;
     fallbacks: string[];
+    webAccessible: string; // Guaranteed web-accessible URL
   } {
+    // Determine endpoint based on content type
+    const endpoint = isBlogContent ? 'bzz' : 'bytes';
+    const path = isBlogContent ? '/' : '';
+    
     return {
-      local: `${this.gateways.local}/bytes/${reference}`,
-      public: `${this.gateways.public}/bytes/${reference}`,
-      fallbacks: this.gateways.fallbacks.map(gateway => `${gateway}/bytes/${reference}`)
+      local: `${this.gateways.local}/${endpoint}/${reference}${path}`,
+      public: `${this.gateways.public}/${endpoint}/${reference}${path}`,
+      fallbacks: this.gateways.fallbacks.map(gateway => 
+        `${gateway}/${endpoint}/${reference}${path}`
+      ),
+      // Always include a guaranteed web-accessible URL using bzz endpoint
+      webAccessible: `${this.gateways.public}/bzz/${reference}/`
     };
   }
 
   /**
-   * Process markdown content to replace localhost URLs with public gateway URLs
-   * This ensures content is viewable by anyone, not just local development
+   * Process markdown content to optimize URLs for public viewing
+   * - Replaces localhost URLs with public gateway URLs
+   * - Uses appropriate endpoints based on content type
+   * - Ensures content is viewable by anyone, not just local development
    */
   processMarkdownForPublicViewing(markdown: string): string {
-    // Replace localhost image URLs with public gateway URLs
-    return markdown.replace(
+    if (!markdown) return '';
+    
+    // Public gateway to use
+    const publicGateway = this.gateways.public || 'https://gateway.ethswarm.org';
+    
+    // Replace localhost image URLs with public gateway URLs (keeping bytes endpoint for images)
+    let processed = markdown.replace(
       /!\[(.*?)\]\(http:\/\/localhost:1633\/bytes\/(.*?)\)/g,
       (match, alt, reference) => {
-        return `![${alt}](${this.gateways.public}/bytes/${reference})`;
+        return `![${alt}](${publicGateway}/bytes/${reference})`;
       }
     ).replace(
       /<img\s+[^>]*src="http:\/\/localhost:1633\/bytes\/(.*?)"([^>]*)>/g,
       (match, reference, attrs) => {
-        return `<img src="${this.gateways.public}/bytes/${reference}"${attrs}>`;
+        return `<img src="${publicGateway}/bytes/${reference}"${attrs}>`;
       }
     );
+    
+    // Replace localhost bzz URLs for blog content references
+    processed = processed.replace(
+      /\[(.*?)\]\(http:\/\/localhost:1633\/bzz\/(.*?)\)/g,
+      (match, text, reference) => {
+        return `[${text}](${publicGateway}/bzz/${reference}/)`;
+      }
+    ).replace(
+      /\[(.*?)\]\(http:\/\/localhost:1633\/bytes\/(.*?)\)/g,
+      (match, text, reference) => {
+        // For non-image links, prefer bzz endpoint for web content
+        if (!text.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i)) {
+          return `[${text}](${publicGateway}/bzz/${reference}/)`;
+        }
+        return `[${text}](${publicGateway}/bytes/${reference})`;
+      }
+    );
+    
+    return processed;
   }
 
   /**
