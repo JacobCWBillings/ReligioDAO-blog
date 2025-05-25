@@ -47,8 +47,8 @@ interface SimpleAppContextType {
 
 // Default configuration
 const defaultConfig: SimpleAppConfig = {
-  title: 'ReligioDAO Blog Platform',
-  description: 'A decentralized blogging platform governed by the ReligioDAO community',
+  title: 'ReligioDAO Blog',
+  description: 'Decentralized and self-governed',
   swarmGateway: 'http://localhost:1633',
   defaultCategory: 'General',
   supportedNetworks: [35441, 35442, 35443, 100, 31337] // Q networks, Gnosis, Local
