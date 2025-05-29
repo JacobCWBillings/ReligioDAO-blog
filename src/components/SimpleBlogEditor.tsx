@@ -1,11 +1,11 @@
 // src/components/SimpleBlogEditor.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import MDEditor from '@uiw/react-md-editor';
 import { useWallet } from '../contexts/WalletContext';
 import { beeBlogService, BlogDraft } from '../services/BeeBlogService';
 import { assetService } from '../services/AssetService';
 import { EnhancedAssetBrowser } from './EnhancedAssetBrowser';
+import { SimpleMarkdownEditor } from './SimpleMarkdownEditor';
 import './SimpleBlogEditor.css';
 
 interface SimpleBlogEditorProps {
@@ -262,22 +262,38 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     }
   };
   
-  // Handle quick image upload (for simple usage)
-  const handleQuickImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle quick image upload (for simple usage) - FIXED
+  const handleQuickImageUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !account) return;
+    if (!file || !account) {
+      // Reset the input value so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
     
     if (!file.type.startsWith('image/')) {
       setError('Please select an image file');
+      // Reset the input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
     
     if (file.size > 5 * 1024 * 1024) { // 5MB limit
       setError('Image must be smaller than 5MB');
+      // Reset the input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
     
     setLoading(true);
+    setError(null);
+    
     try {
       const asset = await assetService.uploadAsset(file, account);
       
@@ -297,8 +313,35 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
       setError(err instanceof Error ? err.message : 'Failed to upload image');
     } finally {
       setLoading(false);
+      // Reset the input value so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
-  };
+  }, [account, mode]);
+  
+  // Handle quick upload button click - FIXED
+  const handleQuickUploadClick = useCallback(() => {
+    if (!account) {
+      setError('Please connect your wallet to upload images');
+      return;
+    }
+    
+    if (loading) {
+      return; // Don't trigger if already loading
+    }
+    
+    // Reset any previous error
+    setError(null);
+    
+    // Programmatically trigger the file input
+    try {
+      fileInputRef.current?.click();
+    } catch (err) {
+      console.error('Failed to trigger file input:', err);
+      setError('Failed to open file dialog. Please try again.');
+    }
+  }, [account, loading]);
   
   // Handle asset insertion from browser
   const handleAssetInsertion = (markdownCode: string) => {
@@ -522,18 +565,22 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
                 {loading ? 'Saving...' : 'Save Draft'}
               </button>
               
+              {/* FIXED: Hidden file input with proper event handling */}
               <input
                 type="file"
                 ref={fileInputRef}
                 style={{ display: 'none' }}
                 accept="image/*"
                 onChange={handleQuickImageUpload}
+                key={Date.now()} // Force re-render to reset input
               />
               
+              {/* FIXED: Quick upload button with improved click handler */}
               <button 
                 className="upload-image-btn"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={loading}
+                onClick={handleQuickUploadClick}
+                disabled={loading || !isConnected}
+                title={!isConnected ? 'Connect wallet to upload images' : 'Upload image and insert into editor'}
               >
                 📷 Quick Upload
               </button>
@@ -542,6 +589,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
                 className="asset-browser-btn"
                 onClick={() => setShowAssetBrowser(true)}
                 disabled={loading}
+                title="Open asset library"
               >
                 🗂️ Asset Library
               </button>
@@ -572,12 +620,11 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
           )}
           
           <div className="editor-container">
-            <MDEditor
+            <SimpleMarkdownEditor
               value={mode === 'proposal' ? getPreviewContent() : content}
               onChange={(value) => setContent(value || '')}
               height="calc(100vh - 200px)"
-              data-color-mode="light"
-              preview="edit"
+              placeholder="Start writing your blog post..."
             />
           </div>
         </main>

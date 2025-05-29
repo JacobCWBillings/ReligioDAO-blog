@@ -8,6 +8,14 @@ import { ProposalListSkeleton } from '../../components/skeletons/Skeleton';
 import { ProposalCard } from '../../components/proposal/ProposalCard';
 import './ProposalListPage.css';
 
+/**
+ * Helper function to determine if proposal is actively accepting votes
+ */
+const isActiveVoting = (proposal: any): boolean => {
+  return proposal.status === ProposalStatus.Pending && 
+         Date.now() < proposal.votingEnds;
+};
+
 export const ProposalListPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -82,17 +90,24 @@ export const ProposalListPage: React.FC = () => {
     // Apply status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(p => {
+        // Special handling for active voting - check both status and timing
+        if (statusFilter === 'active') {
+          return isActiveVoting(p);
+        }
+        
         // Special handling for executed proposals
-        if (statusFilter === ProposalStatus.Executed && p.executed) {
-          return true;
+        if (statusFilter === 'executed') {
+          return p.status === ProposalStatus.Executed;
         }
         
-        // Special handling for proposals ready for execution
-        if (statusFilter === ProposalStatus.Approved) {
-          return p.status === ProposalStatus.Approved && !p.executed;
+        // Special handling for proposals ready for execution (approved)
+        if (statusFilter === 'approved') {
+          return p.status === ProposalStatus.Accepted && !p.executed;
         }
         
-        return p.status === statusFilter;
+        // Handle other status filters by converting status enum to string and comparing
+        const statusString = ProposalStatus[p.status].toLowerCase();
+        return statusString === statusFilter.toLowerCase();
       });
     }
     
@@ -120,12 +135,15 @@ export const ProposalListPage: React.FC = () => {
       case 'endingSoon':
         filtered.sort((a, b) => {
           // Only sort active proposals by end time
-          if (a.status === ProposalStatus.Active && b.status === ProposalStatus.Active) {
+          const aActive = isActiveVoting(a);
+          const bActive = isActiveVoting(b);
+          
+          if (aActive && bActive) {
             return a.votingEnds - b.votingEnds;
           }
           // If one is active and the other isn't, prioritize active
-          if (a.status === ProposalStatus.Active) return -1;
-          if (b.status === ProposalStatus.Active) return 1;
+          if (aActive) return -1;
+          if (bActive) return 1;
           // Default to newest
           return b.createdAt - a.createdAt;
         });
@@ -142,7 +160,7 @@ export const ProposalListPage: React.FC = () => {
     if (!isConnected || !account) return false;
     
     // Highlight active proposals that user can vote on
-    return proposal.status === ProposalStatus.Active;
+    return isActiveVoting(proposal);
   }, [isConnected, account]);
   
   // Clear all filters
@@ -190,13 +208,15 @@ export const ProposalListPage: React.FC = () => {
         title: p.title,
         description: p.description,
         proposer: p.proposer,
-        status: p.status,
+        status: ProposalStatus[p.status], // Convert enum to string
+        statusCode: p.status,
         executed: p.executed,
         votesFor: p.votesFor,
         votesAgainst: p.votesAgainst,
         createdAt: p.createdAt,
         votingEnds: p.votingEnds,
-        contentReference: p.contentReference || null
+        contentReference: p.contentReference || null,
+        isActiveVoting: isActiveVoting(p)
       }));
       
       // Convert to JSON string with proper formatting
@@ -269,32 +289,32 @@ export const ProposalListPage: React.FC = () => {
               All
             </button>
             <button 
-              className={`status-filter ${statusFilter === ProposalStatus.Active ? 'active' : ''}`}
-              onClick={() => handleStatusFilter(ProposalStatus.Active)}
+              className={`status-filter ${statusFilter === 'active' ? 'active' : ''}`}
+              onClick={() => handleStatusFilter('active')}
             >
               Active
             </button>
             <button 
-              className={`status-filter ${statusFilter === ProposalStatus.Pending ? 'active' : ''}`}
-              onClick={() => handleStatusFilter(ProposalStatus.Pending)}
+              className={`status-filter ${statusFilter === 'pending' ? 'active' : ''}`}
+              onClick={() => handleStatusFilter('pending')}
             >
               Pending
             </button>
             <button 
-              className={`status-filter ${statusFilter === ProposalStatus.Approved ? 'active' : ''}`}
-              onClick={() => handleStatusFilter(ProposalStatus.Approved)}
+              className={`status-filter ${statusFilter === 'approved' ? 'active' : ''}`}
+              onClick={() => handleStatusFilter('approved')}
             >
               Approved
             </button>
             <button 
-              className={`status-filter ${statusFilter === ProposalStatus.Executed ? 'active' : ''}`}
-              onClick={() => handleStatusFilter(ProposalStatus.Executed)}
+              className={`status-filter ${statusFilter === 'executed' ? 'active' : ''}`}
+              onClick={() => handleStatusFilter('executed')}
             >
               Executed
             </button>
             <button 
-              className={`status-filter ${statusFilter === ProposalStatus.Rejected ? 'active' : ''}`}
-              onClick={() => handleStatusFilter(ProposalStatus.Rejected)}
+              className={`status-filter ${statusFilter === 'rejected' ? 'active' : ''}`}
+              onClick={() => handleStatusFilter('rejected')}
             >
               Rejected
             </button>
@@ -341,7 +361,7 @@ export const ProposalListPage: React.FC = () => {
             </div>
             <div className="stat-item">
               <span className="stat-value">
-                {proposals.filter(p => p.status === ProposalStatus.Active).length}
+                {proposals.filter(p => isActiveVoting(p)).length}
               </span>
               <span className="stat-label">Active Votes</span>
             </div>
@@ -355,9 +375,23 @@ export const ProposalListPage: React.FC = () => {
         )}
         
         {/* Add description for Executed filter when selected */}
-        {statusFilter === ProposalStatus.Executed && (
+        {statusFilter === 'executed' && (
           <div className="filter-description">
             <p>{getExecutedDescription()}</p>
+          </div>
+        )}
+        
+        {/* Add description for Active filter when selected */}
+        {statusFilter === 'active' && (
+          <div className="filter-description">
+            <p>Proposals currently accepting votes from the community.</p>
+          </div>
+        )}
+        
+        {/* Add description for Approved filter when selected */}
+        {statusFilter === 'approved' && (
+          <div className="filter-description">
+            <p>Proposals approved by the community and ready for execution.</p>
           </div>
         )}
       </div>

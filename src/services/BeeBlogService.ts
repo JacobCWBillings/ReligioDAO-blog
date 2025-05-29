@@ -59,8 +59,7 @@ export class BeeBlogService {
       public: 'https://download.gateway.ethswarm.org',
       fallbacks: [
         'https://api.gateway.ethswarm.org',
-        'https://gateway.ethswarm.org',
-        'https://bee-8.gateway.ethswarm.org'
+        'https://gateway.ethswarm.org'
       ]
     },
     postageBatchId?: string
@@ -447,6 +446,8 @@ ${contentJson}
         file
       );
 
+      console.log(uploadResult)
+
       return uploadResult.reference;
     } catch (error) {
       console.error('Error uploading asset:', error);
@@ -495,7 +496,8 @@ ${contentJson}
     if (contentType && (
       contentType.includes('text/html') || 
       contentType.includes('text/markdown') ||
-      contentType.includes('application/json')
+      contentType.includes('application/json') ||
+      contentType.includes('image/')
     )) {
       return `${gateway}/bzz/${reference}/`;
     }

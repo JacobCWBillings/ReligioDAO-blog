@@ -1,17 +1,82 @@
-// src/blockchain/types/DAOVotingTypes.ts
+// src/blockchain/types/IDAOVoting.ts
 
 import { BigNumberish, BytesLike, AddressLike } from "ethers";
+import { 
+  ProposalStatus, 
+} from '../../types/blockchain';
 
-/**
- * Enum for proposal statuses that maps directly to contract values
- */
-export enum ProposalStatus {
-  Pending = 0,    // Created but voting hasn't started yet
-  Active = 1,      // Voting is active
-  Approved = 2,  // Voting finished with approval
-  Rejected = 3,  // Voting finished with rejection
-  Executed = 4,  // Proposal has been executed
-  Canceled = 5   // Proposal was canceled
+// Update the status mapping function
+export function mapContractStatusToEnum(status: number): ProposalStatus {
+  switch (status) {
+    case 0: return ProposalStatus.None;
+    case 1: return ProposalStatus.Pending;
+    case 2: return ProposalStatus.Rejected;
+    case 3: return ProposalStatus.Accepted;
+    case 4: return ProposalStatus.Passed;
+    case 5: return ProposalStatus.Executed;
+    case 6: return ProposalStatus.Expired;
+    case 7: return ProposalStatus.UnderReview;
+    case 8: return ProposalStatus.UnderEvaluation;
+    default: 
+      console.warn(`Unknown Q governance proposal status: ${status}`);
+      return ProposalStatus.None;
+  }
+}
+
+// Helper function to get user-friendly status names
+export function getProposalStatusName(status: ProposalStatus): string {
+  const statusNames: Record<ProposalStatus, string> = {
+    [ProposalStatus.None]: 'None',
+    [ProposalStatus.Pending]: 'Pending',
+    [ProposalStatus.Rejected]: 'Rejected',
+    [ProposalStatus.Accepted]: 'Approved', // User-friendly name
+    [ProposalStatus.Passed]: 'Passed',
+    [ProposalStatus.Executed]: 'Executed',
+    [ProposalStatus.Expired]: 'Expired',
+    [ProposalStatus.UnderReview]: 'Under Review',
+    [ProposalStatus.UnderEvaluation]: 'Under Evaluation'
+  };
+  return statusNames[status] || 'Unknown';
+}
+
+// Helper function to get status colors for UI
+export function getProposalStatusColor(status: ProposalStatus): string {
+  switch (status) {
+    case ProposalStatus.None:
+      return 'gray';
+    case ProposalStatus.Pending:
+      return 'yellow';
+    case ProposalStatus.Rejected:
+      return 'red';
+    case ProposalStatus.Accepted:
+      return 'green';
+    case ProposalStatus.Passed:
+      return 'green';
+    case ProposalStatus.Executed:
+      return 'green';
+    case ProposalStatus.Expired:
+      return 'orange';
+    case ProposalStatus.UnderReview:
+      return 'blue';
+    case ProposalStatus.UnderEvaluation:
+      return 'blue';
+    default:
+      return 'gray';
+  }
+}
+
+// Helper function to determine what actions are available
+export function getProposalActionAvailability(status: ProposalStatus) {
+  return {
+    canVote: status === ProposalStatus.Pending, // Or might be different status for active voting
+    canExecute: status === ProposalStatus.Accepted || status === ProposalStatus.Passed,
+    isCompleted: status === ProposalStatus.Executed,
+    isFinal: [
+      ProposalStatus.Rejected, 
+      ProposalStatus.Executed, 
+      ProposalStatus.Expired
+    ].includes(status)
+  };
 }
 
 /**
@@ -97,19 +162,4 @@ export interface IDAOVoting {
     ProposalExecuted(id?: BigNumberish): any;
     UserVoted(id?: BigNumberish, voter?: AddressLike, votingPower?: BigNumberish, option?: BigNumberish): any;
   };
-}
-
-/**
- * Helper function for mapping contract status to enum
- */
-export function mapContractStatusToEnum(status: number): ProposalStatus {
-  switch (status) {
-    case 0: return ProposalStatus.Pending;
-    case 1: return ProposalStatus.Active;
-    case 2: return ProposalStatus.Approved;
-    case 3: return ProposalStatus.Rejected;
-    case 4: return ProposalStatus.Executed;
-    case 5: return ProposalStatus.Canceled;
-    default: return ProposalStatus.Pending;
-  }
 }

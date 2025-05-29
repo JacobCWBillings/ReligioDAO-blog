@@ -1,4 +1,4 @@
-// src/pages/proposal/ProposalDetailPage.tsx
+// src/pages/proposal/ProposalDetailPage.tsx - Complete corrected version
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
@@ -8,6 +8,42 @@ import { BlogProposalMinting } from '../../components/proposal/BlogProposalMinti
 import swarmContentService from '../../services/SwarmContentService';
 import { formatAddress } from '../../blockchain/utils/walletUtils';
 import './ProposalDetailPage.css';
+
+/**
+ * Get the display status - always use Q contract status as source of truth
+ */
+const getDisplayStatus = (proposal: Proposal | null): ProposalStatus | null => {
+  if (!proposal) return null;
+  
+  // CORRECTED: Always use Q contract status as source of truth
+  return proposal.status;
+};
+
+/**
+ * Get status name for a ProposalStatus enum value
+ */
+const getStatusName = (status: ProposalStatus): string => {
+  const statusNames: Record<ProposalStatus, string> = {
+    [ProposalStatus.None]: 'None',
+    [ProposalStatus.Pending]: 'Pending',
+    [ProposalStatus.Rejected]: 'Rejected',
+    [ProposalStatus.Accepted]: 'Approved', // User-friendly name
+    [ProposalStatus.Passed]: 'Passed',
+    [ProposalStatus.Executed]: 'Executed',
+    [ProposalStatus.Expired]: 'Expired',
+    [ProposalStatus.UnderReview]: 'Under Review',
+    [ProposalStatus.UnderEvaluation]: 'Under Evaluation'
+  };
+  return statusNames[status] || 'Unknown';
+};
+
+/**
+ * Helper function to determine if proposal is actively accepting votes
+ */
+const isActiveVoting = (proposal: Proposal): boolean => {
+  return proposal.status === ProposalStatus.Pending && 
+         Date.now() < proposal.votingEnds;
+};
 
 export const ProposalDetailPage: React.FC = () => {
   const { proposalId } = useParams<{ proposalId: string }>();
@@ -40,9 +76,26 @@ export const ProposalDetailPage: React.FC = () => {
       if (!proposalId) return;
       
       try {
-        const proposalData = await getProposalById(proposalId);
+        // Convert from 1-indexed URL param to 0-indexed contract ID
+        // URL /proposals/1 -> contract ID "0", URL /proposals/2 -> contract ID "1", etc.
+        const urlId = parseInt(proposalId);
+        const contractProposalId = (urlId - 1).toString();
+        
+        console.log(`Loading proposal: URL ID ${urlId} -> Contract ID ${contractProposalId}`);
+        
+        const proposalData = await getProposalById(contractProposalId);
         if (proposalData) {
           setProposal(proposalData);
+          
+          // Debug logging to understand status mapping
+          console.log('Proposal Status Debug:', {
+            urlProposalId: proposalId,
+            contractProposalId: contractProposalId,
+            proposalId: proposalData.id,
+            contractStatus: proposalData.status,
+            contractStatusName: getStatusName(proposalData.status),
+            appExecuted: proposalData.executed
+          });
         }
       } catch (err) {
         console.error('Error loading proposal:', err);
@@ -97,7 +150,9 @@ export const ProposalDetailPage: React.FC = () => {
       if (!proposalId || !account || !isConnected) return;
       
       try {
-        const voted = await hasVoted(proposalId);
+        // Convert URL ID to contract ID for voting check
+        const contractProposalId = (parseInt(proposalId) - 1).toString();
+        const voted = await hasVoted(contractProposalId);
         setUserHasVoted(voted);
       } catch (err) {
         console.error('Error checking vote status:', err);
@@ -115,14 +170,16 @@ export const ProposalDetailPage: React.FC = () => {
     setVoteError(null);
     
     try {
-      const result = await voteOnProposal(proposalId, support);
+      // Convert URL ID to contract ID for voting
+      const contractProposalId = (parseInt(proposalId) - 1).toString();
+      const result = await voteOnProposal(contractProposalId, support);
       
       if (result.status === 'confirmed') {
         setVoteSuccess(true);
         setUserHasVoted(true);
         
-        // Refresh proposal data
-        const updatedProposal = await getProposalById(proposalId);
+        // Refresh proposal data using contract ID
+        const updatedProposal = await getProposalById(contractProposalId);
         if (updatedProposal) {
           setProposal(updatedProposal);
         }
@@ -142,9 +199,10 @@ export const ProposalDetailPage: React.FC = () => {
     console.log(`Proposal executed successfully with token ID: ${tokenId}`);
     setNftTokenId(tokenId);
     
-    // Refresh the proposal data after execution
+    // Refresh the proposal data after execution using contract ID
     if (proposalId) {
-      getProposalById(proposalId).then(updatedProposal => {
+      const contractProposalId = (parseInt(proposalId) - 1).toString();
+      getProposalById(contractProposalId).then(updatedProposal => {
         if (updatedProposal) {
           setProposal(updatedProposal);
         }
@@ -192,39 +250,39 @@ export const ProposalDetailPage: React.FC = () => {
     setShowFullContent(!showFullContent);
   };
   
-  // Calculate displayed status based on contract state and execution status
-  const displayStatus = useMemo(() => {
-    if (!proposal) return null;
-    
-    // For proposals that are marked executed, always show "Executed" regardless of status
-    if (proposal.executed) {
-      return ProposalStatus.Executed;
-    }
-    
-    // For proposals that are approved but not executed, show "Approved" status
-    if (proposal.status === ProposalStatus.Approved && !proposal.executed) {
-      return ProposalStatus.Approved;
-    }
-    
-    // Otherwise show the actual status from the contract
-    return proposal.status;
-  }, [proposal]);
+  // CORRECTED: Use the corrected status mapping
+  const displayStatus = useMemo(() => getDisplayStatus(proposal), [proposal]);
   
-  // Get status color and label
-  const getStatusInfo = (status: ProposalStatus) => {
+  // Get status color and label with updated descriptions
+  const getStatusInfo = (status: ProposalStatus, proposal: Proposal) => {
+    // Check if this is an active voting period
+    if (status === ProposalStatus.Pending && isActiveVoting(proposal)) {
+      return { 
+        color: 'blue', 
+        label: 'Active Voting', 
+        description: 'Voting in progress' 
+      };
+    }
+
     switch (status) {
+      case ProposalStatus.None:
+        return { color: 'gray', label: 'None', description: 'Initial state' };
       case ProposalStatus.Pending:
         return { color: 'yellow', label: 'Pending', description: 'Awaiting voting period' };
-      case ProposalStatus.Active:
-        return { color: 'blue', label: 'Active', description: 'Voting in progress' };
-      case ProposalStatus.Approved:
-        return { color: 'green', label: 'Approved', description: 'Ready for execution' };
       case ProposalStatus.Rejected:
-        return { color: 'red', label: 'Rejected', description: 'Proposal was rejected' };
+        return { color: 'red', label: 'Rejected', description: 'Rejected by community vote' };
+      case ProposalStatus.Accepted:
+        return { color: 'green', label: 'Approved', description: 'Ready for execution' };
+      case ProposalStatus.Passed:
+        return { color: 'green', label: 'Passed', description: 'Alternative approval state' };
       case ProposalStatus.Executed:
-        return { color: 'green', label: 'Executed', description: 'Proposal executed successfully' };
-      case ProposalStatus.Canceled:
-        return { color: 'purple', label: 'Canceled', description: 'Proposal was canceled' };
+        return { color: 'green', label: 'Executed', description: 'NFT minted successfully' };
+      case ProposalStatus.Expired:
+        return { color: 'purple', label: 'Expired', description: 'Voting period expired' };
+      case ProposalStatus.UnderReview:
+        return { color: 'blue', label: 'Under Review', description: 'Proposal under review' };
+      case ProposalStatus.UnderEvaluation:
+        return { color: 'blue', label: 'Under Evaluation', description: 'Proposal under evaluation' };
       default:
         return { color: 'gray', label: 'Unknown', description: 'Unknown status' };
     }
@@ -295,9 +353,16 @@ export const ProposalDetailPage: React.FC = () => {
     );
   }
   
-  const statusInfo = getStatusInfo(displayStatus!);
+  const statusInfo = getStatusInfo(displayStatus!, proposal);
   const progress = calculateProgress(proposal.votesFor, proposal.votesAgainst);
-  const canExecute = displayStatus === ProposalStatus.Approved && !proposal.executed;
+  const isActive = isActiveVoting(proposal);
+  
+  // CORRECTED: Can only execute if Q contract status is "Accepted" (3)
+  const canExecute = proposal.status === ProposalStatus.Accepted && isConnected;
+  
+  // CORRECTED: Proposal is fully complete when Q contract status is Executed (5)
+  const isFullyExecuted = proposal.status === ProposalStatus.Executed;
+  
   const blogInfo = extractBlogInfo();
 
   return (
@@ -307,14 +372,14 @@ export const ProposalDetailPage: React.FC = () => {
           ← All Proposals
         </Link>
         <div className="proposal-id-display">
-          Proposal #{proposal.id}
+          Proposal #{parseInt(proposal.id) + 1}
         </div>
       </div>
       
       <div className="proposal-header">
         <div className="proposal-status-banner">
-          <div className={`proposal-status-indicator status-${statusInfo.color}`}></div>
-          <h1></h1>
+          <div className={`proposal-status-indicator status-indicator-${statusInfo.color}`}></div>
+          <h1>{blogInfo.blogTitle || proposal.title}</h1>
           <div className={`proposal-status status-${statusInfo.color}`}>
             {statusInfo.label}
           </div>
@@ -329,7 +394,7 @@ export const ProposalDetailPage: React.FC = () => {
             <div className="meta-label">Voting Ends</div>
             <div className="meta-value">
               {formatDate(proposal.votingEnds)}
-              {proposal.status === ProposalStatus.Active && (
+              {isActive && (
                 <span className="voting-time-remaining">
                   ({formatRelativeTime(proposal.votingEnds)})
                 </span>
@@ -369,7 +434,7 @@ export const ProposalDetailPage: React.FC = () => {
             </div>
           </div>
           
-          {/* Content Preview Section - Modified with pulldown tab */}
+          {/* Content Preview Section */}
           {proposal.contentReference && (
             <div className="proposal-section">
               <h2>Blog Content Preview</h2>
@@ -409,8 +474,8 @@ export const ProposalDetailPage: React.FC = () => {
             </div>
           )}
           
-          {/* Execution section - if proposal is approved but not executed */}
-          {canExecute && isConnected && (
+          {/* CORRECTED: Execution section - only show when Q contract status is Accepted (3) */}
+          {canExecute && (
             <div className="proposal-section">
               <h2>Execute Proposal</h2>
               <BlogProposalMinting
@@ -426,14 +491,19 @@ export const ProposalDetailPage: React.FC = () => {
             </div>
           )}
           
-          {/* Executed proposal section - removed view blog post buttons */}
-          {proposal.executed && (
+          {/* CORRECTED: Executed proposal section - only show when Q contract status is Executed (5) */}
+          {isFullyExecuted && (
             <div className="proposal-section executed-section">
               <h2>Proposal Executed</h2>
               <div className="execution-success-message">
                 <div className="success-icon">✓</div>
-                <p>This proposal has been executed successfully and minted as an NFT.</p>
+                <p>This proposal has been executed successfully. The NFT has been minted by the Q governance system.</p>
               </div>
+              {nftTokenId && (
+                <div className="token-id-info">
+                  NFT Token ID: <span className="token-id">{nftTokenId}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -471,8 +541,8 @@ export const ProposalDetailPage: React.FC = () => {
                 </div>
               </div>
               
-              {/* Show voting actions only if proposal is active */}
-              {proposal.status === ProposalStatus.Active && isConnected && (
+              {/* Show voting actions only if proposal is actively accepting votes */}
+              {isActive && isConnected && (
                 <div className="voting-actions">
                   {userHasVoted ? (
                     <div className="already-voted">
@@ -506,14 +576,14 @@ export const ProposalDetailPage: React.FC = () => {
               )}
               
               {/* Show voting ended message for inactive proposals */}
-              {proposal.status !== ProposalStatus.Active && proposal.status !== ProposalStatus.Pending && (
+              {!isActive && proposal.status !== ProposalStatus.Pending && (
                 <div className="voting-ended-message">
                   Voting has ended for this proposal
                 </div>
               )}
               
-              {/* Show waiting message for pending proposals */}
-              {proposal.status === ProposalStatus.Pending && (
+              {/* Show waiting message for pending proposals that aren't active yet */}
+              {proposal.status === ProposalStatus.Pending && !isActive && (
                 <div className="voting-pending-message">
                   Voting period has not started yet
                 </div>
@@ -537,7 +607,7 @@ export const ProposalDetailPage: React.FC = () => {
               <div className="detail-item">
                 <div className="detail-label">Voting Period</div>
                 <div className="detail-value">
-                  {proposal.status === ProposalStatus.Active ? (
+                  {isActive ? (
                     formatRelativeTime(proposal.votingEnds)
                   ) : (
                     'Ended'

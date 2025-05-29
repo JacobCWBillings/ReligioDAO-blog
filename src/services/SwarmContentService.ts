@@ -15,7 +15,6 @@ interface CachedContent {
 const BACKUP_GATEWAYS = [
   'https://api.gateway.ethswarm.org',
   'https://gateway.ethswarm.org', 
-  'https://bee-8.gateway.ethswarm.org',
   'https://download.gateway.ethswarm.org'
 ];
 
