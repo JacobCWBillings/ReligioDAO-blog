@@ -1,6 +1,6 @@
 // src/pages/proposal/ProposalListPage.tsx - FIXED: Load more button and sorting issues
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
 import { ProposalStatus } from '../../types/blockchain';
@@ -43,9 +43,6 @@ export const ProposalListPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>(
     searchParams.get('search') || ''
   );
-  const [sortBy, setSortBy] = useState<string>(
-    searchParams.get('sort') || 'newest'
-  );
   
   // UI state
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -70,12 +67,8 @@ export const ProposalListPage: React.FC = () => {
       newParams.set('search', searchTerm);
     }
     
-    if (sortBy !== 'newest') {
-      newParams.set('sort', sortBy);
-    }
-    
     setSearchParams(newParams, { replace: true });
-  }, [statusFilter, searchTerm, sortBy, setSearchParams]);
+  }, [statusFilter, searchTerm, setSearchParams]);
   
   // Handle refresh
   const handleRefresh = async () => {
@@ -96,7 +89,7 @@ export const ProposalListPage: React.FC = () => {
     }
   };
   
-  // Filter and sort proposals
+  // Filter proposals - always sorted newest first
   const filteredProposals = useMemo(() => {
     let filtered = [...proposals];
 
@@ -140,40 +133,11 @@ export const ProposalListPage: React.FC = () => {
       });
     }
     
-    // Apply sorting (data is already newest first from the service)
-    switch (sortBy) {
-      case 'newest':
-        // Already sorted newest first by default
-        break;
-      case 'oldest':
-        filtered.sort((a, b) => a.createdAt - b.createdAt);
-        break;
-      case 'mostVotes':
-        filtered.sort((a, b) => (b.votesFor + b.votesAgainst) - (a.votesFor + a.votesAgainst));
-        break;
-      case 'endingSoon':
-        filtered.sort((a, b) => {
-          // Only sort active proposals by end time
-          const aActive = isActiveVoting(a);
-          const bActive = isActiveVoting(b);
-          
-          if (aActive && bActive) {
-            return a.votingEnds - b.votingEnds;
-          }
-          // If one is active and the other isn't, prioritize active
-          if (aActive) return -1;
-          if (bActive) return 1;
-          // Default to newest
-          return b.createdAt - a.createdAt;
-        });
-        break;
-      default:
-        // Keep default order (newest first)
-        break;
-    }
+    // Always sort newest first
+    filtered.sort((a, b) => b.createdAt - a.createdAt);
     
     return filtered;
-  }, [proposals, statusFilter, searchTerm, sortBy, searchProposals]);
+  }, [proposals, statusFilter, searchTerm, searchProposals]);
   
   // Determine if a proposal needs user attention
   const needsAttention = useCallback((proposal: any): boolean => {
@@ -187,7 +151,6 @@ export const ProposalListPage: React.FC = () => {
   const clearFilters = () => {
     setStatusFilter('all');
     setSearchTerm('');
-    setSortBy('newest');
   };
   
   // Handle status filter click
@@ -205,10 +168,7 @@ export const ProposalListPage: React.FC = () => {
     e.preventDefault();
   };
   
-  // Handle sort change
-  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSortBy(e.target.value);
-  };
+
   
   // Navigate to submit proposal page
   const handleSubmitProposal = () => {
@@ -370,18 +330,6 @@ export const ProposalListPage: React.FC = () => {
           </div>
           
           <div className="sort-control">
-            <label htmlFor="sort-select">Sort by:</label>
-            <select 
-              id="sort-select" 
-              value={sortBy}
-              onChange={handleSortChange}
-            >
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="mostVotes">Most votes</option>
-              <option value="endingSoon">Ending soon</option>
-            </select>
-            
             <button 
               className="refresh-button"
               onClick={handleRefresh}
@@ -442,7 +390,7 @@ export const ProposalListPage: React.FC = () => {
                 ))}
               </div>
 
-              {/* FIXED: Show load more button when there are more proposals */}
+              {/* Show load more button when there are more proposals */}
               {shouldShowLoadMore && (
                 <div className="load-more-section">
                   <button 
@@ -450,7 +398,7 @@ export const ProposalListPage: React.FC = () => {
                     onClick={handleLoadMore}
                     disabled={loadingMore}
                   >
-                    {loadingMore ? 'Loading more...' : `Load more proposals (${totalCount - proposals.length} remaining)`}
+                    {loadingMore ? 'Loading more...' : `Load older proposals (${totalCount - proposals.length} remaining)`}
                   </button>
                 </div>
               )}

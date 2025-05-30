@@ -16,7 +16,7 @@ import { ProposalService } from '../services/ProposalService';
  * Fixed to prevent multiple initializations
  */
 export const useProposal = () => {
-  const { provider, readOnlyProvider, signer, readOnlySigner, account, chainId, isConnected } = useWallet();
+  const { provider, readOnlyProvider, signer, readOnlySigner, account, isConnected } = useWallet();
   const { getConstrainedChainId } = useChainConstraint();
   
   const [proposalService, setProposalService] = useState<ProposalService | null>(null);
@@ -127,6 +127,7 @@ export const useProposal = () => {
 
   /**
    * Load initial proposals with improved error handling
+   * Always loads newest proposals first
    */
   const loadInitialProposals = useCallback(async (forceRefresh: boolean = false): Promise<void> => {
     if (!proposalService || !currentServiceRef.current) {
@@ -143,10 +144,13 @@ export const useProposal = () => {
     setError(null);
 
     try {
+      // Get newest proposals (page 0)
       const result = await proposalService.getProposalsPaginated(0, 10, forceRefresh);
       
       if (mountedRef.current) {
-        setProposals(result.proposals);
+        // Ensure newest first order
+        const sortedProposals = [...result.proposals].sort((a, b) => b.createdAt - a.createdAt);
+        setProposals(sortedProposals);
         setTotalCount(result.total);
         setHasMore(result.hasMore);
         setCurrentPage(0);
@@ -174,7 +178,7 @@ export const useProposal = () => {
   }, [proposalService, loading]);
 
   /**
-   * Load more proposals (pagination)
+   * Load more (older) proposals for pagination
    */
   const loadMoreProposals = useCallback(async (): Promise<void> => {
     if (!proposalService || !hasMore || loadingMore) {
@@ -189,7 +193,14 @@ export const useProposal = () => {
       const result = await proposalService.getProposalsPaginated(nextPage, 10);
       
       if (mountedRef.current) {
-        setProposals(prev => [...prev, ...result.proposals]);
+        // Append new proposals to existing ones, keeping newest-first order
+        // The service should already return them in correct order but we sort them again to be sure
+        const sortedNewProposals = [...result.proposals].sort((a, b) => b.createdAt - a.createdAt);
+        setProposals(prev => {
+          // Combine previous and new proposals, then sort to guarantee newest first
+          const combined = [...prev, ...sortedNewProposals];
+          return combined.sort((a, b) => b.createdAt - a.createdAt);
+        });
         setTotalCount(result.total);
         setHasMore(result.hasMore);
         setCurrentPage(nextPage);
@@ -212,7 +223,7 @@ export const useProposal = () => {
   }, [proposalService, hasMore, loadingMore, currentPage]);
 
   /**
-   * Refresh all proposals
+   * Refresh all proposals, always loading newest first
    */
   const refreshProposals = useCallback(async (): Promise<void> => {
     if (proposalService) {

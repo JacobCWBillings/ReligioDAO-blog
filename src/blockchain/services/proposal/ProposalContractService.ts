@@ -1,4 +1,4 @@
-// src/blockchain/services/proposal/ProposalContractService.ts
+// src/blockchain/services/proposal/ProposalContractService.ts - FIXED: Simple ID-based pagination
 import { ethers } from 'ethers';
 import { BaseContractService } from '../BaseContractService';
 import { 
@@ -112,7 +112,8 @@ export class ProposalContractService extends BaseContractService {
   }
 
   /**
-   * Fetch proposals with pagination using getProposalList
+   * FIXED: Fetch proposals with simple ID-based pagination
+   * Uses decreasing proposal IDs as a proxy for age (newer proposals have higher IDs)
    */
   async getProposalsPaginated(
     page: number = 0, 
@@ -131,29 +132,35 @@ export class ProposalContractService extends BaseContractService {
         };
       }
 
-      // Calculate offset and limit for getProposalList
-      // getProposalList returns proposals in creation order, so we need to reverse for newest first
-      const offset = Math.max(0, totalCount - (page + 1) * pageSize);
-      const limit = Math.min(pageSize, totalCount - page * pageSize);
-
-      if (limit <= 0) {
-        return {
-          proposals: [],
-          total: totalCount,
-          hasMore: false
-        };
+      // SIMPLE APPROACH: Use proposal IDs directly
+      // Higher IDs = newer proposals
+      // Page 0: get highest IDs (newest)
+      // Page 1: get next highest IDs (older)
+      // etc.
+      
+      const startId = Math.max(0, totalCount - 1 - (page * pageSize));
+      const endId = Math.max(0, startId - pageSize + 1);
+      
+      console.log(`ProposalContractService: Fetching proposals ${startId} down to ${endId} (page ${page}, pageSize ${pageSize})`);
+      
+      // Fetch individual proposals by ID in descending order
+      const proposalPromises: Promise<ContractDAOProposal | null>[] = [];
+      
+      for (let id = startId; id >= endId; id--) {
+        proposalPromises.push(this.getProposalById(id));
       }
-
-      // Fetch proposals using getProposalList
-      const contractProposals: ContractDAOProposal[] = await this.generalDAOVoting.getProposalList(offset, limit);
       
-      // Reverse to get newest first (create a copy since ethers.js returns read-only arrays)
-      const reversedProposals = [...contractProposals].reverse();
+      const fetchedProposals = await Promise.all(proposalPromises);
       
-      const hasMore = offset > 0;
+      // Filter out null results (invalid/empty proposals)
+      const validProposals = fetchedProposals.filter((p): p is ContractDAOProposal => p !== null);
+      
+      const hasMore = endId > 0;
+      
+      console.log(`ProposalContractService: Successfully fetched ${validProposals.length} valid proposals out of ${fetchedProposals.length} attempted`);
       
       return {
-        proposals: reversedProposals,
+        proposals: validProposals,
         total: totalCount,
         hasMore
       };
@@ -169,6 +176,37 @@ export class ProposalContractService extends BaseContractService {
   }
 
   /**
+   * Helper method to get a proposal by ID with error handling
+   */
+  private async getProposalById(id: number): Promise<ContractDAOProposal | null> {
+    try {
+      const contractProposal: ContractDAOProposal = await this.generalDAOVoting.getProposal(id);
+      
+      // Check if proposal exists (basic validation)
+      if (!contractProposal || contractProposal.id === createBigInt(0)) {
+        return null;
+      }
+
+      // Additional validation - check if proposal has any meaningful data
+      const hasData = contractProposal.remark || 
+                     contractProposal.callData !== '0x' ||
+                     contractProposal.executed ||
+                     (contractProposal.counters && 
+                      (contractProposal.counters.votedFor > BigInt(0) || contractProposal.counters.votedAgainst > BigInt(0)));
+      
+      if (!hasData) {
+        console.log(`ProposalContractService: Skipping proposal ${id} - no meaningful data`);
+        return null;
+      }
+
+      return contractProposal;
+    } catch (error) {
+      console.warn(`ProposalContractService: Failed to fetch proposal ${id}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Get a single proposal by ID using getProposal
    */
   async getProposal(proposalId: string): Promise<ContractDAOProposal | null> {
@@ -180,14 +218,7 @@ export class ProposalContractService extends BaseContractService {
         throw new Error(`Invalid proposal ID: ${proposalId}`);
       }
 
-      const contractProposal: ContractDAOProposal = await this.generalDAOVoting.getProposal(id);
-      
-      // Check if proposal exists (ID 0 typically means not found)
-      if (!contractProposal || contractProposal.id === createBigInt(0)) {
-        return null;
-      }
-
-      return contractProposal;
+      return await this.getProposalById(id);
     } catch (error) {
       console.error(`Error fetching proposal ${proposalId}:`, error);
       

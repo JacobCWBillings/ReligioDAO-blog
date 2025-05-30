@@ -68,12 +68,16 @@ export class ProposalCacheService {
 
   /**
    * Save proposals to cache with error handling
+   * Ensures proposals are stored in newest-first order
    */
   saveToCache(networkId: number, proposals: CachedProposal[], totalCount?: number): boolean {
     try {
+      // Sort proposals by createdAt (newest first) before saving
+      const sortedProposals = [...proposals].sort((a, b) => b.createdAt - a.createdAt);
+      
       const cacheKey = this.getCacheKey(networkId);
       const cache: ProposalCache = {
-        proposals,
+        proposals: sortedProposals,
         lastUpdated: Date.now(),
         totalCount
       };
@@ -117,28 +121,32 @@ export class ProposalCacheService {
 
   /**
    * Get paginated results from cached data
+   * Always returns proposals in newest-first order
    */
   getPaginatedFromCache(
     cache: ProposalCache, 
     page: number, 
     pageSize: number
   ): PaginatedCacheResult {
+    // Sort all proposals by createdAt (newest first) before pagination
+    const sortedProposals = [...cache.proposals].sort((a, b) => b.createdAt - a.createdAt);
+    
     const startIndex = page * pageSize;
     const endIndex = startIndex + pageSize;
     
     // Ensure we don't go out of bounds
-    const safeStartIndex = Math.max(0, Math.min(startIndex, cache.proposals.length));
-    const safeEndIndex = Math.max(safeStartIndex, Math.min(endIndex, cache.proposals.length));
+    const safeStartIndex = Math.max(0, Math.min(startIndex, sortedProposals.length));
+    const safeEndIndex = Math.max(safeStartIndex, Math.min(endIndex, sortedProposals.length));
     
-    const proposals = cache.proposals
+    const proposals = sortedProposals
       .slice(safeStartIndex, safeEndIndex)
       .map(({ cachedAt, ...proposal }) => proposal); // Remove cachedAt field
 
     return {
       proposals,
       total: cache.totalCount || cache.proposals.length,
-      hasMore: safeEndIndex < cache.proposals.length,
-      nextPage: safeEndIndex < cache.proposals.length ? page + 1 : page
+      hasMore: safeEndIndex < sortedProposals.length,
+      nextPage: safeEndIndex < sortedProposals.length ? page + 1 : page
     };
   }
 
@@ -165,6 +173,7 @@ export class ProposalCacheService {
 
   /**
    * Search proposals in cache
+   * Returns results in newest-first order
    */
   searchInCache(networkId: number, searchTerm: string): Proposal[] {
     const cache = this.loadFromCache(networkId);
@@ -180,11 +189,13 @@ export class ProposalCacheService {
         p.proposer.toLowerCase().includes(term) ||
         (p.contentReference && p.contentReference.includes(term))
       )
-      .map(({ cachedAt, ...proposal }) => proposal);
+      .map(({ cachedAt, ...proposal }) => proposal)
+      .sort((a, b) => b.createdAt - a.createdAt); // Sort newest first
   }
 
   /**
    * Filter active proposals from cache
+   * Returns results in newest-first order
    */
   getActiveFromCache(networkId: number): Proposal[] {
     const cache = this.loadFromCache(networkId);
@@ -193,7 +204,8 @@ export class ProposalCacheService {
     const now = Date.now();
     return cache.proposals
       .filter(p => p.votingEnds > now && (p.status === 1 || p.status === 0)) // Pending or None status
-      .map(({ cachedAt, ...proposal }) => proposal);
+      .map(({ cachedAt, ...proposal }) => proposal)
+      .sort((a, b) => b.createdAt - a.createdAt); // Sort newest first
   }
 
   /**

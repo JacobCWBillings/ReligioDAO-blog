@@ -94,9 +94,12 @@ export class ProposalMapper {
     const description = remarkLines.slice(1).join('\n').trim() || remark;
 
     // Calculate timestamps (convert from seconds to milliseconds)
+    // For createdAt, we prioritize votingStartTime as the most reliable creation indicator
     const votingStartTime = Number(params.votingStartTime);
     const votingEndTime = Number(params.votingEndTime);
-    const createdAt = votingStartTime > 0 ? votingStartTime * 1000 : Date.now();
+    // Ensure creation timestamp is valid for sorting
+    const createdAt = votingStartTime > 0 ? votingStartTime * 1000 : 
+                     (Number(contractProposal.id) > 0 ? Date.now() - (Number(contractProposal.id) * 86400000) : Date.now());
     const votingEnds = votingEndTime > 0 ? votingEndTime * 1000 : Date.now() + 86400000; // Default to 1 day from now
 
     // Calculate proposal status
@@ -366,7 +369,7 @@ export class ProposalMapper {
     const errors: string[] = [];
 
     if (!proposal.id || proposal.id === '0') {
-      // FIXED: Allow proposal ID 0, just check if it's defined
+      // Allow proposal ID 0, just check if it's defined
       if (!proposal.id && proposal.id !== '0') {
         errors.push('Invalid proposal ID');
       }
@@ -376,8 +379,20 @@ export class ProposalMapper {
       errors.push('Missing proposal title');
     }
 
+    // More strict validation for creation date
     if (proposal.createdAt <= 0) {
       errors.push('Invalid creation date');
+    } else {
+      // Verify the date is reasonable (not in the future, not before 2020)
+      const now = Date.now();
+      const minDate = new Date('2020-01-01').getTime();
+      if (proposal.createdAt > now) {
+        // Fix future dates by setting to current time
+        proposal.createdAt = now;
+      } else if (proposal.createdAt < minDate) {
+        // Fix very old dates with a reasonable default
+        proposal.createdAt = now - (86400000 * Number(proposal.id || '0')); // Offset by ID to maintain order
+      }
     }
 
     if (proposal.votingEnds <= proposal.createdAt) {
@@ -415,6 +430,7 @@ export class ProposalMapper {
           ? Math.round((proposal.votesFor / (proposal.votesFor + proposal.votesAgainst)) * 100)
           : 0,
         daysUntilVotingEnds: Math.max(0, Math.ceil((proposal.votingEnds - Date.now()) / (1000 * 60 * 60 * 24))),
+        createdAtFormatted: new Date(proposal.createdAt).toISOString(),
         isValid: validation.isValid,
         validationErrors: validation.errors,
         availableActions: actions
@@ -423,10 +439,11 @@ export class ProposalMapper {
   }
 
   /**
-   * FIXED: Better filtering logic that doesn't exclude valid proposals
+   * Filter valid proposals and ensure they have usable creation dates for sorting
    */
   static filterValidProposals(contractProposals: ContractDAOProposal[]): ContractDAOProposal[] {
-    return contractProposals.filter((proposal, index) => {
+    // First filter for valid proposals
+    const validProposals = contractProposals.filter((proposal, index) => {
       try {
         // Check basic validity
         if (!proposal || proposal.id === undefined || proposal.id === null) {
@@ -434,7 +451,7 @@ export class ProposalMapper {
           return false;
         }
 
-        // FIXED: Use the new validation method instead of just checking ID 0
+        // Use the validation method to check for valid data
         if (!this.isValidProposalData(proposal)) {
           console.warn(`ProposalMapper: Filtering out proposal ${proposal.id} due to invalid data at index ${index}`);
           return false;
@@ -445,6 +462,20 @@ export class ProposalMapper {
         console.error(`ProposalMapper: Error validating proposal at index ${index}:`, error);
         return false;
       }
+    });
+    
+    // Sort by ID (descending) to ensure newest proposals first in case timestamps are identical
+    return validProposals.sort((a, b) => {
+      // First try to sort by voting start time (newest first)
+      const aTime = Number(a.params?.votingStartTime) || 0;
+      const bTime = Number(b.params?.votingStartTime) || 0;
+      
+      if (aTime !== bTime) {
+        return bTime - aTime; // Descending order
+      }
+      
+      // Fall back to ID-based sorting if timestamps are identical
+      return Number(b.id) - Number(a.id); // Higher IDs are newer
     });
   }
 }

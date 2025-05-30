@@ -85,7 +85,8 @@ export class ProposalService {
   }
 
   /**
-   * Fetch proposals with pagination and caching - FIXED
+   * Fetch proposals with pagination and caching
+   * Always returns newest proposals first by creation date
    */
   async getProposalsPaginated(
     page: number = 0, 
@@ -100,8 +101,12 @@ export class ProposalService {
         const cache = this.cacheService.loadFromCache(this.networkId);
         if (cache) {
           const cachedResult = this.cacheService.getPaginatedFromCache(cache, page, pageSize);
+          
+          // Ensure newest-first order before returning
+          const sortedProposals = [...cachedResult.proposals].sort((a, b) => b.createdAt - a.createdAt);
+          
           return {
-            proposals: cachedResult.proposals,
+            proposals: sortedProposals,
             total: cachedResult.total,
             hasMore: cachedResult.hasMore,
             nextPage: cachedResult.nextPage
@@ -143,6 +148,9 @@ export class ProposalService {
       } catch (eventError) {
         console.warn('ProposalService: Failed to enrich with event data, continuing without:', eventError);
       }
+      
+      // Sort by creation date (newest first) to guarantee correct order
+      proposals.sort((a, b) => b.createdAt - a.createdAt);
 
       // Cache the results if this is the first page or a refresh
       if (page === 0 || forceRefresh) {
@@ -153,11 +161,10 @@ export class ProposalService {
         this.cacheService.saveToCache(this.networkId, cachedProposals, contractResult.total);
       }
       
-      // FIXED: Use the contract service's pagination results instead of hardcoded false
       return {
         proposals,
         total: contractResult.total,
-        hasMore: contractResult.hasMore, // This was hardcoded to false before!
+        hasMore: contractResult.hasMore,
         nextPage: contractResult.hasMore ? page + 1 : page
       };
 
@@ -268,6 +275,7 @@ export class ProposalService {
 
   /**
    * Get all proposals (backwards compatibility)
+   * Always returns newest proposals first
    */
   async getAllProposals(): Promise<Proposal[]> {
     this.ensureInitialized();
@@ -276,10 +284,12 @@ export class ProposalService {
       // Try cache first
       const cache = this.cacheService.loadFromCache(this.networkId);
       if (cache && cache.proposals.length > 0) {
-        return cache.proposals.map(({ cachedAt, ...proposal }) => proposal);
+        // Get proposals from cache and ensure newest-first order
+        const proposals = cache.proposals.map(({ cachedAt, ...proposal }) => proposal);
+        return proposals.sort((a, b) => b.createdAt - a.createdAt);
       }
 
-      // Fetch first batch
+      // Fetch first batch (already sorted newest first)
       const result = await this.getProposalsPaginated(0, 50, true);
       return result.proposals;
     } catch (error) {
@@ -292,22 +302,27 @@ export class ProposalService {
 
   /**
    * Get active proposals (currently accepting votes)
+   * Returns newest first by creation date
    */
   async getActiveProposals(): Promise<Proposal[]> {
     this.ensureInitialized();
 
     const cached = this.cacheService.getActiveFromCache(this.networkId);
     if (cached.length > 0) {
-      return cached;
+      // Ensure newest-first order
+      return cached.sort((a, b) => b.createdAt - a.createdAt);
     }
 
     // Fallback: fetch recent proposals and filter
     try {
       const result = await this.getProposalsPaginated(0, 20);
       const now = Date.now();
-      return result.proposals.filter(p => 
+      const activeProposals = result.proposals.filter(p => 
         p.status === ProposalStatus.Pending && p.votingEnds > now
       );
+      
+      // Should already be sorted, but sort again to guarantee newest first
+      return activeProposals.sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {
       console.error('Error getting active proposals:', error);
       return [];
