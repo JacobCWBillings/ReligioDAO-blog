@@ -1,5 +1,5 @@
-// src/blockchain/hooks/useProposal.ts
-import { useState, useEffect, useCallback } from 'react';
+// src/blockchain/hooks/useProposal.ts - Fixed with better initialization control
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
 import { useChainConstraint } from './useChainConstraint';
 import { 
@@ -12,102 +12,231 @@ import {
 import { ProposalService } from '../services/ProposalService';
 
 /**
- * React hook for interacting with the DAO's proposal system for blog minting
- * Provides a React-friendly interface to ProposalService
+ * Enhanced React hook for interacting with the DAO's proposal system
+ * Fixed to prevent multiple initializations
  */
 export const useProposal = () => {
   const { provider, readOnlyProvider, signer, readOnlySigner, account, chainId, isConnected } = useWallet();
-  const { getConstrainedChainId, isCorrectChain, chainError } = useChainConstraint();
+  const { getConstrainedChainId } = useChainConstraint();
+  
   const [proposalService, setProposalService] = useState<ProposalService | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(0);
+  const [hasMore, setHasMore] = useState<boolean>(true);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<BlockchainError | null>(null);
+  const [initialLoaded, setInitialLoaded] = useState(false);
+  
+  // Track service status for diagnostics
+  const [serviceStatus, setServiceStatus] = useState<{
+    initialized: boolean;
+    networkId: number;
+    cacheStats?: any;
+  }>({ initialized: false, networkId: 0 });
+  
+  // Use refs to track initialization state more reliably
+  const mountedRef = useRef(true);
+  const initializationRef = useRef<Promise<void> | null>(null);
+  const currentServiceRef = useRef<ProposalService | null>(null);
+  const currentNetworkRef = useRef<number>(0);
 
-  // Initialize ProposalService
+  // Get the constrained chain ID in a stable way
+  const constrainedChainId = getConstrainedChainId();
+
+  // Stable initialization effect - only depends on core provider changes
   useEffect(() => {
+    mountedRef.current = true;
+    
     const activeProvider = provider || readOnlyProvider;
-    if (!activeProvider) return;
-
-    try {
-      // For write operations, we'll need the connected wallet signer
-      // For read operations, the read-only signer will be sufficient
-      const activeSigner = isConnected && signer ? signer : (readOnlySigner || undefined);
-      const service = new ProposalService(activeProvider, activeSigner);
-      
-      const initService = async () => {
-        // Use the constrained chain ID instead of the wallet's chain ID
-        const constrainedChainId = getConstrainedChainId();
-        await service.init(constrainedChainId);
-        setProposalService(service);
-        
-        // Set error from chain validation if there is one
-        if (chainError) {
-          setError(chainError);
-        } else {
-          setError(null);
-        }
-      };
-      
-      initService();
-    } catch (err) {
-      console.error('Error initializing ProposalService:', err);
-      setError(new BlockchainError(
-        'Failed to initialize ProposalService',
-        BlockchainErrorType.ContractError,
-        err instanceof Error ? err : new Error(String(err))
-      ));
+    
+    // Don't reinitialize if we already have a service for this network
+    if (currentServiceRef.current && currentNetworkRef.current === constrainedChainId && activeProvider) {
+      console.log(`ProposalService already initialized for network ${constrainedChainId}`);
+      return;
     }
-  }, [provider, signer, chainId, isConnected]);
+    
+    if (!activeProvider) {
+      console.log('No provider available for ProposalService initialization');
+      return;
+    }
+
+    const initializeService = async () => {
+      // Prevent multiple simultaneous initializations
+      if (initializationRef.current) {
+        console.log('ProposalService initialization already in progress, waiting...');
+        await initializationRef.current;
+        return;
+      }
+
+      console.log(`Initializing ProposalService for network ${constrainedChainId}`);
+      
+      // Create initialization promise and store it to prevent duplicate calls
+      const initPromise = (async () => {
+        try {
+          const activeSigner = isConnected && signer ? signer : (readOnlySigner || undefined);
+          const service = new ProposalService(activeProvider, activeSigner);
+          
+          // Initialize the service
+          await service.init(constrainedChainId);
+          
+          if (mountedRef.current) {
+            setProposalService(service);
+            currentServiceRef.current = service;
+            currentNetworkRef.current = constrainedChainId;
+            
+            // Get service status for diagnostics
+            const status = service.getServiceStatus();
+            setServiceStatus(status);
+            
+            setError(null);
+            console.log('ProposalService initialized successfully');
+          }
+        } catch (err) {
+          console.error('Error initializing ProposalService:', err);
+          if (mountedRef.current) {
+            setError(new BlockchainError(
+              'Failed to initialize ProposalService',
+              BlockchainErrorType.ContractError,
+              err instanceof Error ? err : new Error(String(err))
+            ));
+          }
+        }
+      })();
+      
+      initializationRef.current = initPromise;
+      await initPromise;
+      initializationRef.current = null;
+    };
+    
+    initializeService();
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [
+    // Only depend on essential provider and network changes
+    provider, // Provider instance reference
+    readOnlyProvider, // Provider instance reference
+    signer, // Signer instance reference
+    constrainedChainId, // Use constrained chain ID instead of wallet chain ID
+    isConnected, // Track connection state changes
+    readOnlySigner // Track read-only signer changes
+  ]);
 
   /**
-   * Get proposal by ID
-   * 
-   * @param proposalId Proposal ID
-   * @returns Promise resolving to Proposal object or null
+   * Load initial proposals with improved error handling
    */
-  const getProposalById = useCallback(async (proposalId: string): Promise<Proposal | null> => {
-    if (!proposalService) return null;
-    return await proposalService.getProposal(proposalId);
-  }, [proposalService]);
+  const loadInitialProposals = useCallback(async (forceRefresh: boolean = false): Promise<void> => {
+    if (!proposalService || !currentServiceRef.current) {
+      console.log("Proposal service not yet initialized, skipping initial load");
+      return;
+    }
 
-  /**
-   * Fetch all proposals
-   * 
-   * @returns Promise resolving to array of Proposal objects
-   */
-  const getAllProposals = useCallback(async (): Promise<Proposal[]> => {
-    if (!proposalService) {
-      setLoading(true);
-      console.log("Proposal service not yet initialized, returning empty array");
-      return [];
+    if (loading) {
+      console.log("Already loading, skipping");
+      return;
     }
 
     setLoading(true);
     setError(null);
 
     try {
-      const allProposals = await proposalService.getAllProposals();
-      setProposals(allProposals);
-      return allProposals;
+      const result = await proposalService.getProposalsPaginated(0, 10, forceRefresh);
+      
+      if (mountedRef.current) {
+        setProposals(result.proposals);
+        setTotalCount(result.total);
+        setHasMore(result.hasMore);
+        setCurrentPage(0);
+        setInitialLoaded(true);
+        
+        // Update service status
+        const status = proposalService.getServiceStatus();
+        setServiceStatus(status);
+      }
     } catch (err) {
-      console.error('Error fetching all proposals:', err);
-      const blockchainError = new BlockchainError(
-        'Failed to fetch proposals',
-        BlockchainErrorType.ContractError,
-        err instanceof Error ? err : new Error(String(err))
-      );
-      setError(blockchainError);
-      throw blockchainError;
+      console.error('Error loading initial proposals:', err);
+      if (mountedRef.current) {
+        const blockchainError = err instanceof BlockchainError ? err : new BlockchainError(
+          'Failed to load proposals',
+          BlockchainErrorType.ContractError,
+          err instanceof Error ? err : new Error(String(err))
+        );
+        setError(blockchainError);
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [proposalService, loading]);
+
+  /**
+   * Load more proposals (pagination)
+   */
+  const loadMoreProposals = useCallback(async (): Promise<void> => {
+    if (!proposalService || !hasMore || loadingMore) {
+      return;
+    }
+
+    setLoadingMore(true);
+    setError(null);
+
+    try {
+      const nextPage = currentPage + 1;
+      const result = await proposalService.getProposalsPaginated(nextPage, 10);
+      
+      if (mountedRef.current) {
+        setProposals(prev => [...prev, ...result.proposals]);
+        setTotalCount(result.total);
+        setHasMore(result.hasMore);
+        setCurrentPage(nextPage);
+      }
+    } catch (err) {
+      console.error('Error loading more proposals:', err);
+      if (mountedRef.current) {
+        const blockchainError = err instanceof BlockchainError ? err : new BlockchainError(
+          'Failed to load more proposals',
+          BlockchainErrorType.ContractError,
+          err instanceof Error ? err : new Error(String(err))
+        );
+        setError(blockchainError);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setLoadingMore(false);
+      }
+    }
+  }, [proposalService, hasMore, loadingMore, currentPage]);
+
+  /**
+   * Refresh all proposals
+   */
+  const refreshProposals = useCallback(async (): Promise<void> => {
+    if (proposalService) {
+      proposalService.clearCache();
+    }
+    await loadInitialProposals(true);
+  }, [loadInitialProposals, proposalService]);
+
+  /**
+   * Get proposal by ID
+   */
+  const getProposalById = useCallback(async (proposalId: string): Promise<Proposal | null> => {
+    if (!proposalService) return null;
+    
+    try {
+      return await proposalService.getProposal(proposalId);
+    } catch (err) {
+      console.error(`Error fetching proposal ${proposalId}:`, err);
+      return null;
     }
   }, [proposalService]);
 
   /**
    * Create a blog minting proposal
-   * 
-   * @param proposal BlogProposal object
-   * @returns Promise resolving to TransactionStatus
    */
   const createBlogProposal = useCallback(async (
     proposal: BlogProposal
@@ -126,50 +255,29 @@ export const useProposal = () => {
       const status = await proposalService.createBlogMintingProposal(proposal);
       
       // Refresh proposals list if successful
-      if (status.status === 'confirmed') {
-        await getAllProposals();
+      if (status.status === 'confirmed' && mountedRef.current) {
+        await refreshProposals();
       }
       
       return status;
     } catch (err) {
       console.error('Error creating proposal:', err);
       
-      if (err instanceof BlockchainError) {
-        // If it's already a BlockchainError, just propagate it
-        setError(err);
-        throw err;
-      }
-      
-      // Determine error type
-      let errorType = BlockchainErrorType.Unknown;
-      if (err instanceof Error) {
-        const errorMessage = err.message.toLowerCase();
-        if (errorMessage.includes('user denied') || errorMessage.includes('user rejected')) {
-          errorType = BlockchainErrorType.UserRejected;
-        } else if (errorMessage.includes('insufficient funds')) {
-          errorType = BlockchainErrorType.InsufficientFunds;
-        }
-      }
-      
-      const blockchainError = new BlockchainError(
+      const blockchainError = err instanceof BlockchainError ? err : new BlockchainError(
         'Failed to create proposal',
-        errorType,
+        BlockchainErrorType.Unknown,
         err instanceof Error ? err : new Error(String(err))
       );
       
-      setError(blockchainError);
+      if (mountedRef.current) setError(blockchainError);
       throw blockchainError;
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
-  }, [proposalService, account, getAllProposals]);
+  }, [proposalService, account, refreshProposals]);
 
   /**
    * Vote on a proposal
-   * 
-   * @param proposalId Proposal ID
-   * @param support True for supporting the proposal, false for opposing
-   * @returns Promise resolving to TransactionStatus
    */
   const voteOnProposal = useCallback(async (
     proposalId: string,
@@ -189,7 +297,7 @@ export const useProposal = () => {
       const status = await proposalService.voteOnProposal(proposalId, support);
       
       // Refresh the proposal if successful
-      if (status.status === 'confirmed') {
+      if (status.status === 'confirmed' && mountedRef.current) {
         const updatedProposal = await getProposalById(proposalId);
         if (updatedProposal) {
           setProposals(prev => 
@@ -202,41 +310,21 @@ export const useProposal = () => {
     } catch (err) {
       console.error('Error voting on proposal:', err);
       
-      if (err instanceof BlockchainError) {
-        // If it's already a BlockchainError, just propagate it
-        setError(err);
-        throw err;
-      }
-      
-      // Determine error type
-      let errorType = BlockchainErrorType.Unknown;
-      if (err instanceof Error) {
-        const errorMessage = err.message.toLowerCase();
-        if (errorMessage.includes('user denied') || errorMessage.includes('user rejected')) {
-          errorType = BlockchainErrorType.UserRejected;
-        } else if (errorMessage.includes('already voted')) {
-          errorType = BlockchainErrorType.ContractError;
-        }
-      }
-      
-      const blockchainError = new BlockchainError(
+      const blockchainError = err instanceof BlockchainError ? err : new BlockchainError(
         'Failed to vote on proposal',
-        errorType,
+        BlockchainErrorType.Unknown,
         err instanceof Error ? err : new Error(String(err))
       );
       
-      setError(blockchainError);
+      if (mountedRef.current) setError(blockchainError);
       throw blockchainError;
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, [proposalService, account, getProposalById]);
 
   /**
-   * Execute a proposal to mint the NFT
-   * 
-   * @param proposalId Proposal ID
-   * @returns Promise resolving to TransactionStatus with optional tokenId
+   * Execute a proposal
    */
   const executeProposal = useCallback(async (
     proposalId: string
@@ -255,7 +343,7 @@ export const useProposal = () => {
       const status = await proposalService.executeProposal(proposalId);
       
       // Refresh the proposal if successful
-      if (status.status === 'confirmed') {
+      if (status.status === 'confirmed' && mountedRef.current) {
         const updatedProposal = await getProposalById(proposalId);
         if (updatedProposal) {
           setProposals(prev => 
@@ -268,41 +356,21 @@ export const useProposal = () => {
     } catch (err) {
       console.error('Error executing proposal:', err);
       
-      if (err instanceof BlockchainError) {
-        // If it's already a BlockchainError, just propagate it
-        setError(err);
-        throw err;
-      }
-      
-      // Determine error type
-      let errorType = BlockchainErrorType.Unknown;
-      if (err instanceof Error) {
-        const errorMessage = err.message.toLowerCase();
-        if (errorMessage.includes('user denied') || errorMessage.includes('user rejected')) {
-          errorType = BlockchainErrorType.UserRejected;
-        } else if (errorMessage.includes('not approved')) {
-          errorType = BlockchainErrorType.ContractError;
-        }
-      }
-      
-      const blockchainError = new BlockchainError(
+      const blockchainError = err instanceof BlockchainError ? err : new BlockchainError(
         'Failed to execute proposal',
-        errorType,
+        BlockchainErrorType.Unknown,
         err instanceof Error ? err : new Error(String(err))
       );
       
-      setError(blockchainError);
+      if (mountedRef.current) setError(blockchainError);
       throw blockchainError;
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, [proposalService, account, getProposalById]);
 
   /**
-   * Check if a user has voted on a specific proposal
-   * 
-   * @param proposalId Proposal ID
-   * @returns Promise resolving to boolean indicating if the current account has voted
+   * Check if user has voted
    */
   const hasVoted = useCallback(async (
     proposalId: string
@@ -320,57 +388,92 @@ export const useProposal = () => {
   }, [proposalService, account]);
 
   /**
-   * Get all proposals that need votes
-   * 
-   * @returns Promise resolving to array of pending proposals
+   * Search proposals
    */
-  const getPendingProposals = useCallback(async (): Promise<Proposal[]> => {
+  const searchProposals = useCallback((searchTerm: string): Proposal[] => {
+    if (!proposalService || !searchTerm.trim()) {
+      return [];
+    }
+    
+    return proposalService.searchProposals(searchTerm);
+  }, [proposalService]);
+
+  /**
+   * Get active proposals
+   */
+  const getActiveProposals = useCallback(async (): Promise<Proposal[]> => {
     if (!proposalService) {
       return [];
     }
     
     try {
-      return await proposalService.getPendingProposals();
+      return await proposalService.getActiveProposals();
     } catch (err) {
-      console.error('Error getting pending proposals:', err);
+      console.error('Error getting active proposals:', err);
       return [];
     }
   }, [proposalService]);
 
-  /**
-   * Get NFT token ID for an executed proposal
-   * 
-   * @param proposalId Proposal ID
-   * @param executionTxHash Transaction hash of execution
-   * @returns Promise resolving to token ID or null
-   */
-  const getTokenIdForExecutedProposal = useCallback(async (
-    proposalId: string,
-    executionTxHash: string
-  ): Promise<string | null> => {
-    if (!proposalService) return null;
-    
+  // Backwards compatibility methods
+  const getAllProposals = useCallback(async (): Promise<Proposal[]> => {
+    if (!proposalService) {
+      return [];
+    }
+
+    setLoading(true);
     try {
-      return await proposalService.getTokenIdForExecutedProposal(proposalId, executionTxHash);
-    } catch (err) {
-      console.error('Error getting token ID for executed proposal:', err);
-      return null;
+      const allProposals = await proposalService.getAllProposals();
+      if (mountedRef.current) {
+        setProposals(allProposals);
+        setTotalCount(allProposals.length);
+        setHasMore(false);
+        setCurrentPage(0);
+        setInitialLoaded(true);
+      }
+      return allProposals;
+    } finally {
+      if (mountedRef.current) setLoading(false);
     }
   }, [proposalService]);
 
+  // Auto-load initial proposals when service is ready
+  useEffect(() => {
+    if (proposalService && !initialLoaded && !loading) {
+      console.log('ProposalService ready, loading initial proposals');
+      loadInitialProposals();
+    }
+  }, [proposalService, initialLoaded, loading, loadInitialProposals]);
+
   return {
+    // Data
     proposals,
+    totalCount,
+    currentPage,
+    hasMore,
+    
+    // Loading states
     loading,
+    loadingMore,
     error,
-    isCorrectChain, // New property to indicate if on correct chain
+    initialLoaded,
+    
+    // Service status
+    serviceStatus,
+    
+    // Pagination methods
+    loadInitialProposals,
+    loadMoreProposals,
+    refreshProposals,
+    
+    // Core methods
     getAllProposals,
     getProposalById,
     createBlogProposal,
     voteOnProposal,
     executeProposal,
     hasVoted,
-    getPendingProposals,
-    getTokenIdForExecutedProposal
+    getActiveProposals,
+    searchProposals
   };
 };
 

@@ -1,4 +1,4 @@
-// src/components/proposal/ProposalCard.tsx - Fixed status mapping
+// src/components/proposal/ProposalCard.tsx - Complete component with 0-based indexing fix
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Proposal, ProposalStatus } from '../../types/blockchain';
@@ -147,7 +147,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
   const getQuorumPercentage = (): string => {
     // This would typically come from blockchain data
     // For now we'll use a default of 50%
-    return "50 %";
+    return "50%";
   };
 
   // Calculate left % for quorum progress bar
@@ -155,7 +155,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
     const votesTotal = proposal.votesFor + proposal.votesAgainst;
     // If we had the total supply, we could calculate this
     // For now, we'll use 0% for simplicity
-    return "0 %";
+    return "0%";
   };
 
   // Extract blog information from proposal description
@@ -180,15 +180,16 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
   const blogInfo = getBlogInfo();
   const isActive = isActiveVoting(proposal);
   
+  // SIMPLIFIED: Use proposal.id directly (0-based indexing)
   return (
     <Link 
-      to={`/proposals/${parseInt(proposal.id) + 1}`}
+      to={`/proposals/${proposal.id}`}
       className={`proposal-card ${needsAttention ? 'needs-attention' : ''} ${className}`}
     >
       <div className="proposal-card-header">
         <div className="proposal-card-title-container">
           <h3 className="proposal-card-title">
-            {blogInfo.blogTitle || 'Untitled Blog Proposal'}
+            {blogInfo.blogTitle || proposal.title || 'Untitled Blog Proposal'}
           </h3>
           {!compact && proposal.title && blogInfo.blogTitle !== proposal.title && (
             <div className="proposal-card-subtitle">{proposal.title}</div>
@@ -219,6 +220,9 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
                   {blogInfo.tags.slice(0, 3).map((tag, index) => (
                     <span key={index} className="proposal-card-tag">{tag}</span>
                   ))}
+                  {blogInfo.tags.length > 3 && (
+                    <span className="proposal-card-tag">+{blogInfo.tags.length - 3} more</span>
+                  )}
                 </div>
               )}
             </div>
@@ -234,19 +238,22 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
               <span>{getQuorumLeft()} left</span>
             </div>
             <div className="proposal-card-progress-bar">
-              <div className="proposal-card-progress-fill" style={{ width: `${progressPercentage}%` }}></div>
+              <div 
+                className="proposal-card-progress-fill" 
+                style={{ width: `${progressPercentage}%` }}
+              ></div>
             </div>
           </div>
           
           <div className="proposal-card-votes">
             <div className="proposal-card-vote proposal-card-vote-yes">
               <span>Yes</span>
-              <span>{progressPercentage.toFixed(0)} %</span>
+              <span>{progressPercentage.toFixed(0)}%</span>
               <span>{proposal.votesFor}</span>
             </div>
             <div className="proposal-card-vote proposal-card-vote-no">
               <span>No</span>
-              <span>{(100 - progressPercentage).toFixed(0)} %</span>
+              <span>{(100 - progressPercentage).toFixed(0)}%</span>
               <span>{proposal.votesAgainst}</span>
             </div>
           </div>

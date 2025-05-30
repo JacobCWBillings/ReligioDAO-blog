@@ -117,6 +117,7 @@ export interface TransactionStatus {
   confirmations: number;
   error?: Error;
   receipt?: ethers.TransactionReceipt;
+  tokenId?: string;
 }
 
 /**

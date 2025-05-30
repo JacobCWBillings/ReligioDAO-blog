@@ -1,78 +1,175 @@
-// src/blockchain/services/ProposalService.ts - Fixed TypeScript errors
+// src/blockchain/services/ProposalService.ts - Fixed with better error handling
 import { ethers } from 'ethers';
-import { BaseContractService } from './BaseContractService';
 import { 
   BlogProposal, 
   Proposal, 
   ProposalStatus, 
-  BlockchainError, 
-  BlockchainErrorType, 
-  TransactionStatus 
+  TransactionStatus,
+  BlockchainError,
+  BlockchainErrorType 
 } from '../../types/blockchain';
-import { IDAOVoting } from '../interfaces/IDAOVoting';
-import { getContractAddresses, getVotingSituationName, qVotingParams, chainIdToQNetworkMap } from '../../config';
-import GeneralDAOVotingABI from '../abis/GeneralDAOVoting.json';
-import NFTMintingModulePlusABI from '../abis/NFTMintingModulePlus.json';
 
-/**
- * Extended TransactionStatus for proposal operations
- */
-interface ProposalTransactionStatus extends TransactionStatus {
-  proposalId?: string;
-  tokenId?: string;
+// Import our new modular services
+import { ProposalCacheService, PaginatedCacheResult } from './proposal/ProposalCacheService';
+import { ProposalMapper } from './proposal/ProposalMapper';
+import { ProposalEventService } from './proposal/ProposalEventService';
+import { ProposalContractService } from './proposal/ProposalContractService';
+
+export interface PaginatedProposals {
+  proposals: Proposal[];
+  total: number;
+  hasMore: boolean;
+  nextPage: number;
 }
 
 /**
- * Service for interacting with Q DAO governance proposals
- * Handles blog proposal creation, voting, and execution
+ * Main ProposalService that orchestrates all proposal-related operations
+ * Now focused on coordination rather than implementation details
  */
-export class ProposalService extends BaseContractService {
-  private generalDAOVoting!: ethers.Contract & IDAOVoting;
-  private nftMintingModule!: ethers.Contract;
-  private votingSituationName!: string;
-  private networkParams: any;
+export class ProposalService {
+  private contractService: ProposalContractService;
+  private cacheService: ProposalCacheService;
+  private eventService: ProposalEventService;
+  private networkId: number = 0;
+  private isInitialized: boolean = false;
 
   constructor(provider: ethers.Provider, signer?: ethers.Signer) {
-    super(provider, signer);
+    this.contractService = new ProposalContractService(provider, signer);
+    this.cacheService = new ProposalCacheService();
+    // eventService will be initialized after contract service
+    this.eventService = new ProposalEventService(provider, new ethers.Contract(ethers.ZeroAddress, [], provider));
   }
 
   /**
-   * Initialize the service with contract instances
+   * Initialize the service with network-specific configuration
    */
   async init(chainId: number): Promise<void> {
+    if (this.isInitialized && this.networkId === chainId) {
+      return; // Already initialized for this network
+    }
+
     try {
-      const contractAddresses = getContractAddresses(chainId);
-      this.votingSituationName = getVotingSituationName(chainId) || 'BlogRitual Voting';
+      // Initialize contract service first
+      await this.contractService.init(chainId);
       
-      // Get network-specific voting parameters
-      const networkName = chainIdToQNetworkMap[chainId.toString()] || 'testnet';
-      this.networkParams = qVotingParams[networkName as keyof typeof qVotingParams] || qVotingParams.testnet;
+      // Initialize event service with the contract
+      const contract = this.contractService.getContract();
+      this.eventService = new ProposalEventService(contract.runner?.provider as ethers.Provider, contract);
       
-      // Initialize GeneralDAOVoting contract
-      this.generalDAOVoting = new ethers.Contract(
-        contractAddresses.generalDAOVoting,
-        GeneralDAOVotingABI.abi,
-        this.signer || this.provider
-      ) as ethers.Contract & IDAOVoting;
-      
-      // Initialize NFTMintingModule contract
-      this.nftMintingModule = new ethers.Contract(
-        contractAddresses.nftMintingModule,
-        NFTMintingModulePlusABI.abi,
-        this.signer || this.provider
-      );
-      
-      console.log('ProposalService initialized:', {
-        chainId,
-        networkName,
-        votingSituation: this.votingSituationName,
-        generalDAOVoting: contractAddresses.generalDAOVoting,
-        nftMintingModule: contractAddresses.nftMintingModule
-      });
+      this.networkId = chainId;
+      this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing ProposalService:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure the service is initialized
+   */
+  private ensureInitialized(): void {
+    if (!this.isInitialized) {
       throw new BlockchainError(
-        'Failed to initialize ProposalService',
+        'ProposalService not initialized. Call init() first.',
+        BlockchainErrorType.ContractError
+      );
+    }
+  }
+
+  /**
+   * Get total number of proposals
+   */
+  async getTotalProposalCount(): Promise<number> {
+    this.ensureInitialized();
+    return this.contractService.getTotalProposalCount();
+  }
+
+  /**
+   * Fetch proposals with pagination and caching - FIXED
+   */
+  async getProposalsPaginated(
+    page: number = 0, 
+    pageSize: number = 10,
+    forceRefresh: boolean = false
+  ): Promise<PaginatedProposals> {
+    this.ensureInitialized();
+
+    try {
+      // Try cache first unless forcing refresh
+      if (!forceRefresh) {
+        const cache = this.cacheService.loadFromCache(this.networkId);
+        if (cache) {
+          const cachedResult = this.cacheService.getPaginatedFromCache(cache, page, pageSize);
+          return {
+            proposals: cachedResult.proposals,
+            total: cachedResult.total,
+            hasMore: cachedResult.hasMore,
+            nextPage: cachedResult.nextPage
+          };
+        }
+      }
+
+      // Fetch from contract
+      const contractResult = await this.contractService.getProposalsPaginated(page, pageSize);
+      
+      console.log(`ProposalService: Received ${contractResult.proposals.length} proposals from contract`);
+      
+      // Filter out invalid proposals first
+      const validContractProposals = ProposalMapper.filterValidProposals(contractResult.proposals);
+      
+      console.log(`ProposalService: ${validContractProposals.length} valid proposals after filtering`);
+      
+      // Map contract data to our format
+      const proposals: Proposal[] = [];
+      
+      for (const contractProposal of validContractProposals) {
+        try {
+          const mappedProposal = ProposalMapper.mapContractProposalToProposal(contractProposal);
+          proposals.push(mappedProposal);
+        } catch (mappingError) {
+          console.warn('ProposalService: Failed to map individual proposal:', {
+            proposalId: contractProposal.id?.toString(),
+            error: mappingError
+          });
+          continue;
+        }
+      }
+      
+      console.log(`ProposalService: Successfully mapped ${proposals.length} proposals`);
+
+      // Enrich with event data (don't fail if this doesn't work)
+      try {
+        await this.eventService.enrichProposalsWithProposerData(proposals);
+      } catch (eventError) {
+        console.warn('ProposalService: Failed to enrich with event data, continuing without:', eventError);
+      }
+
+      // Cache the results if this is the first page or a refresh
+      if (page === 0 || forceRefresh) {
+        const cachedProposals = proposals.map(p => ({
+          ...p,
+          cachedAt: Date.now()
+        }));
+        this.cacheService.saveToCache(this.networkId, cachedProposals, contractResult.total);
+      }
+      
+      // FIXED: Use the contract service's pagination results instead of hardcoded false
+      return {
+        proposals,
+        total: contractResult.total,
+        hasMore: contractResult.hasMore, // This was hardcoded to false before!
+        nextPage: contractResult.hasMore ? page + 1 : page
+      };
+
+    } catch (error) {
+      console.error('Error in getProposalsPaginated:', error);
+      
+      if (error instanceof BlockchainError) {
+        throw error;
+      }
+      
+      throw new BlockchainError(
+        'Failed to fetch proposals',
         BlockchainErrorType.ContractError,
         error instanceof Error ? error : new Error(String(error))
       );
@@ -80,223 +177,172 @@ export class ProposalService extends BaseContractService {
   }
 
   /**
-   * Get a single proposal by ID using both contract data and official status
+   * Get a single proposal by ID
    */
   async getProposal(proposalId: string): Promise<Proposal | null> {
+    this.ensureInitialized();
+
     try {
-      // Get both proposal data and official status from Q contract
-      const [contractProposal, contractStatusRaw] = await Promise.all([
-        this.generalDAOVoting.getProposal(proposalId),
-        this.generalDAOVoting.getProposalStatus(proposalId)
-      ]);
-      
-      // Convert contract status to ProposalStatus enum
-      const contractStatus = this.mapContractStatusToEnum(Number(contractStatusRaw));
-      
-      // Debug logging
-      console.log(`Proposal ${proposalId} from Q contract:`, {
-        contractStatus: Number(contractStatusRaw),
-        contractStatusName: this.getStatusName(contractStatus),
-        contractExecutedFlag: contractProposal.executed,
-        votingStart: Number(contractProposal.params.votingStartTime),
-        votingEnd: Number(contractProposal.params.votingEndTime),
-        votesFor: Number(contractProposal.counters.votedFor),
-        votesAgainst: Number(contractProposal.counters.votedAgainst)
-      });
-      
-      // Map to application Proposal interface
-      const proposal: Proposal = {
-        id: proposalId,
-        title: this.extractTitleFromRemark(contractProposal.remark),
-        description: contractProposal.remark,
-        proposer: await this.getProposalProposer(proposalId, contractProposal),
-        createdAt: Number(contractProposal.params.votingStartTime) * 1000,
-        votingEnds: Number(contractProposal.params.votingEndTime) * 1000,
-        votesFor: Number(contractProposal.counters.votedFor),
-        votesAgainst: Number(contractProposal.counters.votedAgainst),
-        
-        // CRITICAL: Use Q contract status as source of truth
-        status: contractStatus,
-        
-        // CRITICAL: executed flag should match Q contract status
-        executed: contractStatus === ProposalStatus.Executed,
-        
-        contentReference: this.extractContentReferenceFromCallData(contractProposal.callData)
-      };
-      
-      // Verification: Check for inconsistencies and warn
-      if (contractProposal.executed !== proposal.executed) {
-        console.warn(`Inconsistency in proposal ${proposalId}:`, {
-          contractExecutedFlag: contractProposal.executed,
-          derivedExecutedFlag: proposal.executed,
-          contractStatus: proposal.status,
-          contractStatusName: this.getStatusName(proposal.status)
-        });
+      // Check cache first
+      const cache = this.cacheService.loadFromCache(this.networkId);
+      if (cache) {
+        const cached = cache.proposals.find(p => p.id === proposalId);
+        if (cached) {
+          const { cachedAt, ...proposal } = cached;
+          return proposal;
+        }
       }
+
+      // Fetch from contract
+      const contractProposal = await this.contractService.getProposal(proposalId);
+      if (!contractProposal) {
+        return null;
+      }
+
+      // Validate the proposal first
+      const validProposals = ProposalMapper.filterValidProposals([contractProposal]);
+      if (validProposals.length === 0) {
+        console.warn(`ProposalService: Proposal ${proposalId} is invalid`);
+        return null;
+      }
+
+      // Map to our format
+      const proposal = ProposalMapper.mapContractProposalToProposal(validProposals[0]);
       
+      // Enrich with event data
+      try {
+        await this.eventService.enrichProposalsWithProposerData([proposal]);
+      } catch (eventError) {
+        console.warn('ProposalService: Failed to enrich single proposal with event data:', eventError);
+      }
+
       return proposal;
     } catch (error) {
       console.error(`Error fetching proposal ${proposalId}:`, error);
       
-      if (error instanceof Error && error.message.includes('call revert exception')) {
-        // Proposal doesn't exist
+      // Don't throw for single proposal failures
+      if (error instanceof Error && error.message.includes('Invalid contract proposal data')) {
+        console.warn(`ProposalService: Proposal ${proposalId} has invalid data, returning null`);
         return null;
       }
       
-      throw new BlockchainError(
-        `Failed to fetch proposal ${proposalId}`,
-        BlockchainErrorType.ContractError,
-        error instanceof Error ? error : new Error(String(error))
-      );
+      throw error;
     }
   }
 
   /**
-   * Get all proposals from the DAO
+   * Get proposal status directly from contract
+   */
+  async getProposalStatus(proposalId: string): Promise<ProposalStatus> {
+    this.ensureInitialized();
+    
+    try {
+      const contractStatus = await this.contractService.getProposalStatus(proposalId);
+      return ProposalMapper.mapContractStatusToEnum(contractStatus);
+    } catch (error) {
+      console.error(`Error getting proposal status for ${proposalId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Refresh a single proposal in cache
+   */
+  async refreshProposal(proposalId: string): Promise<Proposal | null> {
+    this.ensureInitialized();
+
+    try {
+      const proposal = await this.getProposal(proposalId);
+      
+      if (proposal) {
+        // Update cache
+        this.cacheService.updateProposalInCache(this.networkId, proposal);
+      }
+
+      return proposal;
+    } catch (error) {
+      console.error(`Error refreshing proposal ${proposalId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all proposals (backwards compatibility)
    */
   async getAllProposals(): Promise<Proposal[]> {
+    this.ensureInitialized();
+
     try {
-      // Get total proposal count
-      const proposalCount = await this.generalDAOVoting.proposalCount();
-      const count = Number(proposalCount);
-      
-      if (count === 0) {
-        return [];
+      // Try cache first
+      const cache = this.cacheService.loadFromCache(this.networkId);
+      if (cache && cache.proposals.length > 0) {
+        return cache.proposals.map(({ cachedAt, ...proposal }) => proposal);
       }
-      
-      console.log(`Fetching ${count} proposals from Q contract...`);
-      
-      // Fetch all proposals in batches to avoid timeouts
-      const batchSize = 10;
-      const proposals: Proposal[] = [];
-      
-      for (let i = 0; i < count; i += batchSize) {
-        const batchPromises: Promise<Proposal | null>[] = [];
-        const batchEnd = Math.min(i + batchSize, count);
-        
-        for (let j = i; j < batchEnd; j++) {
-          // Q contracts use 0-indexed proposals, but we display them as 1-indexed to users
-          batchPromises.push(this.getProposal(j.toString()));
-        }
-        
-        const batchResults = await Promise.all(batchPromises);
-        
-        // Filter out null results and add to proposals array
-        batchResults.forEach(proposal => {
-          if (proposal) {
-            proposals.push(proposal);
-          }
-        });
-        
-        console.log(`Fetched batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(count / batchSize)}: ${batchResults.filter(p => p).length} proposals`);
-      }
-      
-      console.log(`Successfully fetched ${proposals.length} proposals from Q contract`);
-      
-      // Sort by creation date (newest first)
-      return proposals.sort((a, b) => b.createdAt - a.createdAt);
+
+      // Fetch first batch
+      const result = await this.getProposalsPaginated(0, 50, true);
+      return result.proposals;
     } catch (error) {
-      console.error('Error fetching all proposals:', error);
-      throw new BlockchainError(
-        'Failed to fetch proposals from Q contract',
-        BlockchainErrorType.ContractError,
-        error instanceof Error ? error : new Error(String(error))
-      );
+      console.error('Error in getAllProposals:', error);
+      
+      // Return empty array instead of throwing for better UX
+      return [];
     }
   }
 
   /**
-   * Create a new blog minting proposal
+   * Get active proposals (currently accepting votes)
    */
-  async createBlogMintingProposal(blogProposal: BlogProposal): Promise<ProposalTransactionStatus> {
-    if (!this.signer) {
-      throw new BlockchainError(
-        'Signer required for creating proposals',
-        BlockchainErrorType.ContractError
-      );
+  async getActiveProposals(): Promise<Proposal[]> {
+    this.ensureInitialized();
+
+    const cached = this.cacheService.getActiveFromCache(this.networkId);
+    if (cached.length > 0) {
+      return cached;
     }
 
+    // Fallback: fetch recent proposals and filter
     try {
-      // Prepare NFT metadata for the calldata
-      const nftMetadata = {
-        name: blogProposal.title,
-        description: blogProposal.preview,
-        image: blogProposal.banner || '',
-        attributes: [
-          { trait_type: 'Category', value: blogProposal.category },
-          { trait_type: 'Author', value: blogProposal.authorAddress },
-          { trait_type: 'Content Reference', value: blogProposal.contentReference }
-        ],
-        properties: {
-          contentReference: blogProposal.contentReference,
-          category: blogProposal.category,
-          tags: blogProposal.tags,
-          authorAddress: blogProposal.authorAddress,
-          approvalDate: new Date().toISOString()
-        }
-      };
-
-      // Encode the call data for NFT minting
-      const callData = this.nftMintingModule.interface.encodeFunctionData(
-        'mintWithMetadata',
-        [
-          blogProposal.authorAddress,
-          JSON.stringify(nftMetadata)
-        ]
+      const result = await this.getProposalsPaginated(0, 20);
+      const now = Date.now();
+      return result.proposals.filter(p => 
+        p.status === ProposalStatus.Pending && p.votingEnds > now
       );
-
-      // Create the proposal remark with structured information
-      const proposalRemark = this.createProposalRemark(blogProposal);
-
-      console.log('Creating blog proposal with:', {
-        votingSituation: this.votingSituationName,
-        remark: proposalRemark,
-        callDataLength: callData.length,
-        targetContract: await this.nftMintingModule.getAddress()
-      });
-
-      // Submit the proposal to Q DAO
-      const tx = await this.generalDAOVoting.createProposal(
-        this.votingSituationName,
-        proposalRemark,
-        callData
-      );
-
-      console.log(`Blog proposal transaction submitted: ${tx.hash}`);
-
-      // Wait for confirmation
-      const receipt = await tx.wait();
-      
-      if (!receipt) {
-        throw new Error('Transaction receipt not available');
-      }
-
-      // Extract proposal ID from the ProposalCreated event
-      let proposalId: string | null = null;
-      for (const log of receipt.logs) {
-        try {
-          const parsed = this.generalDAOVoting.interface.parseLog(log);
-          if (parsed && parsed.name === 'ProposalCreated') {
-            proposalId = parsed.args.id.toString();
-            break;
-          }
-        } catch (e) {
-          // Not a matching log, continue
-        }
-      }
-
-      console.log(`Blog proposal created successfully. Proposal ID: ${proposalId}`);
-
-      return {
-        hash: tx.hash,
-        status: 'confirmed',
-        confirmations: receipt.confirmations,
-        receipt,
-        proposalId: proposalId || undefined
-      };
     } catch (error) {
-      console.error('Error creating blog proposal:', error);
-      throw this.classifyBlockchainError(error, 'Failed to create blog proposal');
+      console.error('Error getting active proposals:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Search proposals by text
+   */
+  searchProposals(searchTerm: string): Proposal[] {
+    if (!this.isInitialized) {
+      return [];
+    }
+    
+    return this.cacheService.searchInCache(this.networkId, searchTerm);
+  }
+
+  /**
+   * Create a blog minting proposal
+   */
+  async createBlogMintingProposal(proposal: BlogProposal): Promise<TransactionStatus> {
+    this.ensureInitialized();
+
+    try {
+      const result = await this.contractService.createBlogMintingProposal(proposal);
+
+      // Clear cache on successful creation
+      if (result.status === 'confirmed') {
+        this.cacheService.clearCache(this.networkId);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error creating blog minting proposal:', error);
+      throw error;
     }
   }
 
@@ -304,348 +350,145 @@ export class ProposalService extends BaseContractService {
    * Vote on a proposal
    */
   async voteOnProposal(proposalId: string, support: boolean): Promise<TransactionStatus> {
-    if (!this.signer) {
-      throw new BlockchainError(
-        'Signer required for voting',
-        BlockchainErrorType.ContractError
-      );
-    }
+    this.ensureInitialized();
 
     try {
-      // Check if user has already voted
-      const userAddress = await this.signer.getAddress();
-      const hasVoted = await this.generalDAOVoting.hasUserVoted(proposalId, userAddress);
-      
-      if (hasVoted) {
-        throw new BlockchainError(
-          'You have already voted on this proposal',
-          BlockchainErrorType.ContractError
-        );
+      const result = await this.contractService.voteOnProposal(proposalId, support);
+
+      // Refresh specific proposal in cache if successful
+      if (result.status === 'confirmed') {
+        await this.refreshProposal(proposalId);
       }
 
-      // Check proposal status
-      const proposal = await this.getProposal(proposalId);
-      if (!proposal) {
-        throw new BlockchainError(
-          'Proposal not found',
-          BlockchainErrorType.ContractError
-        );
-      }
-
-      if (proposal.status !== ProposalStatus.Pending) {
-        throw new BlockchainError(
-          'Voting is not active for this proposal',
-          BlockchainErrorType.ContractError
-        );
-      }
-
-      console.log(`Voting ${support ? 'FOR' : 'AGAINST'} proposal ${proposalId}`);
-
-      // Submit vote
-      const tx = support 
-        ? await this.generalDAOVoting.voteFor(proposalId)
-        : await this.generalDAOVoting.voteAgainst(proposalId);
-
-      console.log(`Vote transaction submitted: ${tx.hash}`);
-
-      const receipt = await tx.wait();
-      
-      if (!receipt) {
-        throw new Error('Transaction receipt not available');
-      }
-
-      console.log(`Vote submitted successfully for proposal ${proposalId}`);
-
-      return {
-        hash: tx.hash,
-        status: 'confirmed',
-        confirmations: receipt.confirmations,
-        receipt
-      };
+      return result;
     } catch (error) {
-      console.error(`Error voting on proposal ${proposalId}:`, error);
-      throw this.classifyBlockchainError(error, 'Failed to vote on proposal');
+      console.error('Error voting on proposal:', error);
+      throw error;
     }
   }
 
   /**
-   * Execute an approved proposal
+   * Execute a proposal
    */
-  async executeProposal(proposalId: string): Promise<ProposalTransactionStatus> {
-    if (!this.signer) {
-      throw new BlockchainError(
-        'Signer required for executing proposals',
-        BlockchainErrorType.ContractError
-      );
-    }
+  async executeProposal(proposalId: string): Promise<TransactionStatus & { tokenId?: string }> {
+    this.ensureInitialized();
 
     try {
-      // Verify proposal can be executed
-      const proposal = await this.getProposal(proposalId);
-      if (!proposal) {
-        throw new BlockchainError(
-          'Proposal not found',
-          BlockchainErrorType.ContractError
-        );
+      const result = await this.contractService.executeProposal(proposalId);
+
+      // Extract token ID from receipt if execution was successful
+      if (result.status === 'confirmed' && result.receipt) {
+        const tokenId = await this.eventService.extractTokenIdFromReceipt(result.receipt);
+        
+        // Refresh specific proposal in cache
+        await this.refreshProposal(proposalId);
+        
+        return {
+          ...result,
+          tokenId: tokenId || undefined
+        };
       }
 
-      if (proposal.status !== ProposalStatus.Accepted && proposal.status !== ProposalStatus.Passed) {
-        throw new BlockchainError(
-          `Proposal cannot be executed. Current status: ${this.getStatusName(proposal.status)}`,
-          BlockchainErrorType.ContractError
-        );
-      }
+      return result;
+    } catch (error) {
+      console.error('Error executing proposal:', error);
+      throw error;
+    }
+  }
 
-      console.log(`Executing approved proposal ${proposalId}`);
+  /**
+   * Check if user has voted on a proposal
+   */
+  async hasVoted(proposalId: string, account: string): Promise<boolean> {
+    this.ensureInitialized();
 
-      // Execute the proposal
-      const tx = await this.generalDAOVoting.executeProposal(proposalId);
-      
-      console.log(`Proposal execution transaction submitted: ${tx.hash}`);
-
-      const receipt = await tx.wait();
-      
-      if (!receipt) {
-        throw new Error('Transaction receipt not available');
-      }
-
-      // Try to extract token ID from transaction logs
-      let tokenId: string | null = null;
+    try {
+      return await this.contractService.hasVoted(proposalId, account);
+    } catch (error) {
+      // Fallback to event-based check
+      console.warn('Contract hasVoted failed, trying event-based check:', error);
       try {
-        tokenId = await this.getTokenIdForExecutedProposal(proposalId, tx.hash);
-      } catch (error) {
-        console.warn('Could not extract token ID from execution transaction:', error);
+        return await this.eventService.hasUserVotedByEvents(proposalId, account);
+      } catch (eventError) {
+        console.error('Event-based vote check also failed:', eventError);
+        return false;
       }
+    }
+  }
 
-      console.log(`Proposal ${proposalId} executed successfully. Token ID: ${tokenId || 'Unknown'}`);
+  /**
+   * Get comprehensive proposal information including events
+   */
+  async getProposalWithEvents(proposalId: string): Promise<{
+    proposal: Proposal | null;
+    events: Awaited<ReturnType<ProposalEventService['getProposalEventSummary']>>;
+  }> {
+    this.ensureInitialized();
 
+    try {
+      const [proposal, events] = await Promise.all([
+        this.getProposal(proposalId),
+        this.eventService.getProposalEventSummary(proposalId)
+      ]);
+
+      return { proposal, events };
+    } catch (error) {
+      console.error(`Error getting proposal with events for ${proposalId}:`, error);
       return {
-        hash: tx.hash,
-        status: 'confirmed',
-        confirmations: receipt.confirmations,
-        receipt,
-        tokenId: tokenId || undefined
+        proposal: null,
+        events: {
+          votes: [],
+          totalVotes: 0,
+          uniqueVoters: 0
+        }
       };
-    } catch (error) {
-      console.error(`Error executing proposal ${proposalId}:`, error);
-      throw this.classifyBlockchainError(error, 'Failed to execute proposal');
     }
   }
 
   /**
-   * Check if a user has voted on a proposal
+   * Get service status and diagnostics
    */
-  async hasVoted(proposalId: string, userAddress: string): Promise<boolean> {
-    try {
-      return await this.generalDAOVoting.hasUserVoted(proposalId, userAddress);
-    } catch (error) {
-      console.error(`Error checking vote status for proposal ${proposalId}:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Get proposals that are pending user action
-   */
-  async getPendingProposals(): Promise<Proposal[]> {
-    try {
-      const allProposals = await this.getAllProposals();
-      // Note: May need to clarify which status represents "active voting"
-      return allProposals.filter(p => 
-        p.status === ProposalStatus.Pending || 
-        p.status === ProposalStatus.UnderReview ||
-        p.status === ProposalStatus.UnderEvaluation
-      );
-    } catch (error) {
-      console.error('Error getting pending proposals:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Extract token ID from executed proposal transaction
-   */
-  async getTokenIdForExecutedProposal(proposalId: string, txHash: string): Promise<string | null> {
-    try {
-      const receipt = await this.provider.getTransactionReceipt(txHash);
-      if (!receipt) return null;
-
-      // Look for Transfer event from NFT contract (ERC721 Transfer event signature)
-      const transferEventSignature = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
-      
-      for (const log of receipt.logs) {
-        try {
-          // Check if this is an ERC721 Transfer event
-          if (log.topics.length >= 4 && log.topics[0] === transferEventSignature) {
-            // Third topic (index 2) is the tokenId for ERC721 Transfer events
-            const tokenId = BigInt(log.topics[3]).toString();
-            console.log(`Found token ID ${tokenId} in execution transaction ${txHash}`);
-            return tokenId;
-          }
-        } catch (e) {
-          // Continue to next log
-        }
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Error extracting token ID:', error);
-      return null;
-    }
-  }
-
-  // Helper methods
-
-  /**
-   * Map contract status number to CORRECTED ProposalStatus enum
-   */
-  private mapContractStatusToEnum(status: number): ProposalStatus {
-    switch (status) {
-      case 0: return ProposalStatus.None;
-      case 1: return ProposalStatus.Pending;
-      case 2: return ProposalStatus.Rejected;
-      case 3: return ProposalStatus.Accepted;  // This is "Approved" - ready for execution
-      case 4: return ProposalStatus.Passed;    // Alternative approval state
-      case 5: return ProposalStatus.Executed;  // Actually executed
-      case 6: return ProposalStatus.Expired;
-      case 7: return ProposalStatus.UnderReview;
-      case 8: return ProposalStatus.UnderEvaluation;
-      default: 
-        console.warn(`Unknown Q governance proposal status: ${status}`);
-        return ProposalStatus.None;
-    }
-  }
-
-  private getStatusName(status: ProposalStatus): string {
-    const statusNames: Record<ProposalStatus, string> = {
-      [ProposalStatus.None]: 'None',
-      [ProposalStatus.Pending]: 'Pending',
-      [ProposalStatus.Rejected]: 'Rejected',
-      [ProposalStatus.Accepted]: 'Approved',  // User-friendly name for "Accepted"
-      [ProposalStatus.Passed]: 'Passed',
-      [ProposalStatus.Executed]: 'Executed',
-      [ProposalStatus.Expired]: 'Expired',
-      [ProposalStatus.UnderReview]: 'Under Review',
-      [ProposalStatus.UnderEvaluation]: 'Under Evaluation'
+  getServiceStatus(): {
+    initialized: boolean;
+    networkId: number;
+    cacheStats: ReturnType<ProposalCacheService['getCacheStats']>;
+    eventCacheStats: ReturnType<ProposalEventService['getCacheStats']>;
+  } {
+    return {
+      initialized: this.isInitialized,
+      networkId: this.networkId,
+      cacheStats: this.cacheService.getCacheStats(this.networkId),
+      eventCacheStats: this.eventService.getCacheStats()
     };
-    return statusNames[status] || 'Unknown';
   }
 
-  private async getProposalProposer(proposalId: string, contractProposal: any): Promise<string> {
-    try {
-      // Try to get proposer from contract events
-      const filter = this.generalDAOVoting.filters.ProposalCreated(proposalId);
-      const events = await this.generalDAOVoting.queryFilter(filter, -1000); // Last 1000 blocks
-      
-      if (events.length > 0) {
-        const event = events[0];
-        // Type guard to check if this is an EventLog with args
-        if ('args' in event && event.args) {
-          return event.args.proposer || '0x0000000000000000000000000000000000000000';
-        }
-      }
-      
-      // Fallback to contract data if available
-      return contractProposal.proposer || '0x0000000000000000000000000000000000000000';
-    } catch (error) {
-      console.warn(`Could not determine proposer for proposal ${proposalId}:`, error);
-      return '0x0000000000000000000000000000000000000000';
+  /**
+   * Clear all caches
+   */
+  clearCache(): void {
+    if (this.isInitialized) {
+      this.cacheService.clearCache(this.networkId);
     }
+    this.eventService.clearCache();
   }
 
-  private extractTitleFromRemark(remark: string): string {
-    try {
-      const lines = remark.split('\n');
-      const titleLine = lines.find(line => line.trim().startsWith('Blog:'));
-      return titleLine ? titleLine.replace('Blog:', '').trim() : 'Untitled Blog Proposal';
-    } catch (e) {
-      return 'Untitled Blog Proposal';
-    }
+  /**
+   * Clear all caches across networks (for cleanup)
+   */
+  clearAllCaches(): void {
+    this.cacheService.clearAllCaches();
+    this.eventService.clearCache();
   }
 
-  private extractContentReferenceFromCallData(callData: string | Uint8Array): string | undefined {
-    try {
-      // Convert BytesLike to string if needed
-      const callDataString = typeof callData === 'string' ? callData : ethers.hexlify(callData);
-      
-      // Decode the NFT minting call data to extract content reference
-      const decoded = this.nftMintingModule.interface.decodeFunctionData('mintWithMetadata', callDataString);
-      if (decoded && decoded.length > 1) {
-        const metadata = JSON.parse(decoded[1]);
-        return metadata.properties?.contentReference;
-      }
-    } catch (error) {
-      console.warn('Could not extract content reference from call data:', error);
-    }
-    return undefined;
+  // Legacy methods for backwards compatibility
+  async getPendingProposals(): Promise<Proposal[]> {
+    return this.getActiveProposals();
   }
 
-  private createProposalRemark(blogProposal: BlogProposal): string {
-    return [
-      `Blog: ${blogProposal.title}`,
-      `Category: ${blogProposal.category}`,
-      `Tags: ${blogProposal.tags.join(', ')}`,
-      `Author: ${blogProposal.authorAddress}`,
-      `Content Reference: ${blogProposal.contentReference}`,
-      '',
-      `Description: ${blogProposal.description}`,
-      '',
-      `Preview: ${blogProposal.preview}`
-    ].join('\n');
-  }
-
-  private classifyBlockchainError(error: any, defaultMessage: string): BlockchainError {
-    if (error instanceof BlockchainError) {
-      return error;
-    }
-
-    let errorType = BlockchainErrorType.Unknown;
-    let message = defaultMessage;
-
-    if (error instanceof Error) {
-      const errorMessage = error.message.toLowerCase();
-      
-      if (errorMessage.includes('user denied') || errorMessage.includes('user rejected')) {
-        errorType = BlockchainErrorType.UserRejected;
-        message = 'Transaction was rejected by user';
-      } else if (errorMessage.includes('insufficient funds')) {
-        errorType = BlockchainErrorType.InsufficientFunds;
-        message = 'Insufficient funds for transaction';
-      } else if (errorMessage.includes('gas')) {
-        errorType = BlockchainErrorType.GasLimitExceeded;
-        message = 'Transaction failed due to gas issues';
-      } else if (errorMessage.includes('revert') || errorMessage.includes('execution reverted')) {
-        errorType = BlockchainErrorType.ContractError;
-        message = `Contract execution failed: ${error.message}`;
-      } else if (errorMessage.includes('network') || errorMessage.includes('connection')) {
-        errorType = BlockchainErrorType.NetworkError;
-        message = 'Network connection error';
-      }
-    }
-
-    return new BlockchainError(message, errorType, error instanceof Error ? error : new Error(String(error)));
-  }
-
-  // Getter methods for accessing contract instances (for advanced use cases)
-  getGeneralDAOVotingContract(): ethers.Contract & IDAOVoting {
-    if (!this.generalDAOVoting) {
-      throw new Error('ProposalService not initialized');
-    }
-    return this.generalDAOVoting;
-  }
-
-  getNFTMintingModuleContract(): ethers.Contract {
-    if (!this.nftMintingModule) {
-      throw new Error('ProposalService not initialized');
-    }
-    return this.nftMintingModule;
-  }
-
-  getVotingSituationName(): string {
-    return this.votingSituationName;
-  }
-
-  getNetworkParams(): any {
-    return this.networkParams;
+  async getTokenIdForExecutedProposal(proposalId: string, executionTxHash: string): Promise<string | null> {
+    // This is a backwards compatibility method
+    // In the new architecture, token ID is returned directly from executeProposal
+    console.warn('getTokenIdForExecutedProposal is deprecated. Token ID is now returned from executeProposal.');
+    return null;
   }
 }

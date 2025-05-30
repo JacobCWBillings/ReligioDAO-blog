@@ -60,10 +60,24 @@ export abstract class BaseContractService {
       // Wait for confirmation
       const receipt = await transaction.wait(confirmations);
       
-      // Update status
-      status.status = receipt ? 'confirmed' : 'failed';
-      status.confirmations = confirmations;
-      status.receipt = receipt || undefined; // Convert null to undefined for type compatibility
+      // Update status - handle ethers v6 confirmations method
+      if (receipt) {
+        status.status = receipt.status === 1 ? 'confirmed' : 'failed';
+        
+        // In ethers v6, confirmations is a method, not a property
+        try {
+          const confirmedCount = await receipt.confirmations();
+          status.confirmations = confirmedCount;
+        } catch {
+          // Fallback if confirmations method fails
+          status.confirmations = confirmations;
+        }
+        
+        status.receipt = receipt;
+      } else {
+        status.status = 'failed';
+        status.error = new Error('Transaction receipt is null');
+      }
       
       return status;
     } catch (err) {

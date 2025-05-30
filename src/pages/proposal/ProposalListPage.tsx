@@ -1,4 +1,4 @@
-// src/pages/proposal/ProposalListPage.tsx
+// src/pages/proposal/ProposalListPage.tsx - FIXED: Load more button and sorting issues
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
@@ -19,7 +19,21 @@ const isActiveVoting = (proposal: any): boolean => {
 export const ProposalListPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { proposals, getAllProposals, loading, error } = useProposal();
+  
+  const { 
+    proposals, 
+    totalCount,
+    hasMore,
+    loading, 
+    loadingMore,
+    error,
+    initialLoaded,
+    loadInitialProposals,
+    loadMoreProposals,
+    refreshProposals,
+    searchProposals
+  } = useProposal();
+  
   const { isConnected, account } = useWallet();
   
   // State for filtering
@@ -34,21 +48,15 @@ export const ProposalListPage: React.FC = () => {
   );
   
   // UI state
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [downloading, setDownloading] = useState<boolean>(false);
   
-  // Load proposals when component mounts
+  // Load initial proposals when component mounts
   useEffect(() => {
-    const loadProposals = async () => {
-      try {
-        await getAllProposals();
-      } catch (err) {
-        console.error('Error loading proposals:', err);
-      }
-    };
-    
-    loadProposals();
-  }, [getAllProposals, isConnected]);
+    if (!initialLoaded) {
+      loadInitialProposals();
+    }
+  }, [loadInitialProposals, initialLoaded]);
   
   // Update URL search params when filters change
   useEffect(() => {
@@ -71,21 +79,42 @@ export const ProposalListPage: React.FC = () => {
   
   // Handle refresh
   const handleRefresh = async () => {
-    setRefreshing(true);
+    setIsRefreshing(true);
     try {
-      await getAllProposals();
+      await refreshProposals();
     } catch (err) {
       console.error('Error refreshing proposals:', err);
     } finally {
-      setRefreshing(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  // Handle load more
+  const handleLoadMore = async () => {
+    if (!loadingMore && hasMore) {
+      await loadMoreProposals();
     }
   };
   
   // Filter and sort proposals
   const filteredProposals = useMemo(() => {
-    if (!proposals) return [];
-    
     let filtered = [...proposals];
+
+    // Apply search filter first (use cached search if available)
+    if (searchTerm) {
+      const searchResults = searchProposals(searchTerm);
+      // If search returns results, use those; otherwise filter the current proposals
+      if (searchResults.length > 0) {
+        filtered = searchResults;
+      } else {
+        const term = searchTerm.toLowerCase();
+        filtered = filtered.filter(p => 
+          p.title.toLowerCase().includes(term) || 
+          p.description.toLowerCase().includes(term) ||
+          p.proposer.toLowerCase().includes(term)
+        );
+      }
+    }
     
     // Apply status filter
     if (statusFilter !== 'all') {
@@ -111,20 +140,10 @@ export const ProposalListPage: React.FC = () => {
       });
     }
     
-    // Apply search filter
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(p => 
-        p.title.toLowerCase().includes(term) || 
-        p.description.toLowerCase().includes(term) ||
-        p.proposer.toLowerCase().includes(term)
-      );
-    }
-    
-    // Apply sorting
+    // Apply sorting (data is already newest first from the service)
     switch (sortBy) {
       case 'newest':
-        filtered.sort((a, b) => b.createdAt - a.createdAt);
+        // Already sorted newest first by default
         break;
       case 'oldest':
         filtered.sort((a, b) => a.createdAt - b.createdAt);
@@ -149,11 +168,12 @@ export const ProposalListPage: React.FC = () => {
         });
         break;
       default:
-        filtered.sort((a, b) => b.createdAt - a.createdAt);
+        // Keep default order (newest first)
+        break;
     }
     
     return filtered;
-  }, [proposals, statusFilter, searchTerm, sortBy]);
+  }, [proposals, statusFilter, searchTerm, sortBy, searchProposals]);
   
   // Determine if a proposal needs user attention
   const needsAttention = useCallback((proposal: any): boolean => {
@@ -252,16 +272,45 @@ export const ProposalListPage: React.FC = () => {
     }
   };
 
-  // Add a description caption to executed proposals
-  const getExecutedDescription = () => {
-    return "Proposals have been executed and processed by the DAO.";
-  };
+  // Calculate statistics for display
+  const proposalStats = useMemo(() => {
+    const activeCount = proposals.filter(p => isActiveVoting(p)).length;
+    const executedCount = proposals.filter(p => p.executed).length;
+    
+    return {
+      total: totalCount,
+      active: activeCount,
+      executed: executedCount
+    };
+  }, [proposals, totalCount]);
+
+  // FIXED: Simplified load more conditions - only check essential state
+  const shouldShowLoadMore = useMemo(() => {
+    // Only show if there are more proposals to load and we're not currently loading
+    return hasMore && !loadingMore;
+  }, [hasMore, loadingMore]);
 
   return (
     <div className="proposal-list-page">
       <div className="proposals-header">
         <h1>Governance Proposals</h1>
         <p>Review and vote on blog submissions from the ReligioDAO community</p>
+        
+        {/* Stats summary */}
+        <div className="proposal-stats">
+          <div className="stat-item">
+            <span className="stat-value">{proposalStats.total}</span>
+            <span className="stat-label">Total Proposals</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-value">{proposalStats.active}</span>
+            <span className="stat-label">Active Votes</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-value">{proposalStats.executed}</span>
+            <span className="stat-label">Executed</span>
+          </div>
+        </div>
       </div>
       
       <div className="filter-section">
@@ -336,9 +385,9 @@ export const ProposalListPage: React.FC = () => {
             <button 
               className="refresh-button"
               onClick={handleRefresh}
-              disabled={refreshing || loading}
+              disabled={isRefreshing || loading}
             >
-              {refreshing ? 'Refreshing...' : 'Refresh'}
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
             </button>
             
             <button 
@@ -351,52 +400,10 @@ export const ProposalListPage: React.FC = () => {
             </button>
           </div>
         </div>
-        
-        {/* Stats summary */}
-        {proposals && proposals.length > 0 && (
-          <div className="proposal-stats">
-            <div className="stat-item">
-              <span className="stat-value">{proposals.length}</span>
-              <span className="stat-label">Total Proposals</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-value">
-                {proposals.filter(p => isActiveVoting(p)).length}
-              </span>
-              <span className="stat-label">Active Votes</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-value">
-                {proposals.filter(p => p.executed).length}
-              </span>
-              <span className="stat-label">Executed</span>
-            </div>
-          </div>
-        )}
-        
-        {/* Add description for Executed filter when selected */}
-        {statusFilter === 'executed' && (
-          <div className="filter-description">
-            <p>{getExecutedDescription()}</p>
-          </div>
-        )}
-        
-        {/* Add description for Active filter when selected */}
-        {statusFilter === 'active' && (
-          <div className="filter-description">
-            <p>Proposals currently accepting votes from the community.</p>
-          </div>
-        )}
-        
-        {/* Add description for Approved filter when selected */}
-        {statusFilter === 'approved' && (
-          <div className="filter-description">
-            <p>Proposals approved by the community and ready for execution.</p>
-          </div>
-        )}
       </div>
       
-      {loading && !refreshing ? (
+      {/* Loading indicator for initial load */}
+      {loading && !isRefreshing && !initialLoaded ? (
         <ProposalListSkeleton />
       ) : error ? (
         <div className="error-message">
@@ -415,6 +422,7 @@ export const ProposalListPage: React.FC = () => {
                   Showing {filteredProposals.length} {filteredProposals.length === 1 ? 'proposal' : 'proposals'}
                   {statusFilter !== 'all' ? ` with status "${statusFilter}"` : ''}
                   {searchTerm ? ` matching "${searchTerm}"` : ''}
+                  {totalCount > proposals.length ? ` (${proposals.length} of ${totalCount} loaded)` : ''}
                 </p>
                 {(statusFilter !== 'all' || searchTerm) && (
                   <button className="clear-filters-button" onClick={clearFilters}>
@@ -430,10 +438,29 @@ export const ProposalListPage: React.FC = () => {
                     proposal={proposal}
                     showVotingProgress={true}
                     needsAttention={needsAttention(proposal)}
-                    // Note: No blog post link props are passed
                   />
                 ))}
               </div>
+
+              {/* FIXED: Show load more button when there are more proposals */}
+              {shouldShowLoadMore && (
+                <div className="load-more-section">
+                  <button 
+                    className="load-more-button"
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? 'Loading more...' : `Load more proposals (${totalCount - proposals.length} remaining)`}
+                  </button>
+                </div>
+              )}
+
+              {/* Loading indicator for more proposals */}
+              {loadingMore && (
+                <div className="loading-more">
+                  <ProposalListSkeleton />
+                </div>
+              )}
             </>
           ) : (
             <div className="no-proposals">
@@ -445,6 +472,8 @@ export const ProposalListPage: React.FC = () => {
                     Clear Filters
                   </button>
                 </>
+              ) : !initialLoaded ? (
+                <p>Loading proposals...</p>
               ) : (
                 <p>There are no proposals in the system yet. Be the first to submit one!</p>
               )}
