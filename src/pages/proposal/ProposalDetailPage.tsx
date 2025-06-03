@@ -1,4 +1,4 @@
-// src/pages/proposal/ProposalDetailPage.tsx
+// src/pages/proposal/ProposalDetailPage.tsx - Complete component with 0-based indexing fix
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
@@ -8,6 +8,32 @@ import { BlogProposalMinting } from '../../components/proposal/BlogProposalMinti
 import swarmContentService from '../../services/SwarmContentService';
 import { formatAddress } from '../../blockchain/utils/walletUtils';
 import './ProposalDetailPage.css';
+
+/**
+ * Get status name for a ProposalStatus enum value
+ */
+const getStatusName = (status: ProposalStatus): string => {
+  const statusNames: Record<ProposalStatus, string> = {
+    [ProposalStatus.None]: 'None',
+    [ProposalStatus.Pending]: 'Pending',
+    [ProposalStatus.Rejected]: 'Rejected',
+    [ProposalStatus.Accepted]: 'Approved',
+    [ProposalStatus.Passed]: 'Passed',
+    [ProposalStatus.Executed]: 'Executed',
+    [ProposalStatus.Expired]: 'Expired',
+    [ProposalStatus.UnderReview]: 'Under Review',
+    [ProposalStatus.UnderEvaluation]: 'Under Evaluation'
+  };
+  return statusNames[status] || 'Unknown';
+};
+
+/**
+ * Helper function to determine if proposal is actively accepting votes
+ */
+const isActiveVoting = (proposal: Proposal): boolean => {
+  return proposal.status === ProposalStatus.Pending && 
+         Date.now() < proposal.votingEnds;
+};
 
 export const ProposalDetailPage: React.FC = () => {
   const { proposalId } = useParams<{ proposalId: string }>();
@@ -28,21 +54,39 @@ export const ProposalDetailPage: React.FC = () => {
   const [contentError, setContentError] = useState<string | null>(null);
   const [fetchContentAttempted, setFetchContentAttempted] = useState<boolean>(false);
   
-  // Add state for the NFT token ID after execution
+  // NFT token ID after execution
   const [nftTokenId, setNftTokenId] = useState<string | null>(null);
   
-  // New state to control content expansion
+  // Content expansion state
   const [showFullContent, setShowFullContent] = useState<boolean>(false);
+
+  // SIMPLIFIED: Use proposal ID directly (0-based like the contract)
+  const contractProposalId = proposalId;
 
   // Load proposal data
   useEffect(() => {
     const loadProposal = async () => {
-      if (!proposalId) return;
+      if (!contractProposalId) {
+        console.error('No proposal ID provided');
+        return;
+      }
       
       try {
-        const proposalData = await getProposalById(proposalId);
+        console.log(`Loading proposal: ID ${contractProposalId}`);
+        
+        const proposalData = await getProposalById(contractProposalId);
         if (proposalData) {
           setProposal(proposalData);
+          
+          console.log('Proposal loaded:', {
+            proposalId: contractProposalId,
+            dataId: proposalData.id,
+            status: proposalData.status,
+            statusName: getStatusName(proposalData.status),
+            executed: proposalData.executed
+          });
+        } else {
+          console.warn(`No proposal found for ID ${contractProposalId}`);
         }
       } catch (err) {
         console.error('Error loading proposal:', err);
@@ -50,24 +94,21 @@ export const ProposalDetailPage: React.FC = () => {
     };
     
     loadProposal();
-  }, [proposalId, getProposalById]);
+  }, [contractProposalId, getProposalById]);
 
   // Function to fetch content from Swarm
   const fetchProposalContent = async (contentReference: string) => {
-    if (!contentReference || contentReference.trim() === '') {
-      setContentError('Content reference not found in proposal data');
+    if (!contentReference || contentReference.trim() === '' || fetchContentAttempted) {
+      if (!contentReference) setContentError('Content reference not found in proposal data');
       return;
     }
     
-    // Avoid double fetch
-    if (fetchContentAttempted) return;
     setFetchContentAttempted(true);
     
     try {
       setContentLoading(true);
       console.log(`Fetching proposal content for reference: ${contentReference}`);
       
-      // Use standardized SwarmContentService
       const html = await swarmContentService.getContentAsHtml(contentReference);
       
       if (!html || html.trim() === '') {
@@ -84,7 +125,7 @@ export const ProposalDetailPage: React.FC = () => {
     }
   };
 
-  // Call this when proposal loads and has a content reference
+  // Fetch content when proposal loads
   useEffect(() => {
     if (proposal?.contentReference) {
       fetchProposalContent(proposal.contentReference);
@@ -94,10 +135,10 @@ export const ProposalDetailPage: React.FC = () => {
   // Check if the user has already voted
   useEffect(() => {
     const checkVoteStatus = async () => {
-      if (!proposalId || !account || !isConnected) return;
+      if (!contractProposalId || !account || !isConnected) return;
       
       try {
-        const voted = await hasVoted(proposalId);
+        const voted = await hasVoted(contractProposalId);
         setUserHasVoted(voted);
       } catch (err) {
         console.error('Error checking vote status:', err);
@@ -105,24 +146,24 @@ export const ProposalDetailPage: React.FC = () => {
     };
     
     checkVoteStatus();
-  }, [proposalId, account, isConnected, hasVoted]);
+  }, [contractProposalId, account, isConnected, hasVoted]);
   
   // Handle voting
   const handleVote = async (support: boolean) => {
-    if (!proposalId || !isConnected) return;
+    if (!contractProposalId || !isConnected) return;
     
     setIsVoting(true);
     setVoteError(null);
     
     try {
-      const result = await voteOnProposal(proposalId, support);
+      const result = await voteOnProposal(contractProposalId, support);
       
       if (result.status === 'confirmed') {
         setVoteSuccess(true);
         setUserHasVoted(true);
         
         // Refresh proposal data
-        const updatedProposal = await getProposalById(proposalId);
+        const updatedProposal = await getProposalById(contractProposalId);
         if (updatedProposal) {
           setProposal(updatedProposal);
         }
@@ -137,14 +178,14 @@ export const ProposalDetailPage: React.FC = () => {
     }
   };
   
-  // Handle execution success callback from BlogProposalMinting
+  // Handle execution success callback
   const handleExecuteSuccess = (tokenId: string | null) => {
     console.log(`Proposal executed successfully with token ID: ${tokenId}`);
     setNftTokenId(tokenId);
     
     // Refresh the proposal data after execution
-    if (proposalId) {
-      getProposalById(proposalId).then(updatedProposal => {
+    if (contractProposalId) {
+      getProposalById(contractProposalId).then(updatedProposal => {
         if (updatedProposal) {
           setProposal(updatedProposal);
         }
@@ -192,39 +233,35 @@ export const ProposalDetailPage: React.FC = () => {
     setShowFullContent(!showFullContent);
   };
   
-  // Calculate displayed status based on contract state and execution status
-  const displayStatus = useMemo(() => {
-    if (!proposal) return null;
-    
-    // For proposals that are marked executed, always show "Executed" regardless of status
-    if (proposal.executed) {
-      return ProposalStatus.Executed;
-    }
-    
-    // For proposals that are approved but not executed, show "Approved" status
-    if (proposal.status === ProposalStatus.Approved && !proposal.executed) {
-      return ProposalStatus.Approved;
-    }
-    
-    // Otherwise show the actual status from the contract
-    return proposal.status;
-  }, [proposal]);
-  
   // Get status color and label
-  const getStatusInfo = (status: ProposalStatus) => {
+  const getStatusInfo = (status: ProposalStatus, proposal: Proposal) => {
+    if (status === ProposalStatus.Pending && isActiveVoting(proposal)) {
+      return { 
+        color: 'blue', 
+        label: 'Active Voting', 
+        description: 'Voting in progress' 
+      };
+    }
+
     switch (status) {
+      case ProposalStatus.None:
+        return { color: 'gray', label: 'None', description: 'Initial state' };
       case ProposalStatus.Pending:
         return { color: 'yellow', label: 'Pending', description: 'Awaiting voting period' };
-      case ProposalStatus.Active:
-        return { color: 'blue', label: 'Active', description: 'Voting in progress' };
-      case ProposalStatus.Approved:
-        return { color: 'green', label: 'Approved', description: 'Ready for execution' };
       case ProposalStatus.Rejected:
-        return { color: 'red', label: 'Rejected', description: 'Proposal was rejected' };
+        return { color: 'red', label: 'Rejected', description: 'Rejected by community vote' };
+      case ProposalStatus.Accepted:
+        return { color: 'green', label: 'Approved', description: 'Ready for execution' };
+      case ProposalStatus.Passed:
+        return { color: 'green', label: 'Passed', description: 'Alternative approval state' };
       case ProposalStatus.Executed:
-        return { color: 'green', label: 'Executed', description: 'Proposal executed successfully' };
-      case ProposalStatus.Canceled:
-        return { color: 'purple', label: 'Canceled', description: 'Proposal was canceled' };
+        return { color: 'green', label: 'Executed', description: 'NFT minted successfully' };
+      case ProposalStatus.Expired:
+        return { color: 'purple', label: 'Expired', description: 'Voting period expired' };
+      case ProposalStatus.UnderReview:
+        return { color: 'blue', label: 'Under Review', description: 'Proposal under review' };
+      case ProposalStatus.UnderEvaluation:
+        return { color: 'blue', label: 'Under Evaluation', description: 'Proposal under evaluation' };
       default:
         return { color: 'gray', label: 'Unknown', description: 'Unknown status' };
     }
@@ -266,10 +303,20 @@ export const ProposalDetailPage: React.FC = () => {
     setContentLoading(true);
     setFetchContentAttempted(false);
     
-    // Clear from cache to force fresh fetch
     swarmContentService.removeFromCache(proposal.contentReference);
     fetchProposalContent(proposal.contentReference);
   };
+  
+  // Handle invalid proposal ID
+  if (!contractProposalId) {
+    return (
+      <div className="error-container">
+        <h2>Invalid Proposal ID</h2>
+        <p>No proposal ID provided.</p>
+        <Link to="/proposals" className="back-link">Back to Proposals</Link>
+      </div>
+    );
+  }
   
   if (loading) {
     return <div className="loading-indicator">Loading proposal...</div>;
@@ -295,9 +342,16 @@ export const ProposalDetailPage: React.FC = () => {
     );
   }
   
-  const statusInfo = getStatusInfo(displayStatus!);
+  const statusInfo = getStatusInfo(proposal.status, proposal);
   const progress = calculateProgress(proposal.votesFor, proposal.votesAgainst);
-  const canExecute = displayStatus === ProposalStatus.Approved && !proposal.executed;
+  const isActive = isActiveVoting(proposal);
+  
+  // Can only execute if status is "Accepted"
+  const canExecute = proposal.status === ProposalStatus.Accepted && isConnected;
+  
+  // Proposal is fully complete when status is Executed
+  const isFullyExecuted = proposal.status === ProposalStatus.Executed;
+  
   const blogInfo = extractBlogInfo();
 
   return (
@@ -307,14 +361,14 @@ export const ProposalDetailPage: React.FC = () => {
           ← All Proposals
         </Link>
         <div className="proposal-id-display">
-          Proposal #{proposal.id}
+          Proposal #{contractProposalId}
         </div>
       </div>
       
       <div className="proposal-header">
         <div className="proposal-status-banner">
-          <div className={`proposal-status-indicator status-${statusInfo.color}`}></div>
-          <h1></h1>
+          <div className={`proposal-status-indicator status-indicator-${statusInfo.color}`}></div>
+          <h1>{blogInfo.blogTitle || proposal.title}</h1>
           <div className={`proposal-status status-${statusInfo.color}`}>
             {statusInfo.label}
           </div>
@@ -329,7 +383,7 @@ export const ProposalDetailPage: React.FC = () => {
             <div className="meta-label">Voting Ends</div>
             <div className="meta-value">
               {formatDate(proposal.votingEnds)}
-              {proposal.status === ProposalStatus.Active && (
+              {isActive && (
                 <span className="voting-time-remaining">
                   ({formatRelativeTime(proposal.votingEnds)})
                 </span>
@@ -369,7 +423,7 @@ export const ProposalDetailPage: React.FC = () => {
             </div>
           </div>
           
-          {/* Content Preview Section - Modified with pulldown tab */}
+          {/* Content Preview Section */}
           {proposal.contentReference && (
             <div className="proposal-section">
               <h2>Blog Content Preview</h2>
@@ -409,12 +463,12 @@ export const ProposalDetailPage: React.FC = () => {
             </div>
           )}
           
-          {/* Execution section - if proposal is approved but not executed */}
-          {canExecute && isConnected && (
+          {/* Execution section - only show when status is Accepted */}
+          {canExecute && (
             <div className="proposal-section">
               <h2>Execute Proposal</h2>
               <BlogProposalMinting
-                proposalId={proposal.id}
+                proposalId={contractProposalId}
                 title={blogInfo.blogTitle || proposal.title}
                 description={proposal.description}
                 contentReference={proposal.contentReference || ''}
@@ -426,14 +480,19 @@ export const ProposalDetailPage: React.FC = () => {
             </div>
           )}
           
-          {/* Executed proposal section - removed view blog post buttons */}
-          {proposal.executed && (
+          {/* Executed proposal section - only show when status is Executed */}
+          {isFullyExecuted && (
             <div className="proposal-section executed-section">
               <h2>Proposal Executed</h2>
               <div className="execution-success-message">
                 <div className="success-icon">✓</div>
-                <p>This proposal has been executed successfully and minted as an NFT.</p>
+                <p>This proposal has been executed successfully. The NFT has been minted by the Q governance system.</p>
               </div>
+              {nftTokenId && (
+                <div className="token-id-info">
+                  NFT Token ID: <span className="token-id">{nftTokenId}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -471,8 +530,8 @@ export const ProposalDetailPage: React.FC = () => {
                 </div>
               </div>
               
-              {/* Show voting actions only if proposal is active */}
-              {proposal.status === ProposalStatus.Active && isConnected && (
+              {/* Show voting actions only if proposal is actively accepting votes */}
+              {isActive && isConnected && (
                 <div className="voting-actions">
                   {userHasVoted ? (
                     <div className="already-voted">
@@ -506,14 +565,14 @@ export const ProposalDetailPage: React.FC = () => {
               )}
               
               {/* Show voting ended message for inactive proposals */}
-              {proposal.status !== ProposalStatus.Active && proposal.status !== ProposalStatus.Pending && (
+              {!isActive && proposal.status !== ProposalStatus.Pending && (
                 <div className="voting-ended-message">
                   Voting has ended for this proposal
                 </div>
               )}
               
-              {/* Show waiting message for pending proposals */}
-              {proposal.status === ProposalStatus.Pending && (
+              {/* Show waiting message for pending proposals that aren't active yet */}
+              {proposal.status === ProposalStatus.Pending && !isActive && (
                 <div className="voting-pending-message">
                   Voting period has not started yet
                 </div>
@@ -531,13 +590,17 @@ export const ProposalDetailPage: React.FC = () => {
                 </div>
               </div>
               <div className="detail-item">
+                <div className="detail-label">Contract ID</div>
+                <div className="detail-value">{proposal.id}</div>
+              </div>
+              <div className="detail-item">
                 <div className="detail-label">Created</div>
                 <div className="detail-value">{formatDate(proposal.createdAt)}</div>
               </div>
               <div className="detail-item">
                 <div className="detail-label">Voting Period</div>
                 <div className="detail-value">
-                  {proposal.status === ProposalStatus.Active ? (
+                  {isActive ? (
                     formatRelativeTime(proposal.votingEnds)
                   ) : (
                     'Ended'

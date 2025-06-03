@@ -1,354 +1,509 @@
-// src/blockchain/services/ProposalService.ts
+// src/blockchain/services/ProposalService.ts - Fixed with better error handling
 import { ethers } from 'ethers';
 import { 
   BlogProposal, 
   Proposal, 
   ProposalStatus, 
-  BlockchainError, 
-  BlockchainErrorType, 
-  TransactionStatus 
+  TransactionStatus,
+  BlockchainError,
+  BlockchainErrorType 
 } from '../../types/blockchain';
-import { BaseContractService } from './BaseContractService';
-import { DAOVotingService } from './DAOVotingService';
-import { NFTMintingService } from './NFTMintingService';
-import { ProposalUtilsService } from './ProposalUtilsService';
-import { extractTokenIdFromMintingReceipt, extractNFTTokenIdFromReceipt } from '../utils/transactionUtils';
+
+// Import our new modular services
+import { ProposalCacheService, PaginatedCacheResult } from './proposal/ProposalCacheService';
+import { ProposalMapper } from './proposal/ProposalMapper';
+import { ProposalEventService } from './proposal/ProposalEventService';
+import { ProposalContractService } from './proposal/ProposalContractService';
+
+export interface PaginatedProposals {
+  proposals: Proposal[];
+  total: number;
+  hasMore: boolean;
+  nextPage: number;
+}
 
 /**
- * Service for managing blog proposals and voting
- * This is a higher-level service that coordinates the specialized services
+ * Main ProposalService that orchestrates all proposal-related operations
+ * Now focused on coordination rather than implementation details
  */
-export class ProposalService extends BaseContractService {
-  private daoVotingService: DAOVotingService;
-  private nftMintingService: NFTMintingService;
-  private proposalUtils: ProposalUtilsService;
-  
+export class ProposalService {
+  private contractService: ProposalContractService;
+  private cacheService: ProposalCacheService;
+  private eventService: ProposalEventService;
+  private networkId: number = 0;
+  private isInitialized: boolean = false;
+
   constructor(provider: ethers.Provider, signer?: ethers.Signer) {
-    super(provider, signer);
-    
-    // Initialize specialized services
-    this.daoVotingService = new DAOVotingService(provider, signer);
-    this.nftMintingService = new NFTMintingService(provider, signer);
-    this.proposalUtils = new ProposalUtilsService();
+    this.contractService = new ProposalContractService(provider, signer);
+    this.cacheService = new ProposalCacheService();
+    // eventService will be initialized after contract service
+    this.eventService = new ProposalEventService(provider, new ethers.Contract(ethers.ZeroAddress, [], provider));
   }
-  
+
   /**
-   * Initialize all services
-   * @param chainId Optional chain ID to use specific network configuration
+   * Initialize the service with network-specific configuration
    */
-  public async init(chainId?: number): Promise<void> {
+  async init(chainId: number): Promise<void> {
+    if (this.isInitialized && this.networkId === chainId) {
+      return; // Already initialized for this network
+    }
+
     try {
-      // Initialize all specialized services
-      await this.daoVotingService.init(chainId);
-      await this.nftMintingService.init(chainId);
+      // Initialize contract service first
+      await this.contractService.init(chainId);
       
+      // Initialize event service with the contract
+      const contract = this.contractService.getContract();
+      this.eventService = new ProposalEventService(contract.runner?.provider as ethers.Provider, contract);
+      
+      this.networkId = chainId;
       this.isInitialized = true;
-    } catch (err) {
-      console.error("Error initializing ProposalService:", err);
+    } catch (error) {
+      console.error('Error initializing ProposalService:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure the service is initialized
+   */
+  private ensureInitialized(): void {
+    if (!this.isInitialized) {
       throw new BlockchainError(
-        "Failed to initialize ProposalService",
-        BlockchainErrorType.ContractError,
-        err instanceof Error ? err : new Error(String(err))
+        'ProposalService not initialized. Call init() first.',
+        BlockchainErrorType.ContractError
       );
     }
+  }
+
+  /**
+   * Get total number of proposals
+   */
+  async getTotalProposalCount(): Promise<number> {
+    this.ensureInitialized();
+    return this.contractService.getTotalProposalCount();
+  }
+
+  /**
+   * Fetch proposals with pagination and caching
+   * Always returns newest proposals first by creation date
+   */
+  async getProposalsPaginated(
+    page: number = 0, 
+    pageSize: number = 10,
+    forceRefresh: boolean = false
+  ): Promise<PaginatedProposals> {
+    this.ensureInitialized();
+
+    try {
+      // Try cache first unless forcing refresh
+      if (!forceRefresh) {
+        const cache = this.cacheService.loadFromCache(this.networkId);
+        if (cache) {
+          const cachedResult = this.cacheService.getPaginatedFromCache(cache, page, pageSize);
+          
+          // Ensure newest-first order before returning
+          const sortedProposals = [...cachedResult.proposals].sort((a, b) => b.createdAt - a.createdAt);
+          
+          return {
+            proposals: sortedProposals,
+            total: cachedResult.total,
+            hasMore: cachedResult.hasMore,
+            nextPage: cachedResult.nextPage
+          };
+        }
+      }
+
+      // Fetch from contract
+      const contractResult = await this.contractService.getProposalsPaginated(page, pageSize);
+      
+      console.log(`ProposalService: Received ${contractResult.proposals.length} proposals from contract`);
+      
+      // Filter out invalid proposals first
+      const validContractProposals = ProposalMapper.filterValidProposals(contractResult.proposals);
+      
+      console.log(`ProposalService: ${validContractProposals.length} valid proposals after filtering`);
+      
+      // Map contract data to our format
+      const proposals: Proposal[] = [];
+      
+      for (const contractProposal of validContractProposals) {
+        try {
+          const mappedProposal = ProposalMapper.mapContractProposalToProposal(contractProposal);
+          proposals.push(mappedProposal);
+        } catch (mappingError) {
+          console.warn('ProposalService: Failed to map individual proposal:', {
+            proposalId: contractProposal.id?.toString(),
+            error: mappingError
+          });
+          continue;
+        }
+      }
+      
+      console.log(`ProposalService: Successfully mapped ${proposals.length} proposals`);
+
+      // Enrich with event data (don't fail if this doesn't work)
+      try {
+        await this.eventService.enrichProposalsWithProposerData(proposals);
+      } catch (eventError) {
+        console.warn('ProposalService: Failed to enrich with event data, continuing without:', eventError);
+      }
+      
+      // Sort by creation date (newest first) to guarantee correct order
+      proposals.sort((a, b) => b.createdAt - a.createdAt);
+
+      // Cache the results if this is the first page or a refresh
+      if (page === 0 || forceRefresh) {
+        const cachedProposals = proposals.map(p => ({
+          ...p,
+          cachedAt: Date.now()
+        }));
+        this.cacheService.saveToCache(this.networkId, cachedProposals, contractResult.total);
+      }
+      
+      return {
+        proposals,
+        total: contractResult.total,
+        hasMore: contractResult.hasMore,
+        nextPage: contractResult.hasMore ? page + 1 : page
+      };
+
+    } catch (error) {
+      console.error('Error in getProposalsPaginated:', error);
+      
+      if (error instanceof BlockchainError) {
+        throw error;
+      }
+      
+      throw new BlockchainError(
+        'Failed to fetch proposals',
+        BlockchainErrorType.ContractError,
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+  }
+
+  /**
+   * Get a single proposal by ID
+   */
+  async getProposal(proposalId: string): Promise<Proposal | null> {
+    this.ensureInitialized();
+
+    try {
+      // Check cache first
+      const cache = this.cacheService.loadFromCache(this.networkId);
+      if (cache) {
+        const cached = cache.proposals.find(p => p.id === proposalId);
+        if (cached) {
+          const { cachedAt, ...proposal } = cached;
+          return proposal;
+        }
+      }
+
+      // Fetch from contract
+      const contractProposal = await this.contractService.getProposal(proposalId);
+      if (!contractProposal) {
+        return null;
+      }
+
+      // Validate the proposal first
+      const validProposals = ProposalMapper.filterValidProposals([contractProposal]);
+      if (validProposals.length === 0) {
+        console.warn(`ProposalService: Proposal ${proposalId} is invalid`);
+        return null;
+      }
+
+      // Map to our format
+      const proposal = ProposalMapper.mapContractProposalToProposal(validProposals[0]);
+      
+      // Enrich with event data
+      try {
+        await this.eventService.enrichProposalsWithProposerData([proposal]);
+      } catch (eventError) {
+        console.warn('ProposalService: Failed to enrich single proposal with event data:', eventError);
+      }
+
+      return proposal;
+    } catch (error) {
+      console.error(`Error fetching proposal ${proposalId}:`, error);
+      
+      // Don't throw for single proposal failures
+      if (error instanceof Error && error.message.includes('Invalid contract proposal data')) {
+        console.warn(`ProposalService: Proposal ${proposalId} has invalid data, returning null`);
+        return null;
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Get proposal status directly from contract
+   */
+  async getProposalStatus(proposalId: string): Promise<ProposalStatus> {
+    this.ensureInitialized();
+    
+    try {
+      const contractStatus = await this.contractService.getProposalStatus(proposalId);
+      return ProposalMapper.mapContractStatusToEnum(contractStatus);
+    } catch (error) {
+      console.error(`Error getting proposal status for ${proposalId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Refresh a single proposal in cache
+   */
+  async refreshProposal(proposalId: string): Promise<Proposal | null> {
+    this.ensureInitialized();
+
+    try {
+      const proposal = await this.getProposal(proposalId);
+      
+      if (proposal) {
+        // Update cache
+        this.cacheService.updateProposalInCache(this.networkId, proposal);
+      }
+
+      return proposal;
+    } catch (error) {
+      console.error(`Error refreshing proposal ${proposalId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all proposals (backwards compatibility)
+   * Always returns newest proposals first
+   */
+  async getAllProposals(): Promise<Proposal[]> {
+    this.ensureInitialized();
+
+    try {
+      // Try cache first
+      const cache = this.cacheService.loadFromCache(this.networkId);
+      if (cache && cache.proposals.length > 0) {
+        // Get proposals from cache and ensure newest-first order
+        const proposals = cache.proposals.map(({ cachedAt, ...proposal }) => proposal);
+        return proposals.sort((a, b) => b.createdAt - a.createdAt);
+      }
+
+      // Fetch first batch (already sorted newest first)
+      const result = await this.getProposalsPaginated(0, 50, true);
+      return result.proposals;
+    } catch (error) {
+      console.error('Error in getAllProposals:', error);
+      
+      // Return empty array instead of throwing for better UX
+      return [];
+    }
+  }
+
+  /**
+   * Get active proposals (currently accepting votes)
+   * Returns newest first by creation date
+   */
+  async getActiveProposals(): Promise<Proposal[]> {
+    this.ensureInitialized();
+
+    const cached = this.cacheService.getActiveFromCache(this.networkId);
+    if (cached.length > 0) {
+      // Ensure newest-first order
+      return cached.sort((a, b) => b.createdAt - a.createdAt);
+    }
+
+    // Fallback: fetch recent proposals and filter
+    try {
+      const result = await this.getProposalsPaginated(0, 20);
+      const now = Date.now();
+      const activeProposals = result.proposals.filter(p => 
+        p.status === ProposalStatus.Pending && p.votingEnds > now
+      );
+      
+      // Should already be sorted, but sort again to guarantee newest first
+      return activeProposals.sort((a, b) => b.createdAt - a.createdAt);
+    } catch (error) {
+      console.error('Error getting active proposals:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Search proposals by text
+   */
+  searchProposals(searchTerm: string): Proposal[] {
+    if (!this.isInitialized) {
+      return [];
+    }
+    
+    return this.cacheService.searchInCache(this.networkId, searchTerm);
   }
 
   /**
    * Create a blog minting proposal
-   * This combines NFT metadata creation and proposal submission
-   * 
-   * @param proposal BlogProposal object with all blog details
-   * @returns Promise resolving to TransactionStatus with proposal ID
    */
-  public async createBlogMintingProposal(
-    proposal: BlogProposal
-  ): Promise<TransactionStatus & { proposalId?: string }> {
+  async createBlogMintingProposal(proposal: BlogProposal): Promise<TransactionStatus> {
     this.ensureInitialized();
-    this.ensureRealWallet(); // Check if we have a real wallet connected
-    
-    const votingSituation = this.daoVotingService.getVotingSituation();
-    if (!votingSituation) {
-      throw new BlockchainError(
-        "Voting situation name not configured",
-        BlockchainErrorType.ContractError
-      );
-    }
-    
+
     try {
-      // 1. Create metadata for the blog NFT
-      const metadata = this.nftMintingService.createBlogMetadata(
-        proposal.title,
-        proposal.preview,
-        proposal.contentReference,
-        proposal.authorAddress,
-        proposal.category,
-        proposal.tags,
-        undefined, // proposal ID not available yet
-        proposal.banner || undefined
-      );
-      
-      // 2. Convert metadata to on-chain tokenURI
-      const tokenURI = this.nftMintingService.createTokenURI(metadata, 'base64');
-      
-      // 3. Prepare mintTo calldata for the proposal
-      const mintToCalldata = this.nftMintingService.prepareMintToCalldata(
-        proposal.authorAddress, 
-        tokenURI
-      );
-      
-      // 4. Create proposal description
-      const proposalDescription = this.proposalUtils.createProposalDescription(
-        proposal.title,
-        proposal.authorAddress,
-        proposal.category,
-        proposal.tags,
-        proposal.contentReference,
-        proposal.description
-      );
-      
-      // 5. Submit the proposal to the DAO
-      return await this.daoVotingService.createProposal(
-        votingSituation,
-        proposalDescription,
-        mintToCalldata
-      );
-    } catch (err) {
-      console.error('Error creating blog minting proposal:', err);
-      
-      // Determine error type
-      let errorType = BlockchainErrorType.Unknown;
-      if (err instanceof BlockchainError) {
-        throw err; // Re-throw BlockchainError as is
-      } else if (err instanceof Error) {
-        const errorMessage = err.message.toLowerCase();
-        if (errorMessage.includes('user denied') || errorMessage.includes('user rejected')) {
-          errorType = BlockchainErrorType.UserRejected;
-        } else if (errorMessage.includes('insufficient funds')) {
-          errorType = BlockchainErrorType.InsufficientFunds;
-        } else if (errorMessage.includes('network error') || errorMessage.includes('timeout')) {
-          errorType = BlockchainErrorType.NetworkError;
-        }
+      const result = await this.contractService.createBlogMintingProposal(proposal);
+
+      // Clear cache on successful creation
+      if (result.status === 'confirmed') {
+        this.cacheService.clearCache(this.networkId);
       }
-      
-      throw new BlockchainError(
-        'Failed to create blog minting proposal',
-        errorType,
-        err instanceof Error ? err : new Error(String(err))
-      );
+
+      return result;
+    } catch (error) {
+      console.error('Error creating blog minting proposal:', error);
+      throw error;
     }
   }
 
   /**
    * Vote on a proposal
-   * 
-   * @param proposalId Proposal ID as displayed in the UI (1-based)
-   * @param support True for yes vote, false for no
-   * @returns Promise resolving to TransactionStatus
    */
-  public async voteOnProposal(
-    proposalId: string,
-    support: boolean
-  ): Promise<TransactionStatus> {
+  async voteOnProposal(proposalId: string, support: boolean): Promise<TransactionStatus> {
     this.ensureInitialized();
-    this.ensureRealWallet(); // Check if we have a real wallet connected
 
-    // Convert UI proposal ID to blockchain ID
-    const blockchainProposalId = this.proposalUtils.uiToBlockchainProposalId(proposalId);
-    
-    // Submit vote
-    if (support) {
-      return await this.daoVotingService.voteFor(blockchainProposalId);
-    } else {
-      return await this.daoVotingService.voteAgainst(blockchainProposalId);
+    try {
+      const result = await this.contractService.voteOnProposal(proposalId, support);
+
+      // Refresh specific proposal in cache if successful
+      if (result.status === 'confirmed') {
+        await this.refreshProposal(proposalId);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error voting on proposal:', error);
+      throw error;
     }
   }
 
   /**
-   * Execute an approved proposal to mint the blog NFT
-   * 
-   * @param proposalId Proposal ID as displayed in the UI (1-based)
-   * @returns Promise resolving to TransactionStatus with optional token ID
+   * Execute a proposal
    */
-  public async executeProposal(
-    proposalId: string
-  ): Promise<TransactionStatus & { tokenId?: string }> {
+  async executeProposal(proposalId: string): Promise<TransactionStatus & { tokenId?: string }> {
     this.ensureInitialized();
-    this.ensureRealWallet(); // Check if we have a real wallet connected
 
-    // Convert UI proposal ID to blockchain ID
-    const blockchainProposalId = this.proposalUtils.uiToBlockchainProposalId(proposalId);
-    
-    // Execute proposal
-    const status = await this.daoVotingService.executeProposal(blockchainProposalId);
-    
-    // Extract token ID from transaction receipt if available
-    let tokenId: string | undefined = undefined;
-    if (status.status === 'confirmed' && status.receipt) {
-      // First try to extract using the specialized function for our minting module
-      tokenId = extractTokenIdFromMintingReceipt(status.receipt) ?? undefined;
-      
-      // If that doesn't work, try with the general NFT token extraction
-      if (!tokenId) {
-        const nftContractAddress = this.nftMintingService.getNFTContractAddress();
-        if (nftContractAddress) {
-          // Try to extract from Transfer event
-          tokenId = extractNFTTokenIdFromReceipt(
-            status.receipt, 
-            nftContractAddress
-          ) ?? undefined;
-        }
+    try {
+      const result = await this.contractService.executeProposal(proposalId);
+
+      // Extract token ID from receipt if execution was successful
+      if (result.status === 'confirmed' && result.receipt) {
+        const tokenId = await this.eventService.extractTokenIdFromReceipt(result.receipt);
+        
+        // Refresh specific proposal in cache
+        await this.refreshProposal(proposalId);
+        
+        return {
+          ...result,
+          tokenId: tokenId || undefined
+        };
       }
-      
-      if (tokenId) {
-        console.log(`Extracted token ID from receipt: ${tokenId}`);
+
+      return result;
+    } catch (error) {
+      console.error('Error executing proposal:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if user has voted on a proposal
+   */
+  async hasVoted(proposalId: string, account: string): Promise<boolean> {
+    this.ensureInitialized();
+
+    try {
+      return await this.contractService.hasVoted(proposalId, account);
+    } catch (error) {
+      // Fallback to event-based check
+      console.warn('Contract hasVoted failed, trying event-based check:', error);
+      try {
+        return await this.eventService.hasUserVotedByEvents(proposalId, account);
+      } catch (eventError) {
+        console.error('Event-based vote check also failed:', eventError);
+        return false;
       }
     }
-    
-    // Return both the transaction status and the token ID
+  }
+
+  /**
+   * Get comprehensive proposal information including events
+   */
+  async getProposalWithEvents(proposalId: string): Promise<{
+    proposal: Proposal | null;
+    events: Awaited<ReturnType<ProposalEventService['getProposalEventSummary']>>;
+  }> {
+    this.ensureInitialized();
+
+    try {
+      const [proposal, events] = await Promise.all([
+        this.getProposal(proposalId),
+        this.eventService.getProposalEventSummary(proposalId)
+      ]);
+
+      return { proposal, events };
+    } catch (error) {
+      console.error(`Error getting proposal with events for ${proposalId}:`, error);
+      return {
+        proposal: null,
+        events: {
+          votes: [],
+          totalVotes: 0,
+          uniqueVoters: 0
+        }
+      };
+    }
+  }
+
+  /**
+   * Get service status and diagnostics
+   */
+  getServiceStatus(): {
+    initialized: boolean;
+    networkId: number;
+    cacheStats: ReturnType<ProposalCacheService['getCacheStats']>;
+    eventCacheStats: ReturnType<ProposalEventService['getCacheStats']>;
+  } {
     return {
-      ...status,
-      tokenId
+      initialized: this.isInitialized,
+      networkId: this.networkId,
+      cacheStats: this.cacheService.getCacheStats(this.networkId),
+      eventCacheStats: this.eventService.getCacheStats()
     };
   }
 
   /**
-   * Get a specific proposal by ID
-   * 
-   * @param proposalId Proposal ID as displayed in the UI (1-based)
-   * @returns Promise resolving to Proposal object or null
+   * Clear all caches
    */
-  public async getProposal(proposalId: string): Promise<Proposal | null> {
-    this.ensureInitialized();
-    
-    // Convert UI proposal ID to blockchain ID
-    const blockchainProposalId = this.proposalUtils.uiToBlockchainProposalId(proposalId);
-    
-    try {
-      // Get proposal data from contract
-      const rawProposal = await this.daoVotingService.getRawProposal(blockchainProposalId);
-      
-      // Check if the proposal matches our target voting situation
-      const votingSituation = this.daoVotingService.getVotingSituation();
-      if (!this.proposalUtils.doesProposalMatchVotingSituation(rawProposal, votingSituation)) {
-        // console.log(`Proposal ${proposalId} skipped: voting situation "${rawProposal.relatedVotingSituation}" doesn't match target "${votingSituation}"`);
-        return null; // Skip proposals that don't match
-      }
-      
-      const statusNum = await this.daoVotingService.getProposalStatus(blockchainProposalId);
-      
-      // Format proposal data
-      return this.proposalUtils.formatProposal(
-        rawProposal,
-        statusNum,
-        proposalId // Use the original UI proposal ID
-      );
-    } catch (err) {
-      console.error(`Error fetching proposal ${proposalId}:`, err);
-      return null;
+  clearCache(): void {
+    if (this.isInitialized) {
+      this.cacheService.clearCache(this.networkId);
     }
+    this.eventService.clearCache();
   }
 
   /**
-   * Get all proposals
-   * 
-   * @returns Promise resolving to array of Proposal objects
+   * Clear all caches across networks (for cleanup)
    */
-  public async getAllProposals(): Promise<Proposal[]> {
-    this.ensureInitialized();
-    
-    try {
-      // Get all proposal IDs from contract (blockchain IDs)
-      const blockchainProposalIds = await this.daoVotingService.getAllProposalIds();
-      
-      // Convert blockchain IDs to UI IDs
-      const uiProposalIds = blockchainProposalIds.map(id => 
-        this.proposalUtils.blockchainToUiProposalId(id)
-      );
-      
-      // Create array of promises for parallel execution
-      const proposalPromises = uiProposalIds.map(id => this.getProposal(id));
-      
-      // Wait for all promises to resolve at once
-      const allResults = await Promise.all(proposalPromises);
-      
-      // Filter out null values
-      return allResults.filter((proposal): proposal is Proposal => proposal !== null);
-    } catch (err) {
-      console.error('Error fetching all proposals:', err);
-      throw new BlockchainError(
-        'Failed to fetch proposals',
-        BlockchainErrorType.ContractError,
-        err instanceof Error ? err : new Error(String(err))
-      );
-    }
+  clearAllCaches(): void {
+    this.cacheService.clearAllCaches();
+    this.eventService.clearCache();
   }
 
-  /**
-   * Get all proposals that need votes
-   * 
-   * @returns Promise resolving to array of pending or active proposals
-   */
-  public async getPendingProposals(): Promise<Proposal[]> {
-    const allProposals = await this.getAllProposals();
-    
-    // Filter to only include pending/active proposals
-    return allProposals.filter(p => 
-      p.status === ProposalStatus.Pending || 
-      p.status === ProposalStatus.Active
-    );
+  // Legacy methods for backwards compatibility
+  async getPendingProposals(): Promise<Proposal[]> {
+    return this.getActiveProposals();
   }
 
-  /**
-   * Check if a user has voted on a proposal
-   * 
-   * @param proposalId Proposal ID as displayed in the UI (1-based)
-   * @param voter Voter address
-   * @returns Promise resolving to boolean indicating if user has voted
-   */
-  public async hasVoted(proposalId: string, voter: string): Promise<boolean> {
-    this.ensureInitialized();
-    
-    // Convert UI proposal ID to blockchain ID
-    const blockchainProposalId = this.proposalUtils.uiToBlockchainProposalId(proposalId);
-    
-    return await this.daoVotingService.hasUserVoted(blockchainProposalId, voter);
-  }
-
-  /**
-   * Get token ID for an executed proposal
-   * 
-   * @param proposalId Proposal ID as displayed in the UI (1-based)
-   * @param executionTxHash Transaction hash of execution
-   * @returns Promise resolving to token ID or null
-   */
-  public async getTokenIdForExecutedProposal(
-    proposalId: string,
-    executionTxHash: string
-  ): Promise<string | null> {
-    this.ensureInitialized();
-    
-    try {
-      const receipt = await this.provider.getTransactionReceipt(executionTxHash);
-      
-      if (receipt) {
-        // First try specialized extraction
-        let tokenId = extractTokenIdFromMintingReceipt(receipt);
-        
-        // If not found, try general NFT extraction
-        if (!tokenId) {
-          const nftContractAddress = this.nftMintingService.getNFTContractAddress();
-          if (nftContractAddress) {
-            tokenId = extractNFTTokenIdFromReceipt(receipt, nftContractAddress);
-          }
-        }
-        
-        return tokenId;
-      }
-      
-      return null;
-    } catch (err) {
-      console.error('Error getting token ID for executed proposal:', err);
-      return null;
-    }
+  async getTokenIdForExecutedProposal(proposalId: string, executionTxHash: string): Promise<string | null> {
+    // This is a backwards compatibility method
+    // In the new architecture, token ID is returned directly from executeProposal
+    console.warn('getTokenIdForExecutedProposal is deprecated. Token ID is now returned from executeProposal.');
+    return null;
   }
 }

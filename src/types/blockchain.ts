@@ -5,13 +5,20 @@ import { ethers } from 'ethers';
  * Enum for proposal statuses
  * Used across the application for consistent status representation
  */
+/**
+ * CORRECTED: Q Governance ProposalStatus enum mapping
+ * This matches the actual Q governance contract status values
+ */
 export enum ProposalStatus {
-  Pending = 'Pending',    // Created but voting hasn't started yet
-  Active = 'Active',      // Voting is active
-  Approved = 'Approved',  // Voting finished with approval
-  Rejected = 'Rejected',  // Voting finished with rejection
-  Executed = 'Executed',  // Proposal has been executed (NFT minted)
-  Canceled = 'Canceled'   // Proposal was canceled
+  None = 0,              // Initial/empty state
+  Pending = 1,           // Created but voting hasn't started yet
+  Rejected = 2,          // Voting finished with rejection
+  Accepted = 3,          // Voting finished with approval - ready for execution
+  Passed = 4,            // Alternative approval state (need to clarify difference with Accepted)
+  Executed = 5,          // Proposal has been executed
+  Expired = 6,           // Proposal voting period expired
+  UnderReview = 7,       // Proposal is under review
+  UnderEvaluation = 8    // Proposal is under evaluation
 }
 
 /**
@@ -110,6 +117,7 @@ export interface TransactionStatus {
   confirmations: number;
   error?: Error;
   receipt?: ethers.TransactionReceipt;
+  tokenId?: string;
 }
 
 /**

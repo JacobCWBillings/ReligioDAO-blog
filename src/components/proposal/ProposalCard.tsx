@@ -1,4 +1,4 @@
-// src/components/proposal/ProposalCard.tsx
+// src/components/proposal/ProposalCard.tsx - Complete component with 0-based indexing fix
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Proposal, ProposalStatus } from '../../types/blockchain';
@@ -20,60 +20,80 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
   needsAttention = false,
   className = '',
 }) => {
-  // Calculate displayed status based on contract state and execution status
-  const displayStatus = useMemo(() => {
-    // For proposals that are marked executed, always show "Executed" regardless of status
-    if (proposal.executed) {
-      return ProposalStatus.Executed;
-    }
-    
-    // For proposals that are approved but not executed, show "Approved" status
-    if (proposal.status === ProposalStatus.Approved && !proposal.executed) {
-      return ProposalStatus.Approved;
-    }
-    
-    // Otherwise show the actual status from the contract
-    return proposal.status;
-  }, [proposal]);
+  // CORRECTED: Always use Q contract status as source of truth
+  const displayStatus = useMemo(() => proposal.status, [proposal]);
+
+  // Helper function to determine if proposal is actively accepting votes
+  const isActiveVoting = (proposal: Proposal): boolean => {
+    return proposal.status === ProposalStatus.Pending && 
+           Date.now() < proposal.votingEnds;
+  };
 
   // Get status color, label and additional information
-  const getStatusInfo = (status: ProposalStatus) => {
+  const getStatusInfo = (status: ProposalStatus, proposal: Proposal) => {
+    // Check if this is an active voting period
+    if (status === ProposalStatus.Pending && isActiveVoting(proposal)) {
+      return { 
+        color: 'blue', 
+        label: 'Active Voting',
+        description: 'Voting in progress'
+      };
+    }
+
     switch (status) {
+      case ProposalStatus.None:
+        return { 
+          color: 'gray', 
+          label: 'None',
+          description: 'Initial state'
+        };
       case ProposalStatus.Pending:
         return { 
           color: 'yellow', 
           label: 'Pending',
           description: 'Awaiting voting period'
         };
-      case ProposalStatus.Active:
+      case ProposalStatus.Rejected:
         return { 
-          color: 'blue', 
-          label: 'Active',
-          description: 'Voting in progress'
+          color: 'red', 
+          label: 'Rejected',
+          description: 'Rejected by community vote'
         };
-      case ProposalStatus.Approved:
+      case ProposalStatus.Accepted:
         return { 
           color: 'green', 
           label: 'Approved',
           description: 'Ready for execution'
         };
-      case ProposalStatus.Rejected:
+      case ProposalStatus.Passed:
         return { 
-          color: 'red', 
-          label: 'Rejected',
-          description: 'Proposal was rejected'
+          color: 'green', 
+          label: 'Passed',
+          description: 'Alternative approval state'
         };
       case ProposalStatus.Executed:
         return { 
           color: 'green', 
           label: 'Executed',
-          description: 'Proposal executed successfully'
+          description: 'NFT minted by Q governance'
         };
-      case ProposalStatus.Canceled:
+      case ProposalStatus.Expired:
         return { 
           color: 'purple', 
-          label: 'Canceled',
-          description: 'Proposal was canceled'
+          label: 'Expired',
+          description: 'Voting period expired'
+        };
+      case ProposalStatus.UnderReview:
+        return { 
+          color: 'blue', 
+          label: 'Under Review',
+          description: 'Proposal under review'
+        };
+      case ProposalStatus.UnderEvaluation:
+        return { 
+          color: 'blue', 
+          label: 'Under Evaluation',
+          description: 'Proposal under evaluation'
         };
       default:
         return { 
@@ -127,7 +147,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
   const getQuorumPercentage = (): string => {
     // This would typically come from blockchain data
     // For now we'll use a default of 50%
-    return "50 %";
+    return "50%";
   };
 
   // Calculate left % for quorum progress bar
@@ -135,7 +155,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
     const votesTotal = proposal.votesFor + proposal.votesAgainst;
     // If we had the total supply, we could calculate this
     // For now, we'll use 0% for simplicity
-    return "0 %";
+    return "0%";
   };
 
   // Extract blog information from proposal description
@@ -155,10 +175,12 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
     }
   };
 
-  const statusInfo = getStatusInfo(displayStatus);
+  const statusInfo = getStatusInfo(displayStatus, proposal);
   const progressPercentage = calculateProgress(proposal.votesFor, proposal.votesAgainst);
   const blogInfo = getBlogInfo();
+  const isActive = isActiveVoting(proposal);
   
+  // SIMPLIFIED: Use proposal.id directly (0-based indexing)
   return (
     <Link 
       to={`/proposals/${proposal.id}`}
@@ -166,10 +188,12 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
     >
       <div className="proposal-card-header">
         <div className="proposal-card-title-container">
-        <h3 className="proposal-card-title">
-            {blogInfo.blogTitle || 'Untitled Blog Proposal'}
+          <h3 className="proposal-card-title">
+            {blogInfo.blogTitle || proposal.title || 'Untitled Blog Proposal'}
           </h3>
-          {!compact && proposal.title && blogInfo.blogTitle !== proposal.title}
+          {!compact && proposal.title && blogInfo.blogTitle !== proposal.title && (
+            <div className="proposal-card-subtitle">{proposal.title}</div>
+          )}
         </div>
         <div className={`proposal-card-status status-${statusInfo.color}`}>
           {statusInfo.label}
@@ -181,7 +205,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
           <div className="proposal-card-info">
             <span className="proposal-card-label">Quorum {getQuorumPercentage()}</span>
             <span className="proposal-card-label">
-              {displayStatus === ProposalStatus.Active ? 
+              {isActive ? 
                 formatRelativeTime(proposal.votingEnds) : 
                 `Voting ended ${formatDate(proposal.votingEnds)}`
               }
@@ -196,6 +220,9 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
                   {blogInfo.tags.slice(0, 3).map((tag, index) => (
                     <span key={index} className="proposal-card-tag">{tag}</span>
                   ))}
+                  {blogInfo.tags.length > 3 && (
+                    <span className="proposal-card-tag">+{blogInfo.tags.length - 3} more</span>
+                  )}
                 </div>
               )}
             </div>
@@ -211,19 +238,22 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
               <span>{getQuorumLeft()} left</span>
             </div>
             <div className="proposal-card-progress-bar">
-              <div className="proposal-card-progress-fill" style={{ width: `${progressPercentage}%` }}></div>
+              <div 
+                className="proposal-card-progress-fill" 
+                style={{ width: `${progressPercentage}%` }}
+              ></div>
             </div>
           </div>
           
           <div className="proposal-card-votes">
             <div className="proposal-card-vote proposal-card-vote-yes">
               <span>Yes</span>
-              <span>{progressPercentage.toFixed(0)} %</span>
+              <span>{progressPercentage.toFixed(0)}%</span>
               <span>{proposal.votesFor}</span>
             </div>
             <div className="proposal-card-vote proposal-card-vote-no">
               <span>No</span>
-              <span>{(100 - progressPercentage).toFixed(0)} %</span>
+              <span>{(100 - progressPercentage).toFixed(0)}%</span>
               <span>{proposal.votesAgainst}</span>
             </div>
           </div>
@@ -238,15 +268,15 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
           {formatDate(proposal.createdAt)}
         </div>
         
-        {/* Call-to-action hints based on status - removed "View blog post" hint */}
-        {displayStatus === ProposalStatus.Active && (
+        {/* CORRECTED: Call-to-action hints based on Q contract status */}
+        {isActive && (
           <div className="proposal-card-action-hint">Click to vote</div>
         )}
-        {displayStatus === ProposalStatus.Approved && !proposal.executed && (
+        {displayStatus === ProposalStatus.Accepted && (
           <div className="proposal-card-action-hint">Ready to execute</div>
         )}
         {displayStatus === ProposalStatus.Executed && (
-          <div className="proposal-card-action-hint">Proposal completed</div>
+          <div className="proposal-card-action-hint">NFT minted</div>
         )}
       </div>
     </Link>

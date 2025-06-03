@@ -2,34 +2,26 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <base href="%PUBLIC_URL%/">
+    <base href="./">
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#ff8a00" />
     <meta
         name="description"
         content="ReligioDAO Blog - A decentralized blogging platform governed by the ReligioDAO community"
     />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <link rel="icon" href="./favicon.ico" />
+    <link rel="apple-touch-icon" href="./logo192.png" />
+    <link rel="manifest" href="./manifest.json" />
     
     <!-- Import Space Grotesk font -->
-    <link rel="preload" href="%PUBLIC_URL%/space-grotesk.woff2" as="font" type="font/woff2" crossorigin />
-    
-    <!-- Open Graph / Social Media Meta Tags -->
-    <meta property="og:title" content="ReligioDAO Blog" />
-    <meta property="og:description" content="A decentralized blogging platform governed by DAO voting." />
-    <meta property="og:image" content="%PUBLIC_URL%/og-image.jpg" />
-    <meta property="og:url" content="https://blog.religiodao.org" />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preload" href="./space-grotesk.woff2" as="font" type="font/woff2" crossorigin />
     
     <title>ReligioDAO Blog</title>
     
     <style>
         @font-face {
             font-family: 'Space Grotesk';
-            src: url('%PUBLIC_URL%/space-grotesk.woff2') format('woff2');
+            src: url('./space-grotesk.woff2') format('woff2');
             font-weight: 400 700;
             font-style: normal;
             font-display: swap;
@@ -141,7 +133,7 @@
     <div id="root">
         <!-- Loading state that will be shown until the app is loaded -->
         <div class="app-loading">
-            <img src="%PUBLIC_URL%/logo.svg" alt="ReligioDAO Logo" class="app-loading-logo" />
+            <img src="./ReligioDAO_icon.jpg" alt="ReligioDAO Logo" class="app-loading-logo" />
             <div class="app-loading-text">Loading ReligioDAO Blog</div>
             <div class="app-loading-spinner"></div>
             <div class="app-loading-message">
@@ -163,6 +155,192 @@
     <script>
         // Check if Web3 provider is available
         window.addEventListener('load', function() {
+            // Define PUBLIC_URL for React compatibility
+            window.PUBLIC_URL = '.';
+            window.__SWARM_HOSTING__ = false;
+            
+            // Fix paths for Swarm hosting
+            if (window.location.href.includes('bzz://') || window.location.href.includes('bzz-raw://')) {
+                // We're on Swarm, fix paths for static resources
+                window.__SWARM_HOSTING__ = true;
+            }
+            
+            // Set process.env.PUBLIC_URL for React app compatibility
+            if (!window.process) window.process = {};
+            if (!window.process.env) window.process.env = {};
+            window.process.env.PUBLIC_URL = '.';
+
+            // Path fixing for React's static resources
+            window.__fixStaticPaths = function(path) {
+                if (!path) return path;
+            
+                // Handle only string paths
+                if (typeof path !== 'string') return path;
+            
+                // Fix absolute paths for ReligioDAO resources
+                if (path.startsWith('/ReligioDAO/') || path.startsWith('/public/')) {
+                    return '.' + path;
+                }
+            
+                // Fix paths for static media content
+                if (path.includes('/static/media/')) {
+                    return path.replace(/^.*?(\/static\/media\/)/, './static/media/');
+                }
+                
+                // Special handling for default images from error logs
+                if (path.includes('default.0292020e18fb5dca2761.jpg')) {
+                    return './static/media/default.0292020e18fb5dca2761.jpg';
+                }
+                
+                if (path.includes('/default.png')) {
+                    return './default.png';
+                }
+            
+                // Fix paths that might be referencing public directory
+                if (path.startsWith('/') && path.match(/\.(png|jpg|jpeg|gif|svg|webp|mp4|webm|ogg|mp3|wav|pdf|json)$/i)) {
+                    return '.' + path;
+                }
+            
+                return path;
+            };
+
+            // Override the Image.prototype.src setter to fix paths
+            const originalImageSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+            if (originalImageSrcDescriptor) {
+                Object.defineProperty(HTMLImageElement.prototype, 'src', {
+                    get: originalImageSrcDescriptor.get,
+                    set: function(value) {
+                        originalImageSrcDescriptor.set.call(this, window.__fixStaticPaths(value));
+                    }
+                });
+            }
+
+            // Override fetch to fix URLs
+            const originalFetch = window.fetch;
+            window.fetch = function(input, init) {
+                if (typeof input === 'string') {
+                    input = window.__fixStaticPaths(input);
+                } else if (input instanceof Request) {
+                    input = new Request(
+                        window.__fixStaticPaths(input.url),
+                        init || {
+                            method: input.method,
+                            headers: input.headers,
+                            body: input.body,
+                            mode: input.mode,
+                            credentials: input.credentials,
+                            cache: input.cache,
+                            redirect: input.redirect,
+                            referrer: input.referrer,
+                            integrity: input.integrity
+                        }
+                    );
+                }
+                return originalFetch.call(window, input, init);
+            };
+
+            // Override XMLHttpRequest to fix URLs
+            const originalXHROpen = XMLHttpRequest.prototype.open;
+            XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+                const fixedUrl = window.__fixStaticPaths(url);
+                return originalXHROpen.call(this, method, fixedUrl, async, user, password);
+            };
+
+            // Add path resolution for CSS background images and other resources
+            const originalCreateElement = document.createElement;
+            document.createElement = function(tagName) {
+                const element = originalCreateElement.call(document, tagName);
+                if (tagName.toLowerCase() === 'link' && element.setAttribute) {
+                    const originalSetAttribute = element.setAttribute;
+                    element.setAttribute = function(name, value) {
+                        if (name === 'href') {
+                            value = window.__fixStaticPaths(value);
+                        }
+                        return originalSetAttribute.call(this, name, value);
+                    };
+                }
+                return element;
+            };
+            
+            // Set up a MutationObserver to fix paths for dynamically added elements
+            const fixDynamicPaths = function() {
+                // Process all images
+                document.querySelectorAll('img[src]').forEach(img => {
+                    if (!img.__pathFixed) {
+                        img.__pathFixed = true;
+                        const originalSrc = img.getAttribute('src');
+                        const fixedSrc = window.__fixStaticPaths(originalSrc);
+                        if (originalSrc !== fixedSrc) {
+                            img.setAttribute('src', fixedSrc);
+                        }
+                    }
+                });
+                
+                // Process all sources in picture elements, video, audio
+                document.querySelectorAll('source[src]').forEach(source => {
+                    if (!source.__pathFixed) {
+                        source.__pathFixed = true;
+                        const originalSrc = source.getAttribute('src');
+                        const fixedSrc = window.__fixStaticPaths(originalSrc);
+                        if (originalSrc !== fixedSrc) {
+                            source.setAttribute('src', fixedSrc);
+                        }
+                    }
+                });
+                
+                // Process all links with href attributes
+                document.querySelectorAll('link[href]').forEach(link => {
+                    if (!link.__pathFixed) {
+                        link.__pathFixed = true;
+                        const originalHref = link.getAttribute('href');
+                        const fixedHref = window.__fixStaticPaths(originalHref);
+                        if (originalHref !== fixedHref) {
+                            link.setAttribute('href', fixedHref);
+                        }
+                    }
+                });
+                
+                // Process all elements with background images in inline styles
+                document.querySelectorAll('[style*="url("]').forEach(el => {
+                    if (!el.__stylePathFixed) {
+                        el.__stylePathFixed = true;
+                        const style = el.getAttribute('style');
+                        if (style) {
+                            const newStyle = style.replace(/url\(['"]?([^'")]+)['"]?\)/g, (match, url) => {
+                                const fixedUrl = window.__fixStaticPaths(url);
+                                return `url("${fixedUrl}")`;
+                            });
+                            if (style !== newStyle) {
+                                el.setAttribute('style', newStyle);
+                            }
+                        }
+                    }
+                });
+            };
+            
+            // Run the path fixer immediately
+            fixDynamicPaths();
+            
+            // Set up MutationObserver to watch for new elements
+            const observer = new MutationObserver(mutations => {
+                let shouldFix = false;
+                mutations.forEach(mutation => {
+                    if (mutation.addedNodes.length > 0) {
+                        shouldFix = true;
+                    }
+                });
+                
+                if (shouldFix) {
+                    fixDynamicPaths();
+                }
+            });
+            
+            // Start observing the document
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true
+            });
+
             setTimeout(function() {
                 // This timeout gives the main app time to initialize
                 // If it hasn't loaded after 10 seconds, we'll show a helpful message

@@ -1,4 +1,4 @@
-/* src/pages/proposal/ProposalListPage.css */
+/* src/pages/proposal/ProposalListPage.css - Enhanced with load more functionality */
 .proposal-list-page {
     max-width: 1200px;
     margin: 0 auto;
@@ -29,13 +29,34 @@
   .search-box {
     max-width: 500px;
     margin: 0 auto;
+    position: relative;
   }
   
   .search-box input {
     width: 100%;
-    padding: 12px 20px;
+    padding: 12px 50px 12px 20px;
     border: 1px solid #ddd;
     border-radius: 30px;
+    font-size: 1rem;
+  }
+
+  .search-button {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+
+  .search-button:hover {
+    background-color: #f0f0f0;
+  }
+
+  .search-icon {
     font-size: 1rem;
   }
   
@@ -75,20 +96,15 @@
   .sort-control {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 15px;
     flex-wrap: wrap;
     justify-content: center;
-  }
-  
-  .sort-control select {
-    padding: 8px 16px;
-    border: 1px solid #ddd;
-    border-radius: 20px;
-    background-color: white;
+    margin-top: 10px;
   }
   
   .refresh-button, 
-  .download-button {
+  .download-button,
+  .load-more-button {
     background-color: #f0f0f0;
     color: #666;
     border: 1px solid #ddd;
@@ -103,12 +119,14 @@
   }
   
   .refresh-button:hover,
-  .download-button:hover {
+  .download-button:hover,
+  .load-more-button:hover {
     background-color: #e0e0e0;
   }
   
   .refresh-button:disabled,
-  .download-button:disabled {
+  .download-button:disabled,
+  .load-more-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
@@ -128,6 +146,32 @@
     content: "↓";
     font-weight: bold;
     margin-right: 4px;
+  }
+
+  /* Load more section styling */
+  .load-more-section {
+    display: flex;
+    justify-content: center;
+    margin: 30px 0;
+  }
+
+  .load-more-button {
+    background-color: #ff8a00;
+    color: white;
+    border-color: #ff8a00;
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: 500;
+    min-width: 220px;
+  }
+
+  .load-more-button:hover:not(:disabled) {
+    background-color: #ff9e2e;
+  }
+
+  .loading-more {
+    margin-top: 20px;
+    opacity: 0.7;
   }
   
   .proposals-container {
@@ -340,6 +384,74 @@
     border-radius: 8px;
     margin-top: 30px;
   }
+
+  /* Description for filters */
+  .filter-description {
+    background-color: #f5f5f5;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 15px;
+    text-align: center;
+  }
+
+  .filter-description p {
+    margin: 0;
+    color: #666;
+    font-style: italic;
+  }
+
+  /* Ensure proposal cards link only to proposal details */
+  .proposal-card {
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  /* Improve hover effect on proposal cards */
+  .proposal-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-left: 3px solid #ff8a00;
+  }
+
+  /* Loading states */
+  .loading-indicator {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 200px;
+    color: #ff8a00;
+    font-size: 1.1rem;
+  }
+
+  .loading-indicator::before {
+    content: "⏳";
+    margin-right: 10px;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* Error message styling */
+  .error-message {
+    background-color: #ffebee;
+    border-radius: 8px;
+    padding: 30px;
+    text-align: center;
+  }
+
+  .error-message h3 {
+    color: #c62828;
+    margin-bottom: 10px;
+  }
+
+  .error-message p {
+    color: #d32f2f;
+    margin-bottom: 20px;
+  }
   
   /* Responsive adjustments */
   @media (max-width: 768px) {
@@ -363,48 +475,79 @@
     }
     
     .sort-control {
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+    }
+
+    .refresh-button,
+    .download-button {
+      flex: 1;
+      justify-content: center;
+      max-width: 160px;
+    }
+
+    .proposal-stats {
+      gap: 15px;
+    }
+
+    .stat-item {
+      padding: 8px 16px;
+    }
+
+    .filter-summary {
       flex-direction: column;
-      align-items: stretch;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .load-more-button {
+      width: 100%;
+      max-width: 300px;
     }
   }
 
-  /* Description for executed filter */
-.filter-description {
-  background-color: #f5f5f5;
-  padding: 15px;
-  border-radius: 8px;
-  margin-top: 15px;
-  text-align: center;
-}
+  /* Ensure consistent spacing within proposal cards */
+  .proposal-meta {
+    margin-top: 15px;
+  }
 
-.filter-description p {
-  margin: 0;
-  color: #666;
-  font-style: italic;
-}
+  /* Performance optimizations */
+  .proposals-container {
+    contain: layout;
+  }
 
-/* Ensure proposal cards link only to proposal details */
-.proposal-card {
-  cursor: pointer;
-  text-decoration: none;
-  color: inherit;
-}
+  .proposal-card {
+    contain: layout style;
+  }
 
-/* Improve hover effect on proposal cards */
-.proposal-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border-left: 3px solid #ff8a00;
-}
+  /* Accessibility improvements */
+  .search-box input:focus {
+    outline: 2px solid #ff8a00;
+    outline-offset: 2px;
+  }
 
-/* Style for the executed status badge */
-.status-executed {
-  background-color: #e0f7fa;
-  color: #00838f;
-  position: relative;
-}
+  .status-filter:focus,
+  .refresh-button:focus,
+  .download-button:focus,
+  .load-more-button:focus {
+    outline: 2px solid #ff8a00;
+    outline-offset: 2px;
+  }
 
-/* Ensure consistent spacing within proposal cards */
-.proposal-meta {
-  margin-top: 15px;
-}
+  /* Print styles */
+  @media print {
+    .filter-section,
+    .proposal-actions,
+    .load-more-section {
+      display: none;
+    }
+
+    .proposal-card {
+      break-inside: avoid;
+      box-shadow: none;
+      border: 1px solid #ddd;
+      margin-bottom: 20px;
+    }
+  }

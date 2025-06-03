@@ -11,6 +11,22 @@
   font-size: 2.2rem;
 }
 
+/* Platform warning banner */
+.platform-warning {
+  background-color: #fff3e0;
+  border: 1px solid #ffcc80;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.platform-warning p {
+  color: #ef6c00;
+  font-weight: 500;
+  margin: 0;
+}
+
 .proposal-form-container {
   background-color: white;
   border-radius: 10px;
@@ -230,6 +246,15 @@ form {
   color: #2e7d32;
 }
 
+.content-reference-note code {
+  background-color: rgba(255, 255, 255, 0.7);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .reference-notice {
   margin-top: 8px;
   font-style: italic;
@@ -268,13 +293,14 @@ form {
   transition: background-color 0.3s;
 }
 
-.submit-button:hover {
+.submit-button:hover:not(:disabled) {
   background-color: #ff9e2e;
 }
 
 .submit-button:disabled {
   background-color: #ccc;
   cursor: not-allowed;
+  opacity: 0.7;
 }
 
 /* Success message styling */
@@ -292,8 +318,20 @@ form {
 }
 
 .success-message p {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   font-size: 16px;
+}
+
+.success-message code {
+  background-color: rgba(255, 255, 255, 0.8);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+  word-break: break-all;
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 .primary-button, .secondary-button {
@@ -302,8 +340,9 @@ form {
   border-radius: 6px;
   font-weight: bold;
   cursor: pointer;
-  margin: 0 8px;
+  margin: 8px;
   transition: all 0.3s;
+  text-decoration: none;
 }
 
 .primary-button {
@@ -327,6 +366,18 @@ form {
 }
 
 @media (max-width: 768px) {
+  .proposal-submission-page {
+    padding: 20px 15px;
+  }
+  
+  .proposal-submission-page h1 {
+    font-size: 1.8rem;
+  }
+  
+  .proposal-form-container {
+    padding: 20px;
+  }
+  
   .form-row {
     flex-direction: column;
     gap: 0;
@@ -339,5 +390,16 @@ form {
   
   .cancel-button, .submit-button {
     width: 100%;
+  }
+  
+  .success-message {
+    padding: 30px 20px;
+  }
+  
+  .primary-button, .secondary-button {
+    display: block;
+    width: 100%;
+    margin: 8px 0;
+    text-align: center;
   }
 }
