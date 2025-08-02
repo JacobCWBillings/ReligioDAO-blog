@@ -6,7 +6,6 @@ import { ReadOnlyMode } from './ReadOnlyMode';
 import { useSimpleApp, PlatformStatusBanner } from '../contexts/SimpleAppContext';
 import ChainWarning from './ChainWarning';
 import { useWallet } from '../contexts/WalletContext';
-import DiagnosticButton from './DiagnosticButton';
 import './Layout.css';
 
 export const Layout: React.FC = () => {
@@ -33,7 +32,6 @@ export const Layout: React.FC = () => {
                 <Outlet />
             </main>
 
-            <DiagnosticButton />
         </div>
     );
 };
