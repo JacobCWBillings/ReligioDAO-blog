@@ -6,16 +6,22 @@ import './EnhancedAssetBrowser.css';
 
 interface AssetThumbnailProps {
   asset: Asset;
+  isSelected: boolean;
+  isDefaultSelected: boolean;
   onInsert: (asset: Asset) => void;
   onRename: (asset: Asset) => void;
   onDelete: (asset: Asset) => void;
+  onSelect: (asset: Asset) => void;
 }
 
 const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
   asset,
+  isSelected,
+  isDefaultSelected,
   onInsert,
   onRename,
-  onDelete
+  onDelete,
+  onSelect
 }) => {
   const [imageError, setImageError] = useState(false);
   const [currentImageUrl, setCurrentImageUrl] = useState<string>('');
@@ -74,12 +80,21 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
 
   const handleInsertAsset = () => {
     // Always use public gateway for inserted assets so they're viewable by everyone
-    // For images and binary assets, we should use bytes endpoint for direct access
     onInsert(asset);
   };
 
+  const handleThumbnailClick = () => {
+    onSelect(asset);
+  };
+
+  // Determine if action buttons should be visible
+  const showActions = isSelected || isDefaultSelected;
+
   return (
-    <div className="asset-thumbnail">
+    <div 
+      className={`asset-thumbnail ${isSelected ? 'selected' : ''} ${isDefaultSelected ? 'default-selected' : ''}`}
+      onClick={handleThumbnailClick}
+    >
       <div className="thumbnail-image">
         {isLoading ? (
           <div className="thumbnail-placeholder">
@@ -122,24 +137,34 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
         </div>
       </div>
       
-      <div className="thumbnail-actions">
+      {/* Action buttons - now visible based on selection state */}
+      <div className={`thumbnail-actions ${showActions ? 'visible' : ''}`}>
         <button 
           className="action-btn insert-btn"
-          onClick={handleInsertAsset}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleInsertAsset();
+          }}
           title="Insert into editor (uses public gateway)"
         >
           📎
         </button>
         <button 
           className="action-btn rename-btn"
-          onClick={() => onRename(asset)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRename(asset);
+          }}
           title="Rename asset"
         >
           ✏️
         </button>
         <button 
           className="action-btn delete-btn"
-          onClick={() => onDelete(asset)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(asset);
+          }}
           title="Delete asset"
         >
           🗑️
@@ -236,6 +261,8 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>('date');
   const [gatewayMode, setGatewayMode] = useState<'local' | 'public'>('public');
   const [endpointMode, setEndpointMode] = useState<'auto' | 'bzz' | 'bytes'>('auto');
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [defaultSelectedAsset, setDefaultSelectedAsset] = useState<Asset | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load assets when browser opens or account changes
@@ -244,6 +271,24 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
       loadAssets();
     }
   }, [isOpen, isConnected, account]);
+
+  // Set default selected asset when assets load
+  useEffect(() => {
+    if (assets.length > 0 && !defaultSelectedAsset) {
+      const sortedAssets = [...assets].sort((a, b) => {
+        switch (sortBy) {
+          case 'name':
+            return a.name.localeCompare(b.name);
+          case 'size':
+            return b.size - a.size;
+          case 'date':
+          default:
+            return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
+        }
+      });
+      setDefaultSelectedAsset(sortedAssets[0]);
+    }
+  }, [assets, sortBy, defaultSelectedAsset]);
 
   // Load assets from localStorage
   const loadAssets = () => {
@@ -286,7 +331,7 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
       }
       
     } catch (error) {
-      setUploadError(error instanceof Error ? error.message : 'Upload failed');
+      setUploadError(error instanceof Error ? error.message : 'Failed to upload files');
     } finally {
       setLoading(false);
     }
@@ -294,51 +339,60 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
 
   // Handle asset insertion
   const handleInsertAsset = (asset: Asset) => {
-    // Generate markdown with public gateway for published content
     const markdownCode = assetService.generateAssetMarkdown(
-      asset, 
+      asset,
       undefined, // Use default alt text
-      gatewayMode === 'public' // Use public gateway based on mode
+      gatewayMode === 'public' // Use public gateway based on current mode
     );
-    
     onInsertAsset(markdownCode);
-    onClose(); // Close browser after insertion
   };
 
-  // Handle asset rename
-  const handleRenameAsset = async (asset: Asset) => {
-    const newName = prompt('Enter new name:', asset.name);
-    if (!newName || newName === asset.name || !account) return;
-
-    const success = assetService.updateAsset(asset.id, account, { name: newName });
-    if (success) {
-      loadAssets(); // Reload to show changes
-    } else {
-      alert('Failed to rename asset');
+  // Handle asset renaming
+  const handleRenameAsset = (asset: Asset) => {
+    const newName = prompt('Enter new name for asset:', asset.name);
+    if (newName && newName.trim() && newName !== asset.name) {
+      try {
+        assetService.renameAsset(asset.id, newName.trim(), account!);
+        loadAssets(); // Reload to show updated name
+      } catch (error) {
+        setUploadError(error instanceof Error ? error.message : 'Failed to rename asset');
+      }
     }
   };
 
   // Handle asset deletion
-  const handleDeleteAsset = async (asset: Asset) => {
-    if (!window.confirm(`Are you sure you want to delete "${asset.name}"?\n\nThis will remove it from your asset library. The file may persist on Swarm.`)) {
-      return;
+  const handleDeleteAsset = (asset: Asset) => {
+    if (window.confirm(`Are you sure you want to delete "${asset.name}"?`)) {
+      try {
+        assetService.deleteAsset(asset.id, account!);
+        loadAssets(); // Reload to remove deleted asset
+        
+        // Clear selection if deleted asset was selected
+        if (selectedAsset?.id === asset.id) {
+          setSelectedAsset(null);
+        }
+        if (defaultSelectedAsset?.id === asset.id) {
+          setDefaultSelectedAsset(null);
+        }
+      } catch (error) {
+        setUploadError(error instanceof Error ? error.message : 'Failed to delete asset');
+      }
     }
+  };
 
-    if (!account) return;
-
-    const success = assetService.deleteAsset(asset.id, account);
-    if (success) {
-      loadAssets(); // Reload to show changes
-    } else {
-      alert('Failed to delete asset');
+  // Handle asset selection
+  const handleAssetSelect = (asset: Asset) => {
+    setSelectedAsset(asset === selectedAsset ? null : asset);
+    // Clear default selection when user makes an explicit selection
+    if (defaultSelectedAsset) {
+      setDefaultSelectedAsset(null);
     }
   };
 
   // Filter and sort assets
   const filteredAndSortedAssets = assets
     .filter(asset => 
-      asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      asset.contentType.toLowerCase().includes(searchTerm.toLowerCase())
+      asset.name.toLowerCase().includes(searchTerm.toLowerCase())
     )
     .sort((a, b) => {
       switch (sortBy) {
@@ -348,18 +402,19 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
           return b.size - a.size;
         case 'date':
         default:
-          return b.uploadedAt - a.uploadedAt;
+          return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
       }
     });
 
-  // Get storage stats
-  const stats = account ? assetService.getStorageStats(account) : null;
+  // Get storage statistics
+  const storageStats = account ? 
+    assetService.getStorageStats(account) : null;
 
   if (!isOpen) return null;
 
   return (
     <div className="asset-browser-overlay">
-      <div className="asset-browser-modal">
+      <div className="asset-browser-modal" data-gateway-mode={gatewayMode}>
         <div className="asset-browser-header">
           <h2>Asset Library</h2>
           <button 
@@ -392,8 +447,9 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
                   onClick={() => fileInputRef.current?.click()}
                   disabled={loading}
                 >
-                  {loading ? 'Uploading...' : '📤 Upload Images'}
+                  {loading ? '⏳ Uploading...' : '📷 Upload Images'}
                 </button>
+                
                 {uploadError && (
                   <div className="error-message">{uploadError}</div>
                 )}
@@ -402,50 +458,38 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
               <div className="browser-filters">
                 <input
                   type="text"
+                  className="search-input"
                   placeholder="Search assets..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="search-input"
                 />
+                
                 <select
+                  className="sort-select"
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as 'name' | 'date' | 'size')}
-                  className="sort-select"
                 >
                   <option value="date">Sort by Date</option>
                   <option value="name">Sort by Name</option>
                   <option value="size">Sort by Size</option>
                 </select>
+                
                 <select
+                  className="gateway-select"
                   value={gatewayMode}
                   onChange={(e) => setGatewayMode(e.target.value as 'local' | 'public')}
-                  className="gateway-select"
-                  title="Choose gateway for inserted URLs"
                 >
                   <option value="public">🌐 Public Gateway</option>
-                  <option value="local">🏠 Local Gateway</option>
-                </select>
-                <select
-                  value={endpointMode}
-                  onChange={(e) => setEndpointMode(e.target.value as 'auto' | 'bzz' | 'bytes')}
-                  className="endpoint-select"
-                  title="Choose endpoint type"
-                >
-                  <option value="auto">🔄 Auto Endpoint</option>
-                  <option value="bzz">🌍 Web (bzz)</option>
-                  <option value="bytes">📁 Binary (bytes)</option>
+                  <option value="local">💻 Local Gateway</option>
                 </select>
               </div>
             </div>
 
-            {stats && (
+            {/* Storage stats */}
+            {storageStats && (
               <div className="storage-stats">
-                <span>{stats.totalAssets} assets</span>
-                <span>•</span>
-                <span>{(stats.totalSize / (1024 * 1024)).toFixed(1)} MB total</span>
-                <span>•</span>
                 <span className="gateway-mode-indicator">
-                    Using {gatewayMode === 'public' ? 'public' : 'local'} gateway | 
+                  Using {gatewayMode === 'public' ? 'public' : 'local'} gateway | 
                     {endpointMode === 'auto' ? ' Auto endpoint' : 
                      endpointMode === 'bzz' ? ' Web (bzz)' : ' Binary (bytes)'}
                 </span>
@@ -469,9 +513,12 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
                   <AssetThumbnail
                     key={asset.id}
                     asset={asset}
+                    isSelected={selectedAsset?.id === asset.id}
+                    isDefaultSelected={defaultSelectedAsset?.id === asset.id && !selectedAsset}
                     onInsert={handleInsertAsset}
                     onRename={handleRenameAsset}
                     onDelete={handleDeleteAsset}
+                    onSelect={handleAssetSelect}
                   />
                 ))
               )}

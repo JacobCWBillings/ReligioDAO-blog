@@ -11,22 +11,35 @@ import './SimpleBlogEditor.css';
 interface SimpleBlogEditorProps {
   mode?: 'draft' | 'proposal';
   onContentPublished?: (contentReference: string, draft: BlogDraft) => void;
+  // New props for unified editor workflow
+  onChange?: (title: string, content: string, category: string, tags: string[], banner: string | null) => void;
+  initialTitle?: string;
+  initialContent?: string;
+  initialCategory?: string;
+  initialTags?: string[];
+  initialBanner?: string | null;
 }
 
 export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({ 
   mode = 'draft',
-  onContentPublished 
+  onContentPublished,
+  onChange,
+  initialTitle = '',
+  initialContent = '# Your Blog Title\n\nStart writing your blog post here...',
+  initialCategory = '',
+  initialTags = [],
+  initialBanner = null
 }) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { account, isConnected } = useWallet();
   
-  // Editor state
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('# Your Blog Title\n\nStart writing your blog post here...');
-  const [category, setCategory] = useState('');
-  const [tags, setTags] = useState('');
-  const [banner, setBanner] = useState('');
+  // Editor state - initialize with props if provided
+  const [title, setTitle] = useState(initialTitle);
+  const [content, setContent] = useState(initialContent);
+  const [category, setCategory] = useState(initialCategory);
+  const [tags, setTags] = useState(initialTags.join(', '));
+  const [banner, setBanner] = useState(initialBanner || '');
   
   // UI state
   const [loading, setLoading] = useState(false);
@@ -54,6 +67,35 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
   
   // Auto-save timer
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Update state when initial props change (for unified editor workflow)
+  useEffect(() => {
+    if (initialTitle !== undefined) setTitle(initialTitle);
+  }, [initialTitle]);
+
+  useEffect(() => {
+    if (initialContent !== undefined) setContent(initialContent);
+  }, [initialContent]);
+
+  useEffect(() => {
+    if (initialCategory !== undefined) setCategory(initialCategory);
+  }, [initialCategory]);
+
+  useEffect(() => {
+    if (initialTags !== undefined) setTags(initialTags.join(', '));
+  }, [initialTags]);
+
+  useEffect(() => {
+    if (initialBanner !== undefined) setBanner(initialBanner || '');
+  }, [initialBanner]);
+
+  // Notify parent of changes (for unified editor workflow)
+  useEffect(() => {
+    if (onChange) {
+      const tagsArray = tags.split(',').map(tag => tag.trim()).filter(Boolean);
+      onChange(title, content, category, tagsArray, banner || null);
+    }
+  }, [title, content, category, tags, banner, onChange]);
   
   // Initialize service and load data
   useEffect(() => {
@@ -71,9 +113,9 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
         setDrafts(userDrafts);
       }
       
-      // Load specific draft if draftId is provided
+      // Load specific draft if draftId is provided (only if no initial props are set)
       const draftId = searchParams.get('draftId');
-      if (draftId) {
+      if (draftId && !initialTitle && !initialContent) {
         const draft = beeBlogService.loadDraft(draftId);
         if (draft) {
           loadDraftIntoEditor(draft);
@@ -83,11 +125,11 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     };
     
     initializeEditor();
-  }, [isConnected, account, searchParams]);
+  }, [isConnected, account, searchParams, initialTitle, initialContent]);
   
-  // Auto-save functionality
+  // Auto-save functionality (only if not in unified mode)
   useEffect(() => {
-    if (!isConnected || !account || !title || !content) return;
+    if (!isConnected || !account || !title || !content || onChange) return; // Skip auto-save if onChange is provided
     
     // Clear existing timer
     if (autoSaveTimer.current) {
@@ -104,7 +146,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
         clearTimeout(autoSaveTimer.current);
       }
     };
-  }, [title, content, category, tags, banner, isConnected, account]);
+  }, [title, content, category, tags, banner, isConnected, account, onChange]);
   
   // Load draft data into editor
   const loadDraftIntoEditor = (draft: BlogDraft) => {
@@ -252,8 +294,10 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
       }
       
       // Refresh drafts list
-      const userDrafts = beeBlogService.getDrafts(account || undefined);
-      setDrafts(userDrafts);
+      if (account) {
+        const userDrafts = beeBlogService.getDrafts(account || undefined);
+        setDrafts(userDrafts);
+      }
       
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to publish content');
@@ -417,12 +461,15 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
               {autoSaving && <span className="auto-saving">●</span>}
             </h3>
             
-            <button 
-              className="new-draft-btn"
-              onClick={handleNewDraft}
-            >
-              + New Draft
-            </button>
+            {/* Only show new draft button if not in unified mode */}
+            {!onChange && (
+              <button 
+                className="new-draft-btn"
+                onClick={handleNewDraft}
+              >
+                + New Draft
+              </button>
+            )}
           </div>
           
           {/* Service Status */}
@@ -460,8 +507,8 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
             </div>
           </div>
           
-          {/* Drafts */}
-          {isConnected && (
+          {/* Drafts - Only show if not in unified mode */}
+          {isConnected && !onChange && (
             <div className="sidebar-section">
               <button 
                 className="drafts-toggle"
@@ -554,55 +601,57 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
             </div>
           </div>
           
-          {/* Actions */}
-          <div className="sidebar-section">
-            <div className="action-buttons">
-              <button 
-                className="save-draft-btn"
-                onClick={handleSaveDraft}
-                disabled={loading || !title.trim()}
-              >
-                {loading ? 'Saving...' : 'Save Draft'}
-              </button>
-              
-              {/* FIXED: Hidden file input with proper event handling */}
-              <input
-                type="file"
-                ref={fileInputRef}
-                style={{ display: 'none' }}
-                accept="image/*"
-                onChange={handleQuickImageUpload}
-                key={Date.now()} // Force re-render to reset input
-              />
-              
-              {/* FIXED: Quick upload button with improved click handler */}
-              <button 
-                className="upload-image-btn"
-                onClick={handleQuickUploadClick}
-                disabled={loading || !isConnected}
-                title={!isConnected ? 'Connect wallet to upload images' : 'Upload image and insert into editor'}
-              >
-                📷 Quick Upload
-              </button>
-              
-              <button 
-                className="asset-browser-btn"
-                onClick={() => setShowAssetBrowser(true)}
-                disabled={loading}
-                title="Open asset library"
-              >
-                🗂️ Asset Library
-              </button>
-              
-              <button 
-                className="publish-btn"
-                onClick={handlePublishToSwarm}
-                disabled={loading || !title.trim() || !category.trim()}
-              >
-                {loading ? 'Publishing...' : mode === 'proposal' ? 'Submit Proposal' : 'Publish to Swarm'}
-              </button>
+          {/* Actions - Only show if not in unified mode */}
+          {!onChange && (
+            <div className="sidebar-section">
+              <div className="action-buttons">
+                <button 
+                  className="save-draft-btn"
+                  onClick={handleSaveDraft}
+                  disabled={loading || !title.trim()}
+                >
+                  {loading ? 'Saving...' : 'Save Draft'}
+                </button>
+                
+                {/* FIXED: Hidden file input with proper event handling */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  accept="image/*"
+                  onChange={handleQuickImageUpload}
+                  key={Date.now()} // Force re-render to reset input
+                />
+                
+                {/* FIXED: Quick upload button with improved click handler */}
+                <button 
+                  className="upload-image-btn"
+                  onClick={handleQuickUploadClick}
+                  disabled={loading || !isConnected}
+                  title={!isConnected ? 'Connect wallet to upload images' : 'Upload image and insert into editor'}
+                >
+                  📷 Quick Upload
+                </button>
+                
+                <button 
+                  className="asset-browser-btn"
+                  onClick={() => setShowAssetBrowser(true)}
+                  disabled={loading}
+                  title="Open asset library"
+                >
+                  🗂️ Asset Library
+                </button>
+                
+                <button 
+                  className="publish-btn"
+                  onClick={handlePublishToSwarm}
+                  disabled={loading || !title.trim() || !category.trim()}
+                >
+                  {loading ? 'Publishing...' : mode === 'proposal' ? 'Submit Proposal' : 'Publish to Swarm'}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </aside>
         
         {/* Main Editor */}

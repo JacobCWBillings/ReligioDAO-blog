@@ -84,6 +84,17 @@ export class AssetService {
   }
 
   /**
+   * Rename an asset
+   * @param assetId Asset ID to rename
+   * @param newName New name for the asset
+   * @param authorAddress Author's address
+   * @returns true if successful, false if asset not found
+   */
+  renameAsset(assetId: string, newName: string, authorAddress: string): boolean {
+    return this.updateAsset(assetId, authorAddress, { name: newName });
+  }
+
+  /**
    * Delete an asset
    */
   deleteAsset(assetId: string, authorAddress: string): boolean {

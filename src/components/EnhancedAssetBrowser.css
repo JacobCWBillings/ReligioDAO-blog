@@ -241,12 +241,26 @@
   overflow: hidden;
   transition: all 0.2s;
   position: relative;
+  cursor: pointer;
 }
 
 .asset-thumbnail:hover {
   border-color: #ff8a00;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   transform: translateY(-2px);
+}
+
+/* Selection states */
+.asset-thumbnail.selected {
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+  background-color: #f8f9ff;
+}
+
+.asset-thumbnail.default-selected {
+  border-color: #28a745;
+  box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.25);
+  background-color: #f8fff8;
 }
 
 .thumbnail-image {
@@ -357,7 +371,7 @@
   100% { transform: rotate(360deg); }
 }
 
-/* Thumbnail Actions */
+/* Enhanced Thumbnail Actions - New improved overlay system */
 .thumbnail-actions {
   position: absolute;
   top: 8px;
@@ -365,11 +379,26 @@
   display: flex;
   gap: 4px;
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s ease;
+  z-index: 2;
 }
 
-.asset-thumbnail:hover .thumbnail-actions {
+/* Show actions on hover OR when asset is selected/default-selected */
+.asset-thumbnail:hover .thumbnail-actions,
+.thumbnail-actions.visible {
   opacity: 1;
+}
+
+/* Make buttons more prominent for selected assets */
+.asset-thumbnail.selected .thumbnail-actions,
+.asset-thumbnail.default-selected .thumbnail-actions {
+  opacity: 1;
+}
+
+.asset-thumbnail.selected .thumbnail-actions .action-btn,
+.asset-thumbnail.default-selected .thumbnail-actions .action-btn {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .action-btn {
@@ -385,11 +414,13 @@
   font-size: 0.8rem;
   transition: all 0.2s;
   backdrop-filter: blur(4px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .action-btn:hover {
   background: white;
   transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .insert-btn:hover {
@@ -472,6 +503,7 @@
     padding: 10px;
   }
   
+  /* On mobile, always show actions for better usability */
   .thumbnail-actions {
     position: static;
     opacity: 1;
@@ -620,4 +652,51 @@
 
 .simple-blog-editor[data-mode="draft"] .editor-sidebar {
   border-left: 3px solid #ff8a00;
+}
+
+/* Simple markdown editor styles */
+.simple-markdown-editor {
+  background-color: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Enhanced selection feedback */
+.asset-thumbnail.selected::before {
+  content: '✓';
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  background-color: #007bff;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  z-index: 3;
+}
+
+.asset-thumbnail.default-selected::before {
+  content: '★';
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  background-color: #28a745;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  z-index: 3;
 }

@@ -253,55 +253,7 @@ export const usePlatformDiagnostics = () => {
 
 // Component for displaying platform status
 export const PlatformStatusBanner: React.FC = () => {
-  const { state } = useSimpleApp();
-  
-  if (state.isInitialized && state.status.beeNodeRunning) {
-    return null; // Don't show banner when everything is working
-  }
-  
-  if (!state.isInitialized) {
-    return (
-      <div className="platform-banner initializing">
-        <div className="banner-content">
-          <span className="banner-icon">⏳</span>
-          <span>Initializing ReligioDAO Platform...</span>
-        </div>
-      </div>
-    );
-  }
-  
-  if (state.error) {
-    return (
-      <div className="platform-banner error">
-        <div className="banner-content">
-          <span className="banner-icon">❌</span>
-          <span>Platform Error: {state.error}</span>
-        </div>
-      </div>
-    );
-  }
-  
-  if (!state.status.beeNodeRunning) {
-    return (
-      <div className="platform-banner warning">
-        <div className="banner-content">
-          <span className="banner-icon">⚠️</span>
-          <span>
-            Bee node offline - Content publishing disabled. 
-            <a 
-              href="https://docs.ethswarm.org/docs/bee/installation/quick-start" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              style={{ marginLeft: '8px', color: 'inherit', textDecoration: 'underline' }}
-            >
-              Install Bee
-            </a>
-          </span>
-        </div>
-      </div>
-    );
-  }
-  
+  // We now handle status display in the hamburger menu instead
   return null;
 };
 
