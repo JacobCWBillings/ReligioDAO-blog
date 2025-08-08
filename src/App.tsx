@@ -6,7 +6,7 @@ import { SimpleAppProvider } from './contexts/SimpleAppContext';
 import { Layout } from './components/Layout';
 
 // Import the unified SimpleEditorPage
-import SimpleEditorPage from './pages/editor/SimpleEditorPage';
+import { SimpleEditorPage } from './pages/editor/SimpleEditorPage';
 
 // Keep existing pages
 import { BlogListPage } from './pages/viewer/BlogListPage';
