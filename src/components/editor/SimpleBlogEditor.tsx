@@ -1,10 +1,10 @@
 // src/components/SimpleBlogEditor.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useWallet } from '../contexts/WalletContext';
-import { beeBlogService, BlogDraft } from '../services/BeeBlogService';
-import { assetService } from '../services/AssetService';
-import { EnhancedAssetBrowser } from './EnhancedAssetBrowser';
+import { useWallet } from '../../contexts/WalletContext';
+import { beeBlogService, BlogDraft } from '../../services/BeeBlogService';
+import { assetService } from '../../services/AssetService';
+import { EnhancedAssetBrowser } from '../EnhancedAssetBrowser';
 import { SimpleMarkdownEditor } from './SimpleMarkdownEditor';
 import './SimpleBlogEditor.css';
 

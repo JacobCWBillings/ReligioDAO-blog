@@ -1,15 +1,15 @@
 // src/pages/SimpleEditorPage.tsx - Unified Editor with Asset Browser Integration
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { useWallet } from '../contexts/WalletContext';
-import { useProposal } from '../blockchain/hooks/useProposal';
-import { PlatformStatusBanner, useSimpleApp } from '../contexts/SimpleAppContext';
-import { beeBlogService, BlogDraft } from '../services/BeeBlogService';
-import { assetService } from '../services/AssetService';
-import { BlogProposal } from '../types/blockchain';
-import { extractProposalIdFromReceipt } from '../blockchain/utils/transactionUtils';
-import { SimpleBlogEditor } from '../components/SimpleBlogEditor';
-import { EnhancedAssetBrowser } from '../components/EnhancedAssetBrowser';
+import { useWallet } from '../../contexts/WalletContext';
+import { useProposal } from '../../blockchain/hooks/useProposal';
+import { PlatformStatusBanner, useSimpleApp } from '../../contexts/SimpleAppContext';
+import { beeBlogService, BlogDraft } from '../../services/BeeBlogService';
+import { assetService } from '../../services/AssetService';
+import { BlogProposal } from '../../types/blockchain';
+import { extractProposalIdFromReceipt } from '../../blockchain/utils/transactionUtils';
+import { SimpleBlogEditor } from '../../components/editor/SimpleBlogEditor';
+import { EnhancedAssetBrowser } from '../../components/EnhancedAssetBrowser';
 import { marked } from 'marked';
 import './SimpleEditorPage.css';
 
