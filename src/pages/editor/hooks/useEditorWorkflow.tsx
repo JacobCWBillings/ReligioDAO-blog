@@ -1,5 +1,4 @@
-
-// src/pages/editor/hooks/useEditorWorkflow.tsx
+// src/pages/editor/hooks/useEditorWorkflow.tsx - FIXED VERSION
 import { useState, useCallback, useEffect } from 'react';
 import { useSimpleApp } from '../../../contexts/SimpleAppContext';
 import { EditorStep, EditorWorkflowState, EnhancedBlogDraft } from '../types/editorTypes';
@@ -13,6 +12,7 @@ interface UseEditorWorkflowProps {
 
 /**
  * Manages the editor workflow state and step transitions
+ * FIXED: Prevents auto-progression to review step
  */
 export const useEditorWorkflow = ({
   initialStep = 'draft',
@@ -33,7 +33,7 @@ export const useEditorWorkflow = ({
     error: null
   });
 
-  // Update workflow state based on draft changes
+  // FIXED: Update workflow state based on draft changes but DON'T auto-advance steps
   useEffect(() => {
     if (draft) {
       const stepStatus = draft.stepProgress || {
@@ -42,23 +42,12 @@ export const useEditorWorkflow = ({
         governance: Boolean(draft.isPublished)
       };
       
-      // Determine current step based on progress
-      let currentStep: EditorStep = 'draft';
-      if (draft.isPublished) {
-        currentStep = 'success';
-      } else if (draft.contentReference && draft.description) {
-        currentStep = 'governance';
-      } else if (draft.contentReference) {
-        currentStep = 'publish';
-      } else if (stepStatus.draft) {
-        currentStep = 'review';
-      }
-      
+      // FIXED: Only update step status, not current step
+      // Let user manually navigate between steps
       setWorkflowState(prev => ({
         ...prev,
-        currentStep,
         stepStatus,
-        canProgress: canProgressFromStep(currentStep, stepStatus)
+        canProgress: canProgressFromStep(prev.currentStep, stepStatus)
       }));
     }
   }, [draft]);
@@ -81,7 +70,17 @@ export const useEditorWorkflow = ({
   }, [appState]);
 
   const goToStep = useCallback((targetStep: EditorStep, force: boolean = false) => {
-    if (!force && !canProgressFromStep(targetStep, workflowState.stepStatus)) {
+    // FIXED: Allow going back to any previous step without restrictions
+    const stepOrder: EditorStep[] = ['draft', 'review', 'publish', 'governance', 'success'];
+    const currentIndex = stepOrder.indexOf(workflowState.currentStep);
+    const targetIndex = stepOrder.indexOf(targetStep);
+    
+    // Allow going back freely, or enforce progression rules for forward movement
+    const canNavigate = force || 
+                       targetIndex <= currentIndex || 
+                       canProgressFromStep(targetStep, workflowState.stepStatus);
+    
+    if (!canNavigate) {
       setWorkflowState(prev => ({
         ...prev,
         error: `Cannot progress to ${targetStep} step. Please complete previous steps.`
@@ -98,14 +97,15 @@ export const useEditorWorkflow = ({
       };
       
       if (onStepChange) {
-        onStepChange(targetStep, newState);
+        // FIXED: Use setTimeout to avoid calling setState during render
+        setTimeout(() => onStepChange(targetStep, newState), 0);
       }
       
       return newState;
     });
     
     return true;
-  }, [workflowState.stepStatus, canProgressFromStep, onStepChange]);
+  }, [workflowState.stepStatus, workflowState.currentStep, canProgressFromStep, onStepChange]);
 
   const updateStepStatus = useCallback((step: 'draft' | 'swarm' | 'governance', completed: boolean) => {
     setWorkflowState(prev => {
@@ -125,11 +125,14 @@ export const useEditorWorkflow = ({
         governance: 'governance'
       };
       
-      enhancedDraftStorage.updateWorkflowProgress(
-        draft.id,
-        stepMap[step],
-        completed
-      );
+      // FIXED: Use setTimeout to avoid setState during render
+      setTimeout(() => {
+        enhancedDraftStorage.updateWorkflowProgress(
+          draft.id,
+          stepMap[step],
+          completed
+        );
+      }, 0);
     }
   }, [draft, canProgressFromStep]);
 

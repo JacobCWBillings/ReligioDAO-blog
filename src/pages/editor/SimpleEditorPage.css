@@ -1,6 +1,6 @@
-// src/pages/editor/SimpleEditorPage.css - Enhanced styles for modular components
-/* Enhanced Editor Page Styles */
+/* src/pages/editor/SimpleEditorPage.css - Clean build-safe version */
 
+/* Enhanced Editor Page Styles */
 .simple-editor-page {
   display: flex;
   flex-direction: column;
@@ -488,6 +488,361 @@
   border: 1px solid #c8e6c9;
 }
 
+/* Review Step Styles */
+.review-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.review-tabs {
+  display: flex;
+  border-bottom: 1px solid #e0e0e0;
+  background-color: #f8f9fa;
+  border-radius: 8px 8px 0 0;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 12px 20px;
+  background: none;
+  border: none;
+  font-weight: 500;
+  cursor: pointer;
+  color: #666;
+  border-bottom: 3px solid transparent;
+  transition: all 0.3s;
+}
+
+.tab-button:hover {
+  color: #ff8a00;
+  background-color: #f0f0f0;
+}
+
+.tab-button.active {
+  color: #ff8a00;
+  border-bottom-color: #ff8a00;
+  background-color: white;
+  font-weight: 600;
+}
+
+.review-content {
+  min-height: 500px;
+  background-color: white;
+  border: 1px solid #e0e0e0;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
+.blog-preview {
+  padding: 30px;
+}
+
+.preview-header h1 {
+  font-size: 2.2rem;
+  margin-bottom: 16px;
+  color: #333;
+  line-height: 1.3;
+}
+
+.preview-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.preview-category {
+  background-color: #f0f0f0;
+  color: #666;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 14px;
+}
+
+.preview-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-tag {
+  background-color: #f9f9f9;
+  color: #666;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.preview-content {
+  line-height: 1.7;
+  margin-bottom: 40px;
+  color: #333;
+}
+
+.preview-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 24px;
+  border-top: 1px solid #eee;
+  margin-top: 30px;
+}
+
+.preview-author {
+  color: #666;
+  font-size: 14px;
+}
+
+.edit-mode {
+  padding: 0;
+}
+
+/* Publish Step Styles */
+.publish-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.content-reference-note {
+  background-color: #e8f5e9;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+  border-left: 4px solid #4caf50;
+}
+
+.content-reference-note h3 {
+  color: #2e7d32;
+  margin-bottom: 12px;
+}
+
+.reference-display {
+  margin: 16px 0;
+  padding: 12px;
+  background-color: rgba(255, 255, 255, 0.8);
+  border-radius: 6px;
+}
+
+.reference-display strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.reference-display code {
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: monospace;
+  word-break: break-all;
+  display: block;
+}
+
+.reference-notice {
+  font-style: italic;
+  color: #2e7d32;
+  margin: 0;
+}
+
+.publish-info {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+}
+
+.publish-details {
+  margin: 16px 0;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.detail-item:last-child {
+  border-bottom: none;
+}
+
+.publish-warning {
+  margin-top: 20px;
+  padding: 16px;
+  background-color: #fff3e0;
+  border-radius: 6px;
+  border-left: 4px solid #ff8a00;
+}
+
+.publish-warning h4 {
+  color: #ef6c00;
+  margin-bottom: 8px;
+}
+
+.publish-warning ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.publish-warning li {
+  margin-bottom: 4px;
+  color: #666;
+}
+
+/* Governance Step Styles */
+.governance-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.governance-form {
+  margin: 24px 0;
+}
+
+.proposal-summary {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.proposal-summary h3 {
+  color: #333;
+  margin-bottom: 16px;
+}
+
+.summary-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.summary-item:last-child {
+  border-bottom: none;
+}
+
+.summary-item strong {
+  min-width: 120px;
+  color: #555;
+}
+
+.summary-item code {
+  background-color: rgba(255, 255, 255, 0.8);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+  flex: 1;
+  margin-left: 8px;
+}
+
+.governance-info {
+  margin: 24px 0;
+  padding: 16px;
+  background-color: #e3f2fd;
+  border-radius: 6px;
+  border-left: 4px solid #2196f3;
+}
+
+.governance-info h4 {
+  color: #1976d2;
+  margin-bottom: 8px;
+}
+
+.governance-info ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.governance-info li {
+  margin-bottom: 4px;
+  color: #666;
+}
+
+/* Success Step Styles */
+.success-container {
+  max-width: 800px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.success-message {
+  background-color: #e8f5e9;
+  border-radius: 12px;
+  padding: 40px;
+  margin: 20px;
+}
+
+.success-icon {
+  font-size: 3rem;
+  margin-bottom: 16px;
+}
+
+.success-message h2 {
+  color: #2e7d32;
+  margin-bottom: 16px;
+}
+
+.success-message p {
+  color: #2e7d32;
+  margin-bottom: 16px;
+  font-size: 16px;
+}
+
+.success-details {
+  margin: 24px 0;
+  text-align: left;
+  background-color: rgba(255, 255, 255, 0.8);
+  padding: 16px;
+  border-radius: 6px;
+}
+
+.success-info {
+  margin: 24px 0;
+  text-align: left;
+}
+
+.success-info h3 {
+  color: #2e7d32;
+  margin-bottom: 12px;
+}
+
+.success-info ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.success-info li {
+  margin-bottom: 8px;
+  color: #2e7d32;
+}
+
+.success-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+/* Error Messages */
+.error-message {
+  background-color: #ffebee;
+  color: #c62828;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 16px 0;
+  border-left: 4px solid #f44336;
+  font-size: 14px;
+}
+
 /* Responsive Design */
 @media (max-width: 1024px) {
   .metadata-row {
@@ -541,5 +896,19 @@
   .upload-messages {
     margin-left: 0;
     margin-top: 8px;
+  }
+  
+  .success-actions {
+    flex-direction: column;
+  }
+  
+  .summary-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  
+  .summary-item code {
+    margin-left: 0;
   }
 }

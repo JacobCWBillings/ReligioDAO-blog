@@ -25,7 +25,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
   onContentPublished,
   onChange,
   initialTitle = '',
-  initialContent = '# Your Blog Title\n\nStart writing your blog post here...',
+  initialContent = '# Your Blog Title \n\n Start writing your blog post here...',
   initialCategory = '',
   initialTags = [],
   initialBanner = null

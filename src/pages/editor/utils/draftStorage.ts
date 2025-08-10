@@ -1,4 +1,4 @@
-// src/pages/editor/utils/draftStorage.ts
+// src/pages/editor/utils/draftStorage.ts - FIXED VERSION
 import { EnhancedBlogDraft, UnifiedBlogData, AssetReference, EditorStep } from '../types/editorTypes';
 // Import the existing BlogProposal type from blockchain types
 import { BlogProposal } from '../../../types/blockchain';
@@ -9,6 +9,7 @@ import { BlogProposal } from '../../../types/blockchain';
  * 2. Tracks asset usage within drafts
  * 3. Stores workflow progress
  * 4. Provides migration from legacy format
+ * FIXED: Prevents duplicate drafts by proper ID management
  */
 export class EnhancedDraftStorage {
   private readonly DRAFT_PREFIX = 'enhanced-blog-draft-';
@@ -16,20 +17,45 @@ export class EnhancedDraftStorage {
   private readonly ASSETS_PREFIX = 'religiodao-assets-';
 
   /**
-   * Save a draft with enhanced tracking
+   * FIXED: Save a draft with enhanced tracking and prevent duplicates
    */
   saveDraft(
     draftData: Partial<EnhancedBlogDraft> & { title: string; content: string; authorAddress: string },
     workflowAction?: string
   ): EnhancedBlogDraft {
-    const draftId = draftData.id || this.generateDraftId();
+    // FIXED: More robust draft ID management
+    let draftId: string;
+    
+    if (draftData.id) {
+      // Use existing ID if provided
+      draftId = draftData.id;
+    } else {
+      // Check if there's already a draft with the same title and author
+      const existingDrafts = this.getDrafts(draftData.authorAddress);
+      const existingDraft = existingDrafts.find(d => 
+        d.title === draftData.title && 
+        d.authorAddress.toLowerCase() === draftData.authorAddress.toLowerCase()
+      );
+      
+      if (existingDraft) {
+        // Update the existing draft instead of creating a new one
+        draftId = existingDraft.id;
+      } else {
+        // Generate new ID only if no existing draft found
+        draftId = this.generateDraftId();
+      }
+    }
+    
     const now = Date.now();
     
     // Analyze content for asset references
     const usedAssets = this.extractAssetReferences(draftData.content, draftData.authorAddress);
     const assetSnapshot = this.createAssetSnapshot(usedAssets);
     
-    // Create enhanced draft
+    // Load existing draft data if updating
+    const existingDraft = this.loadDraft(draftId);
+    
+    // Create enhanced draft, preserving creation time from existing draft
     const enhancedDraft: EnhancedBlogDraft = {
       id: draftId,
       title: draftData.title,
@@ -49,10 +75,10 @@ export class EnhancedDraftStorage {
         swarm: Boolean(draftData.contentReference),
         governance: Boolean(draftData.isPublished)
       },
-      createdAt: draftData.createdAt || now,
+      createdAt: existingDraft?.createdAt || draftData.createdAt || now,
       lastModified: now,
       workflowHistory: [
-        ...(draftData.workflowHistory || []),
+        ...(existingDraft?.workflowHistory || draftData.workflowHistory || []),
         ...(workflowAction ? [{
           step: this.getCurrentStep(draftData),
           timestamp: now,
@@ -66,6 +92,9 @@ export class EnhancedDraftStorage {
       `${this.DRAFT_PREFIX}${draftId}`,
       JSON.stringify(enhancedDraft)
     );
+
+    // FIXED: Clean up any legacy version with same ID to prevent confusion
+    localStorage.removeItem(`${this.LEGACY_PREFIX}${draftId}`);
 
     return enhancedDraft;
   }
@@ -96,12 +125,13 @@ export class EnhancedDraftStorage {
   }
 
   /**
-   * Get all drafts for a user with migration support
+   * FIXED: Get all drafts for a user with deduplication and migration support
    */
   getDrafts(authorAddress?: string): EnhancedBlogDraft[] {
     if (!authorAddress) return [];
     
     const drafts: EnhancedBlogDraft[] = [];
+    const processedIds = new Set<string>(); // Track processed IDs to prevent duplicates
     const migratedDrafts: string[] = [];
 
     // Get all localStorage keys
@@ -116,20 +146,26 @@ export class EnhancedDraftStorage {
           if (draftData) {
             const draft = JSON.parse(draftData) as EnhancedBlogDraft;
             if (!authorAddress || draft.authorAddress.toLowerCase() === authorAddress.toLowerCase()) {
-              drafts.push(draft);
+              if (!processedIds.has(draft.id)) {
+                drafts.push(draft);
+                processedIds.add(draft.id);
+              }
             }
           }
         }
         
-        // Process and migrate legacy drafts
+        // Process and migrate legacy drafts only if not already processed
         else if (key.startsWith(this.LEGACY_PREFIX)) {
           const draftData = localStorage.getItem(key);
           if (draftData) {
             const legacyDraft = JSON.parse(draftData);
             if (!authorAddress || legacyDraft.authorAddress?.toLowerCase() === authorAddress.toLowerCase()) {
-              const migrated = this.migrateLegacyDraft(legacyDraft);
-              drafts.push(migrated);
-              migratedDrafts.push(key);
+              if (!processedIds.has(legacyDraft.id)) {
+                const migrated = this.migrateLegacyDraft(legacyDraft);
+                drafts.push(migrated);
+                processedIds.add(migrated.id);
+                migratedDrafts.push(key);
+              }
             }
           }
         }
@@ -138,21 +174,52 @@ export class EnhancedDraftStorage {
       }
     }
 
-    // Clean up migrated legacy drafts (optional - can be disabled for safety)
-    // migratedDrafts.forEach(key => localStorage.removeItem(key));
+    // FIXED: Clean up migrated legacy drafts to prevent confusion
+    migratedDrafts.forEach(key => localStorage.removeItem(key));
 
     // Sort by last modified (newest first)
     return drafts.sort((a, b) => b.lastModified - a.lastModified);
   }
 
   /**
-   * Delete a draft (both enhanced and legacy versions)
+   * FIXED: Delete a draft (both enhanced and legacy versions) and handle duplicates
    */
   deleteDraft(draftId: string): boolean {
     try {
-      localStorage.removeItem(`${this.DRAFT_PREFIX}${draftId}`);
-      localStorage.removeItem(`${this.LEGACY_PREFIX}${draftId}`); // Clean up legacy version too
-      return true;
+      let deletedCount = 0;
+      
+      // Remove enhanced version
+      const enhancedKey = `${this.DRAFT_PREFIX}${draftId}`;
+      if (localStorage.getItem(enhancedKey)) {
+        localStorage.removeItem(enhancedKey);
+        deletedCount++;
+      }
+      
+      // Remove legacy version
+      const legacyKey = `${this.LEGACY_PREFIX}${draftId}`;
+      if (localStorage.getItem(legacyKey)) {
+        localStorage.removeItem(legacyKey);
+        deletedCount++;
+      }
+      
+      // FIXED: Also remove any drafts with same title (in case of duplicates)
+      const draft = this.loadDraft(draftId);
+      if (draft) {
+        const allDrafts = this.getDrafts(draft.authorAddress);
+        const duplicates = allDrafts.filter(d => 
+          d.title === draft.title && 
+          d.id !== draftId &&
+          d.authorAddress.toLowerCase() === draft.authorAddress.toLowerCase()
+        );
+        
+        duplicates.forEach(duplicate => {
+          localStorage.removeItem(`${this.DRAFT_PREFIX}${duplicate.id}`);
+          localStorage.removeItem(`${this.LEGACY_PREFIX}${duplicate.id}`);
+          deletedCount++;
+        });
+      }
+      
+      return deletedCount > 0;
     } catch (error) {
       console.error('Error deleting draft:', error);
       return false;

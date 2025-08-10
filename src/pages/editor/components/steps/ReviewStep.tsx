@@ -1,6 +1,5 @@
-
-// src/pages/editor/components/steps/ReviewStep.tsx
-import React, { useState } from 'react';
+// src/pages/editor/components/steps/ReviewStep.tsx - FIXED VERSION
+import React, { useState, useCallback } from 'react';
 import { marked } from 'marked';
 import { SimpleMarkdownEditor } from '../../../../components/editor/SimpleMarkdownEditor';
 
@@ -23,6 +22,19 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       return '<p>Error rendering markdown</p>';
     }
   };
+
+  // FIXED: Use useCallback for event handlers to prevent recreating functions
+  const handleBackToDraft = useCallback(() => {
+    workflowState.goToStep('draft');
+  }, [workflowState]);
+
+  const handleContinueToPublish = useCallback(() => {
+    workflowState.goToStep('publish');
+  }, [workflowState]);
+
+  const handleContentChange = useCallback((value: string) => {
+    editorState.updateContent(value);
+  }, [editorState]);
 
   return (
     <div className="review-step">
@@ -84,7 +96,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             <div className="edit-mode">
               <SimpleMarkdownEditor
                 value={editorState.formData.content}
-                onChange={editorState.updateContent}
+                onChange={handleContentChange}
                 height="calc(100vh - 300px)"
               />
             </div>
@@ -97,7 +109,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
         <div className="action-group">
           <button
             className="back-btn"
-            onClick={() => workflowState.goToStep('draft')}
+            onClick={handleBackToDraft}
           >
             ← Back to Edit
           </button>
@@ -106,7 +118,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
         <div className="action-group">
           <button
             className="continue-btn"
-            onClick={() => workflowState.goToStep('publish')}
+            onClick={handleContinueToPublish}
             disabled={!editorState.validateForm('review')}
           >
             Continue to Publish →

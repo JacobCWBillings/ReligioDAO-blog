@@ -41,6 +41,26 @@ export const SimpleEditorPage: React.FC = () => {
   const [assetBrowserError, setAssetBrowserError] = useState<string | null>(null);
   const [assetBrowserSuccess, setAssetBrowserSuccess] = useState<string | null>(null);
 
+  // Callback handlers - moved before early returns
+  const handleDraftSaved = useCallback((draft: EnhancedBlogDraft) => {
+    // Update URL with draft ID if not already present
+    if (!draftId) {
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set('draftId', draft.id);
+      window.history.replaceState({}, '', newUrl.toString());
+    }
+  }, [draftId]);
+
+  const handleWorkflowChange = useCallback((step: EditorStep, workflowState: any) => {
+    // Handle global workflow state changes
+    console.log('Workflow changed:', step, workflowState);
+  }, []);
+
+  const handleStepChange = useCallback((step: EditorStep, workflowState: any) => {
+    // Handle step navigation
+    console.log('Step changed:', step, workflowState);
+  }, []);
+
   // Initialize state management hooks
   const editorState = useEditorState({
     initialDraftId: draftId || undefined,
@@ -52,6 +72,14 @@ export const SimpleEditorPage: React.FC = () => {
     draft: editorState.currentDraft,
     onStepChange: handleStepChange
   });
+
+  // Asset browser integration
+  const handleAssetInsertion = useCallback((markdownCode: string) => {
+    const currentContent = editorState.formData.content;
+    editorState.updateContent(currentContent + '\n\n' + markdownCode);
+    setAssetBrowserSuccess('Asset inserted successfully!');
+    setTimeout(() => setAssetBrowserSuccess(null), 2000);
+  }, [editorState]);
 
   // Early return for platform initialization
   if (!state.isInitialized) {
@@ -83,34 +111,6 @@ export const SimpleEditorPage: React.FC = () => {
       </div>
     );
   }
-
-  // Callback handlers
-  function handleDraftSaved(draft: EnhancedBlogDraft) {
-    // Update URL with draft ID if not already present
-    if (!draftId) {
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.set('draftId', draft.id);
-      window.history.replaceState({}, '', newUrl.toString());
-    }
-  }
-
-  function handleWorkflowChange(step: EditorStep, workflowState: any) {
-    // Handle global workflow state changes
-    console.log('Workflow changed:', step, workflowState);
-  }
-
-  function handleStepChange(step: EditorStep, workflowState: any) {
-    // Handle step navigation
-    console.log('Step changed:', step, workflowState);
-  }
-
-  // Asset browser integration
-  const handleAssetInsertion = useCallback((markdownCode: string) => {
-    const currentContent = editorState.formData.content;
-    editorState.updateContent(currentContent + '\n\n' + markdownCode);
-    setAssetBrowserSuccess('Asset inserted successfully!');
-    setTimeout(() => setAssetBrowserSuccess(null), 2000);
-  }, [editorState]);
 
   // Render step content based on current workflow step
   const renderStepContent = () => {

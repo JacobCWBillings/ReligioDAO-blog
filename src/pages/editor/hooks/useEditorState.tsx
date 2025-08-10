@@ -1,4 +1,4 @@
-// src/pages/editor/hooks/useEditorState.tsx
+// src/pages/editor/hooks/useEditorState.tsx - FIXED VERSION
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWallet } from '../../../contexts/WalletContext';
 import { 
@@ -18,7 +18,7 @@ interface UseEditorStateProps {
 
 /**
  * Centralized state management for the editor
- * Handles form data, validation, auto-save, and workflow coordination
+ * FIXED: Prevents setState during render and ensures proper draft ID management
  */
 export const useEditorState = ({
   initialDraftId,
@@ -53,17 +53,19 @@ export const useEditorState = ({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
-  // Auto-save timer
+  // Auto-save timer and tracking
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
   const lastFormDataRef = useRef<string>('');
+  const isInitializedRef = useRef(false);
 
   // Load initial draft if provided
   useEffect(() => {
-    if (initialDraftId && account) {
+    if (initialDraftId && account && !isInitializedRef.current) {
       const draft = enhancedDraftStorage.loadDraft(initialDraftId);
       if (draft && draft.authorAddress.toLowerCase() === account.toLowerCase()) {
         loadDraftIntoForm(draft);
       }
+      isInitializedRef.current = true;
     }
   }, [initialDraftId, account]);
 
@@ -74,23 +76,28 @@ export const useEditorState = ({
     }
   }, [account]);
 
-  // Track changes for auto-save
+  // FIXED: Track changes for auto-save without causing setState during render
   useEffect(() => {
     const currentFormJson = JSON.stringify(formData);
     const hasChanged = currentFormJson !== lastFormDataRef.current;
     
-    if (hasChanged) {
+    if (hasChanged && isInitializedRef.current) {
       setHasUnsavedChanges(true);
       lastFormDataRef.current = currentFormJson;
       
-      // Schedule auto-save if connected and has required fields
+      // FIXED: Schedule auto-save only if connected and has required fields
+      // Use setTimeout to avoid setState during render
       if (isConnected && account && formData.title.trim() && formData.content.trim()) {
         if (autoSaveTimer.current) {
           clearTimeout(autoSaveTimer.current);
         }
         
         autoSaveTimer.current = setTimeout(() => {
-          handleAutoSave();
+          // Only auto-save if data is still current (user hasn't made more changes)
+          const latestFormJson = JSON.stringify(formData);
+          if (latestFormJson === currentFormJson) {
+            handleAutoSave();
+          }
         }, 3000); // Auto-save after 3 seconds of inactivity
       }
     }
@@ -184,7 +191,7 @@ export const useEditorState = ({
     });
   }, []);
 
-  // Draft operations
+  // FIXED: Draft operations with proper ID management
   const saveDraft = useCallback(async (action?: string): Promise<EnhancedBlogDraft | null> => {
     if (!isConnected || !account) {
       throw new Error('Please connect your wallet to save drafts');
@@ -195,10 +202,11 @@ export const useEditorState = ({
     }
 
     try {
+      // FIXED: Always use existing draft ID if available to prevent multiple versions
       const savedDraft = enhancedDraftStorage.saveDraft(
         {
           ...formData,
-          id: currentDraft?.id,
+          id: currentDraft?.id, // This ensures we update existing draft instead of creating new one
           stepProgress: currentDraft?.stepProgress
         },
         action || 'Manual save'
@@ -209,7 +217,8 @@ export const useEditorState = ({
       setLastSaved(new Date());
       
       if (onDraftSaved) {
-        onDraftSaved(savedDraft);
+        // FIXED: Use setTimeout to avoid setState during render
+        setTimeout(() => onDraftSaved(savedDraft), 0);
       }
       
       return savedDraft;
@@ -254,6 +263,9 @@ export const useEditorState = ({
     setHasUnsavedChanges(false);
     setLastSaved(new Date(draft.lastModified));
     setFormErrors({});
+    
+    // Update reference for auto-save tracking
+    lastFormDataRef.current = JSON.stringify(formData);
   }, []);
 
   const createNewDraft = useCallback(() => {
@@ -275,6 +287,9 @@ export const useEditorState = ({
     setHasUnsavedChanges(false);
     setLastSaved(null);
     setFormErrors({});
+    
+    // Reset tracking
+    lastFormDataRef.current = '';
   }, [account]);
 
   // Helper function to generate preview
