@@ -1,7 +1,7 @@
 // src/pages/editor/components/steps/DraftStep.tsx
 import React, { useRef, useCallback } from 'react';
 import { useWallet } from '../../../../contexts/WalletContext';
-import { assetService } from '../../../../services/AssetService';
+import { assetService } from '../../../../services';
 import { SimpleMarkdownEditor } from '../../../../components/editor/SimpleMarkdownEditor';
 
 interface DraftStepProps {

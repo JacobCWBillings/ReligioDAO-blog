@@ -1,17 +1,25 @@
-// src/components/SimpleBlogEditor.tsx
+// src/components/SimpleBlogEditor.tsx - FIXED VERSION
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useWallet } from '../../contexts/WalletContext';
-import { beeBlogService, BlogDraft } from '../../services/BeeBlogService';
-import { assetService } from '../../services/AssetService';
+
+// New service architecture
+import { swarmService, contentService, assetService } from '../../services';
+
+// FIXED: Import EnhancedBlogDraft correctly
+import { enhancedDraftStorage, type EnhancedBlogDraft } from '../../utils/draftStorage';
+
+// Components
 import { EnhancedAssetBrowser } from './EnhancedAssetBrowser';
 import { SimpleMarkdownEditor } from './SimpleMarkdownEditor';
+
+// Styles
 import './SimpleBlogEditor.css';
 
 interface SimpleBlogEditorProps {
   mode?: 'draft' | 'proposal';
-  onContentPublished?: (contentReference: string, draft: BlogDraft) => void;
-  // New props for unified editor workflow
+  onContentPublished?: (contentReference: string, draft: EnhancedBlogDraft) => void;
+  // Unified editor workflow props
   onChange?: (title: string, content: string, category: string, tags: string[], banner: string | null) => void;
   initialTitle?: string;
   initialContent?: string;
@@ -25,7 +33,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
   onContentPublished,
   onChange,
   initialTitle = '',
-  initialContent = '# Your Blog Title \n\n Start writing your blog post here...',
+  initialContent = '# Your Blog Title \n\nStart writing your blog post here...',
   initialCategory = '',
   initialTags = [],
   initialBanner = null
@@ -56,7 +64,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
   
   // Draft management
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<BlogDraft[]>([]);
+  const [drafts, setDrafts] = useState<EnhancedBlogDraft[]>([]);
   const [showDrafts, setShowDrafts] = useState(false);
   
   // Asset browser
@@ -97,30 +105,35 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     }
   }, [title, content, category, tags, banner, onChange]);
   
-  // Initialize service and load data
+  // Initialize services and load data
   useEffect(() => {
     const initializeEditor = async () => {
-      // Initialize the bee service
-      await beeBlogService.initialize();
-      
-      // Check service status
-      const status = await beeBlogService.getServiceStatus();
-      setServiceStatus(status);
-      
-      // Load drafts if user is connected
-      if (isConnected && account) {
-        const userDrafts = beeBlogService.getDrafts(account || undefined);
-        setDrafts(userDrafts);
-      }
-      
-      // Load specific draft if draftId is provided (only if no initial props are set)
-      const draftId = searchParams.get('draftId');
-      if (draftId && !initialTitle && !initialContent) {
-        const draft = beeBlogService.loadDraft(draftId);
-        if (draft) {
-          loadDraftIntoEditor(draft);
-          setCurrentDraftId(draftId);
+      try {
+        // Initialize Swarm service
+        await swarmService.initialize();
+        
+        // Get service status
+        const status = await swarmService.getStatus();
+        setServiceStatus(status);
+        
+        // Load drafts if user is connected
+        if (isConnected && account) {
+          const userDrafts = enhancedDraftStorage.getDrafts(account);
+          setDrafts(userDrafts);
         }
+        
+        // Load specific draft if draftId is provided (only if no initial props are set)
+        const draftId = searchParams.get('draftId');
+        if (draftId && !initialTitle && !initialContent) {
+          const draft = enhancedDraftStorage.loadDraft(draftId);
+          if (draft) {
+            loadDraftIntoEditor(draft);
+            setCurrentDraftId(draftId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to initialize editor:', error);
+        setError('Failed to initialize editor services');
       }
     };
     
@@ -149,7 +162,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
   }, [title, content, category, tags, banner, isConnected, account, onChange]);
   
   // Load draft data into editor
-  const loadDraftIntoEditor = (draft: BlogDraft) => {
+  const loadDraftIntoEditor = (draft: EnhancedBlogDraft) => {
     setTitle(draft.title);
     setContent(draft.content);
     setCategory(draft.category);
@@ -163,20 +176,21 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     
     setAutoSaving(true);
     try {
-      const draft = beeBlogService.saveDraft({
+      const draftData = {
         id: currentDraftId || undefined,
         title: title.trim(),
         content,
         category: category.trim(),
         tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        banner,
+        banner: banner || null,
         authorAddress: account
-      });
-      
+      };
+
+      const draft = enhancedDraftStorage.saveDraft(draftData, 'Auto-save');
       setCurrentDraftId(draft.id);
       
       // Refresh drafts list
-      const userDrafts = beeBlogService.getDrafts(account || undefined);
+      const userDrafts = enhancedDraftStorage.getDrafts(account);
       setDrafts(userDrafts);
     } catch (err) {
       console.error('Auto-save failed:', err);
@@ -201,22 +215,23 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     setError(null);
     
     try {
-      const draft = beeBlogService.saveDraft({
+      const draftData = {
         id: currentDraftId || undefined,
         title: title.trim(),
         content,
         category: category.trim(),
         tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        banner,
+        banner: banner || null,
         authorAddress: account!
-      });
-      
+      };
+
+      const draft = enhancedDraftStorage.saveDraft(draftData, 'Manual save');
       setCurrentDraftId(draft.id);
       setSuccess('Draft saved successfully!');
       setTimeout(() => setSuccess(null), 3000);
       
       // Refresh drafts list
-      const userDrafts = beeBlogService.getDrafts(account || undefined);
+      const userDrafts = enhancedDraftStorage.getDrafts(account!);
       setDrafts(userDrafts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save draft');
@@ -225,7 +240,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     }
   };
   
-  // Publish to Swarm
+  // Publish to Swarm using new ContentService
   const handlePublishToSwarm = async () => {
     if (!isConnected) {
       setError('Please connect your wallet to publish');
@@ -249,14 +264,16 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
       // First, save as draft if not already saved
       let draftId = currentDraftId;
       if (!draftId) {
-        const draft = beeBlogService.saveDraft({
+        const draftData = {
           title: title.trim(),
           content,
           category: category.trim(),
           tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-          banner,
+          banner: banner || null,
           authorAddress: account!
-        });
+        };
+
+        const draft = enhancedDraftStorage.saveDraft(draftData, 'Pre-publish save');
         draftId = draft.id;
         setCurrentDraftId(draftId);
       }
@@ -264,19 +281,36 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
       // Process content to use public gateway URLs for published content
       const processedContent = assetService.processMarkdownForPublication(content);
       
-      // Update the draft with processed content before publishing
-      beeBlogService.saveDraft({
+      // Create blog content structure for ContentService
+      const blogContent = {
+        title: title.trim(),
+        content: processedContent,
+        metadata: {
+          author: account!,
+          category: category.trim(),
+          tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+          createdAt: Date.now(),
+          banner: banner || null
+        }
+      };
+      
+      // Upload using ContentService
+      const contentReference = await contentService.uploadBlogContent(blogContent);
+      
+      // Update draft with content reference and published status
+      const updatedDraftData = {
         id: draftId,
         title: title.trim(),
         content: processedContent, // Use processed content with public URLs
         category: category.trim(),
         tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        banner,
-        authorAddress: account!
-      });
-      
-      // Publish to Swarm
-      const { draft, contentReference } = await beeBlogService.publishDraft(draftId);
+        banner: banner || null,
+        authorAddress: account!,
+        contentReference,
+        isPublished: true
+      };
+
+      const updatedDraft = enhancedDraftStorage.saveDraft(updatedDraftData, 'Published to Swarm');
       
       setSuccess(`Content published to Swarm! Reference: ${contentReference.substring(0, 10)}...`);
       
@@ -285,7 +319,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
       
       // Call callback if provided (for proposal mode)
       if (onContentPublished) {
-        onContentPublished(contentReference, draft);
+        onContentPublished(contentReference, updatedDraft);
       }
       
       // For proposal mode, navigate to proposal submission
@@ -294,10 +328,8 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
       }
       
       // Refresh drafts list
-      if (account) {
-        const userDrafts = beeBlogService.getDrafts(account || undefined);
-        setDrafts(userDrafts);
-      }
+      const userDrafts = enhancedDraftStorage.getDrafts(account!);
+      setDrafts(userDrafts);
       
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to publish content');
@@ -306,7 +338,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     }
   };
   
-  // Handle quick image upload (for simple usage) - FIXED
+  // Handle quick image upload using new AssetService
   const handleQuickImageUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !account) {
@@ -317,31 +349,14 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
       return;
     }
     
-    if (!file.type.startsWith('image/')) {
-      setError('Please select an image file');
-      // Reset the input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      return;
-    }
-    
-    if (file.size > 5 * 1024 * 1024) { // 5MB limit
-      setError('Image must be smaller than 5MB');
-      // Reset the input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      return;
-    }
-    
     setLoading(true);
     setError(null);
     
     try {
+      // Upload using new AssetService
       const asset = await assetService.uploadAsset(file, account);
       
-      // Generate markdown with public gateway for published content
+      // Generate markdown with appropriate gateway based on mode
       const imageMarkdown = assetService.generateAssetMarkdown(
         asset, 
         undefined, // Use default alt text
@@ -364,7 +379,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     }
   }, [account, mode]);
   
-  // Handle quick upload button click - FIXED
+  // Handle quick upload button click
   const handleQuickUploadClick = useCallback(() => {
     if (!account) {
       setError('Please connect your wallet to upload images');
@@ -401,7 +416,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
   };
   
   // Load a draft from the sidebar
-  const handleLoadDraft = (draft: BlogDraft) => {
+  const handleLoadDraft = (draft: EnhancedBlogDraft) => {
     loadDraftIntoEditor(draft);
     setCurrentDraftId(draft.id);
     setShowDrafts(false);
@@ -410,22 +425,24 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
   // Delete a draft
   const handleDeleteDraft = (draftId: string) => {
     if (window.confirm('Are you sure you want to delete this draft?')) {
-      beeBlogService.deleteDraft(draftId);
+      const success = enhancedDraftStorage.deleteDraft(draftId);
       
-      // Refresh drafts list
-      if (account) {
-        const userDrafts = beeBlogService.getDrafts(account || undefined);
-        setDrafts(userDrafts);
-      }
-      
-      // If we deleted the current draft, reset the editor
-      if (draftId === currentDraftId) {
-        setCurrentDraftId(null);
-        setTitle('');
-        setContent('# Your Blog Title\n\nStart writing your blog post here...');
-        setCategory('');
-        setTags('');
-        setBanner('');
+      if (success) {
+        // Refresh drafts list
+        if (account) {
+          const userDrafts = enhancedDraftStorage.getDrafts(account);
+          setDrafts(userDrafts);
+        }
+        
+        // If we deleted the current draft, reset the editor
+        if (draftId === currentDraftId) {
+          setCurrentDraftId(null);
+          setTitle('');
+          setContent('# Your Blog Title\n\nStart writing your blog post here...');
+          setCategory('');
+          setTags('');
+          setBanner('');
+        }
       }
     }
   };
@@ -442,7 +459,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
     setSuccess(null);
   };
 
-  // Preview content with public URLs (for proposal mode)
+  // Preview content with appropriate URLs based on mode
   const getPreviewContent = () => {
     if (mode === 'proposal') {
       return assetService.processMarkdownForPublication(content);
@@ -613,7 +630,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
                   {loading ? 'Saving...' : 'Save Draft'}
                 </button>
                 
-                {/* FIXED: Hidden file input with proper event handling */}
+                {/* Hidden file input with proper event handling */}
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -623,7 +640,7 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
                   key={Date.now()} // Force re-render to reset input
                 />
                 
-                {/* FIXED: Quick upload button with improved click handler */}
+                {/* Quick upload button */}
                 <button 
                   className="upload-image-btn"
                   onClick={handleQuickUploadClick}

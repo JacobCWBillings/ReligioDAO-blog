@@ -2,8 +2,8 @@
 // src/pages/editor/components/DraftManager.tsx
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../../../contexts/WalletContext';
-import { EnhancedBlogDraft } from '../types/editorTypes';
-import { enhancedDraftStorage } from '../utils/draftStorage';
+import { EnhancedBlogDraft } from '../../../types/editorTypes';
+import { enhancedDraftStorage } from '../../../utils/draftStorage';
 
 interface DraftManagerProps {
   currentDraft?: EnhancedBlogDraft | null;

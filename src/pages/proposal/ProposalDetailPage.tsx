@@ -1,11 +1,11 @@
-// src/pages/proposal/ProposalDetailPage.tsx - Complete component with 0-based indexing fix
+// src/pages/proposal/ProposalDetailPage.tsx - Updated to use new service architecture
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
 import { Proposal, ProposalStatus } from '../../types/blockchain';
 import { BlogProposalMinting } from '../../components/proposal/BlogProposalMinting';
-import swarmContentService from '../../services/SwarmContentService';
+import { services } from '../../services'; // Use new service architecture
 import { formatAddress } from '../../blockchain/utils/walletUtils';
 import './ProposalDetailPage.css';
 
@@ -96,7 +96,7 @@ export const ProposalDetailPage: React.FC = () => {
     loadProposal();
   }, [contractProposalId, getProposalById]);
 
-  // Function to fetch content from Swarm
+  // Function to fetch content from Swarm using new service architecture
   const fetchProposalContent = async (contentReference: string) => {
     if (!contentReference || contentReference.trim() === '' || fetchContentAttempted) {
       if (!contentReference) setContentError('Content reference not found in proposal data');
@@ -109,7 +109,8 @@ export const ProposalDetailPage: React.FC = () => {
       setContentLoading(true);
       console.log(`Fetching proposal content for reference: ${contentReference}`);
       
-      const html = await swarmContentService.getContentAsHtml(contentReference);
+      // Use the new ContentService with caching
+      const html = await services.content.getContentAsHtml(contentReference);
       
       if (!html || html.trim() === '') {
         setContentError('Retrieved empty content');
@@ -295,7 +296,7 @@ export const ProposalDetailPage: React.FC = () => {
     }
   };
   
-  // Handle retry content loading
+  // Handle retry content loading with new service architecture
   const handleRetryContentLoad = () => {
     if (!proposal?.contentReference) return;
     
@@ -303,7 +304,8 @@ export const ProposalDetailPage: React.FC = () => {
     setContentLoading(true);
     setFetchContentAttempted(false);
     
-    swarmContentService.removeFromCache(proposal.contentReference);
+    // Clear cache and retry with new ContentService
+    services.content.removeFromCache(proposal.contentReference);
     fetchProposalContent(proposal.contentReference);
   };
   
@@ -442,6 +444,18 @@ export const ProposalDetailPage: React.FC = () => {
                   >
                     Retry Loading Content
                   </button>
+                  {/* Offer direct link option for debugging */}
+                  {proposal.contentReference && (
+                    <a 
+                      href={services.content.getBlogUrl(proposal.contentReference, true)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="direct-link-button"
+                      style={{marginLeft: '10px', textDecoration: 'underline'}}
+                    >
+                      Open Directly in Browser
+                    </a>
+                  )}
                 </div>
               ) : proposalContent ? (
                 <div className={`proposal-preview-container ${showFullContent ? 'expanded' : ''}`}>

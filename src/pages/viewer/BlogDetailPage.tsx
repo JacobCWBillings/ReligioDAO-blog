@@ -1,4 +1,4 @@
-// src/pages/viewer/BlogDetailPage.tsx
+// src/pages/viewer/BlogDetailPage.tsx - Updated to use new service architecture
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useBlogNFT } from '../../blockchain/hooks/useBlogNFT';
@@ -6,7 +6,7 @@ import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
 import { formatAddress } from '../../blockchain/utils/walletUtils';
 import { BlogDetailSkeleton } from '../../components/skeletons/Skeleton';
-import swarmContentService from '../../services/SwarmContentService';
+import { services } from '../../services'; // Use new service architecture
 import defaultImage from '../../static/media/default.jpg';
 import './BlogDetailPage.css';
 
@@ -26,7 +26,7 @@ export const BlogDetailPage: React.FC = () => {
   const [fetchAttempted, setFetchAttempted] = useState<boolean>(false);
   const [relatedBlogs, setRelatedBlogs] = useState<any[]>([]);
 
-  // Fetch blog content from Swarm using our service with web-friendly approach
+  // Fetch blog content from Swarm using new service architecture
   const fetchBlogContent = useCallback(async (contentReference: string) => {
     if (!contentReference || contentReference.trim() === '') {
       setError('Blog content reference not found');
@@ -42,9 +42,8 @@ export const BlogDetailPage: React.FC = () => {
       setContentLoading(true);
       console.log(`Fetching blog content for reference: ${contentReference}`);
       
-      // Use web-optimized approach via SwarmContentService
-      // This will first try bzz endpoint for HTML/web content
-      const html = await swarmContentService.getContentAsHtml(contentReference);
+      // Use the new ContentService with caching
+      const html = await services.content.getContentAsHtml(contentReference);
       
       if (!html || html.trim() === '') {
         console.error('Retrieved empty content from Swarm');
@@ -204,12 +203,12 @@ export const BlogDetailPage: React.FC = () => {
     return authorAddress && authorAddress.toLowerCase() === account.toLowerCase();
   }, [account, blog, isConnected]);
 
-  // Handle share button click
+  // Handle share button click with new service architecture
   const handleShare = () => {
     // If we have a direct Swarm link, offer to share that too
     if (blog?.contentReference) {
       const appLink = window.location.href;
-      const swarmDirectLink = `https://gateway.ethswarm.org/bzz/${blog.contentReference}/`;
+      const swarmDirectLink = services.content.getBlogUrl(blog.contentReference, true);
       
       if (window.confirm('Copy application link (OK) or direct Swarm link (Cancel)?')) {
         navigator.clipboard.writeText(appLink);
@@ -224,7 +223,7 @@ export const BlogDetailPage: React.FC = () => {
     }
   };
   
-  // Handle retry content loading with web-first approach
+  // Handle retry content loading with new service architecture
   const handleRetryContentLoad = async () => {
     if (!blog) return;
     
@@ -237,11 +236,11 @@ export const BlogDetailPage: React.FC = () => {
                       (blog.metadata?.properties?.contentReference || '');
     
     if (contentRef.trim()) {
-      // Clear from cache to force fresh fetch
-      swarmContentService.removeFromCache(contentRef);
+      // Clear from cache to force fresh fetch using new ContentService
+      services.content.removeFromCache(contentRef);
       
       // Try to offer direct web link if content fails to load in the app
-      const webUrl = `https://gateway.ethswarm.org/bzz/${contentRef}/`;
+      const webUrl = services.content.getBlogUrl(contentRef, true);
       console.log(`Direct web access URL: ${webUrl}`);
       
       // Continue with in-app fetch
@@ -351,13 +350,19 @@ export const BlogDetailPage: React.FC = () => {
           </div>
         </div>
         
-        {/* Debug Info (only in development) */}
+        {/* Debug Info (only in development) - Updated for new service architecture */}
         {process.env.NODE_ENV === 'development' && (
           <div className="content-debug-info" style={{background: '#f8f8f8', padding: '10px', marginBottom: '20px', fontSize: '12px', fontFamily: 'monospace'}}>
             <div>Content Reference: {blog.contentReference || 'Not directly available'}</div>
             <div>Nested Reference: {blog.metadata?.properties?.contentReference || 'Not available in properties'}</div>
-            <div>Web URL: {blog.contentReference ? `https://gateway.ethswarm.org/bzz/${blog.contentReference}/` : 'Not available'}</div>
-            <div>Bytes URL: {blog.contentReference ? `https://gateway.ethswarm.org/bytes/${blog.contentReference}` : 'Not available'}</div>
+            {blog.contentReference && (
+              <>
+                <div>Web URL: {services.content.getBlogUrl(blog.contentReference, true)}</div>
+                <div>Local URL: {services.content.getBlogUrl(blog.contentReference, false)}</div>
+                <div>Asset URL: {services.swarm.getContentUrl(blog.contentReference, true, 'bytes')}</div>
+              </>
+            )}
+            <div>Service Status: {services.isInitialized ? 'Initialized' : 'Not Initialized'}</div>
           </div>
         )}
         
@@ -375,7 +380,7 @@ export const BlogDetailPage: React.FC = () => {
             </button>
             {blog?.contentReference && (
               <a 
-                href={`https://gateway.ethswarm.org/bzz/${blog.contentReference}/`}
+                href={services.content.getBlogUrl(blog.contentReference, true)}
                 target="_blank"
                 rel="noreferrer"
                 className="direct-link-button"
@@ -413,6 +418,15 @@ export const BlogDetailPage: React.FC = () => {
               Owner: {formatAddress(blog.owner, 6, 4)}
             </div>
           </div>
+          
+          {/* Service Information Footer (Development Only) */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="service-info-footer" style={{marginTop: '20px', padding: '10px', background: '#f0f0f0', borderRadius: '4px', fontSize: '12px'}}>
+              <strong>Service Architecture Debug:</strong>
+              <div>Content Service Cache Size: {services.content.getCacheStats().size}</div>
+              <div>Swarm Service Config: {JSON.stringify(services.swarm.getConfig(), null, 2)}</div>
+            </div>
+          )}
         </div>
       </div>
       

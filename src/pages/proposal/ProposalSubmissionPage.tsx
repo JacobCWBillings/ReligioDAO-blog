@@ -1,15 +1,18 @@
-// src/pages/proposal/ProposalSubmissionPage.tsx
+// src/pages/proposal/ProposalSubmissionPage.tsx - REFACTORED for new service architecture
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useWallet } from '../../contexts/WalletContext';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useSimpleApp } from '../../contexts/SimpleAppContext';
 import { useProposalSubmissionGuard } from '../../hooks/useNavigationGuard';
-import { beeBlogService, BlogDraft } from '../../services/BeeBlogService';
+import { services, contentService } from '../../services/index';
 import { BlogProposal } from '../../types/blockchain';
 import { extractProposalIdFromReceipt } from '../../blockchain/utils/transactionUtils';
 import { marked } from 'marked';
 import './ProposalSubmissionPage.css';
+
+// Import the existing enhanced draft storage implementation
+import { enhancedDraftStorage, EnhancedBlogDraft } from '../../utils/draftStorage';
 
 export const ProposalSubmissionPage: React.FC = () => {
   // Apply the navigation guard
@@ -36,7 +39,7 @@ export const ProposalSubmissionPage: React.FC = () => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [proposalId, setProposalId] = useState<string | null>(null);
-  const [loadedDraft, setLoadedDraft] = useState<BlogDraft | null>(null);
+  const [loadedDraft, setLoadedDraft] = useState<EnhancedBlogDraft | null>(null);
   
   // Form validation
   const [formErrors, setFormErrors] = useState<{
@@ -56,8 +59,8 @@ export const ProposalSubmissionPage: React.FC = () => {
       return;
     }
     
-    // Load draft using BeeBlogService
-    const draft = beeBlogService.loadDraft(draftId);
+    // Load draft using enhanced draft storage
+    const draft = enhancedDraftStorage.loadDraft(draftId);
     
     if (!draft) {
       console.log('Draft not found, redirecting to editor');
@@ -81,18 +84,14 @@ export const ProposalSubmissionPage: React.FC = () => {
     
     setTitle(loadedDraft.title);
     setContent(loadedDraft.content);
-    setPreview(loadedDraft.preview);
+    setPreview(loadedDraft.preview || '');
     setBanner(loadedDraft.banner || null);
     setCategory(loadedDraft.category);
     setContentReference(loadedDraft.contentReference || '');
     
-    // Handle tags - if it's an array, join it; if it's a string, use it
-    if (loadedDraft.tags) {
-      if (Array.isArray(loadedDraft.tags)) {
-        setTags(loadedDraft.tags.join(', '));
-      } else if (typeof loadedDraft.tags === 'string') {
-        setTags(loadedDraft.tags);
-      }
+    // Handle tags - join array to string
+    if (loadedDraft.tags && Array.isArray(loadedDraft.tags)) {
+      setTags(loadedDraft.tags.join(', '));
     }
     
     // Generate a default description if none exists
@@ -144,7 +143,7 @@ export const ProposalSubmissionPage: React.FC = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // Upload content to Swarm using BeeBlogService
+  // Upload content to Swarm using new ContentService
   const uploadToSwarm = async (): Promise<string> => {
     // If we already have a content reference from the draft, use that
     if (contentReference) {
@@ -155,10 +154,10 @@ export const ProposalSubmissionPage: React.FC = () => {
     setUploadError(null);
     
     try {
-      // Check if BeeBlogService is ready
-      const serviceStatus = await beeBlogService.getServiceStatus();
-      if (!serviceStatus.nodeRunning) {
-        throw new Error('Bee node is not running. Please start your local Bee node.');
+      // Check if services are ready
+      const serviceStatus = await services.getStatus();
+      if (!serviceStatus.nodeRunning && !serviceStatus.publicGateway) {
+        throw new Error('No Swarm connectivity available. Please check your setup.');
       }
       
       // Create blog content object for upload
@@ -170,12 +169,12 @@ export const ProposalSubmissionPage: React.FC = () => {
           category,
           tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
           createdAt: Date.now(),
-          banner: banner || undefined
+          banner: banner || null
         }
       };
       
-      // Upload using BeeBlogService
-      const reference = await beeBlogService.uploadBlogContent(blogContent);
+      // Upload using new ContentService
+      const reference = await contentService.uploadBlogContent(blogContent);
       
       // Update the draft with the content reference
       if (loadedDraft && draftId) {
@@ -189,7 +188,7 @@ export const ProposalSubmissionPage: React.FC = () => {
           lastModified: Date.now()
         };
         
-        beeBlogService.saveDraft(updatedDraft);
+        enhancedDraftStorage.saveDraft(updatedDraft, 'Content uploaded to Swarm');
       }
       
       return reference;
@@ -253,21 +252,15 @@ export const ProposalSubmissionPage: React.FC = () => {
           }
         }
         
-        // Mark draft as published and remove from localStorage
-        if (draftId) {
-          // Update draft to mark as published
-          if (loadedDraft) {
-            const publishedDraft = {
-              ...loadedDraft,
-              isPublished: true,
-              contentReference: reference,
-              lastModified: Date.now()
-            };
-            beeBlogService.saveDraft(publishedDraft);
-          }
-          
-          // Optionally remove the draft after successful submission
-          // beeBlogService.deleteDraft(draftId);
+        // Mark draft as published
+        if (draftId && loadedDraft) {
+          const publishedDraft = {
+            ...loadedDraft,
+            isPublished: true,
+            contentReference: reference,
+            lastModified: Date.now()
+          };
+          enhancedDraftStorage.saveDraft(publishedDraft, 'Published as proposal');
         }
       }
     } catch (err) {
@@ -293,7 +286,9 @@ export const ProposalSubmissionPage: React.FC = () => {
   };
 
   // Check if platform is ready for content upload
-  const isPlatformReady = appState.isInitialized && appState.status.beeNodeRunning;
+  const isPlatformReady = appState.isInitialized && 
+    appState.status.initialized && 
+    (appState.status.beeNodeRunning || appState.status.publicGateway !== '');
 
   return (
     <div className="proposal-submission-page">
@@ -301,7 +296,7 @@ export const ProposalSubmissionPage: React.FC = () => {
       
       {!isPlatformReady && (
         <div className="platform-warning">
-          <p>⚠️ Platform not ready for content upload. Please ensure your Bee node is running.</p>
+          <p>⚠️ Platform not ready for content upload. Please ensure your Bee node is running or check public gateway connectivity.</p>
         </div>
       )}
       
@@ -310,6 +305,7 @@ export const ProposalSubmissionPage: React.FC = () => {
           <h2>Proposal Submitted Successfully!</h2>
           <p>Your blog proposal has been submitted to the DAO for voting.</p>
           <p>Content Reference: <code>{contentReference}</code></p>
+          {proposalId && <p>Proposal ID: <code>{proposalId}</code></p>}
           <button className="primary-button" onClick={viewProposal}>
             View Proposal
           </button>

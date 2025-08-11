@@ -1,4 +1,4 @@
-// src/services/ContentService.ts
+// src/services/ContentService.ts - Enhanced version with caching
 import { SwarmService } from './SwarmService';
 import { marked } from 'marked';
 
@@ -21,18 +21,37 @@ export interface ProcessedBlogContent extends BlogContent {
   contentReference?: string;
 }
 
+// Interface for cached content
+interface CachedContent {
+  content: string;
+  html: string;
+  timestamp: number;
+  contentType?: string;
+}
+
 /**
+ * Enhanced ContentService with caching capabilities
  * Handles blog content formatting, processing, and Swarm operations
  * Bridges between editor data and distributed storage
  */
 export class ContentService {
-  constructor(private swarmService: SwarmService) {
-    // Configure marked for better HTML generation
+  private contentCache: Map<string, CachedContent>;
+  private cacheExpiryTime: number; // Cache expiry time in milliseconds
+
+  constructor(
+    private swarmService: SwarmService, 
+    cacheExpiryTimeInMinutes: number = 30
+  ) {
+    // Initialize the cache
+    this.contentCache = new Map<string, CachedContent>();
+    this.cacheExpiryTime = cacheExpiryTimeInMinutes * 60 * 1000;
+
+    // FIXED: Configure marked for better HTML generation with correct options
     marked.setOptions({
       breaks: true,
-      gfm: true,
-      headerIds: true,
-      sanitize: false // We control the input, so we can trust it
+      gfm: true
+      // REMOVED: headerIds and sanitize - these are not valid options in current marked version
+      // Note: sanitize was deprecated and removed - marked now expects manual sanitization if needed
     });
   }
 
@@ -84,6 +103,234 @@ export class ContentService {
       console.error('Error downloading blog content:', error);
       throw new Error(`Failed to download blog content: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Get content as HTML with caching (replacement for SwarmContentService.getContentAsHtml)
+   */
+  async getContentAsHtml(contentReference: string, forceFresh: boolean = false): Promise<string> {
+    // Check if content is in cache and not expired
+    const cachedContent = this.contentCache.get(contentReference);
+    const now = Date.now();
+    
+    if (!forceFresh && cachedContent && (now - cachedContent.timestamp) < this.cacheExpiryTime) {
+      console.log('Returning cached content for:', contentReference);
+      return cachedContent.html;
+    }
+    
+    // Content not in cache, expired, or force fresh requested
+    try {
+      console.log('Fetching fresh content for:', contentReference);
+      const content = await this.fetchContentWithFallback(contentReference);
+      
+      // Detect content type for better rendering
+      const contentType = this.detectContentType(content);
+      
+      // Generate HTML
+      let html: string;
+      if (contentType === 'text/html') {
+        // Content is already HTML
+        html = content;
+      } else if (contentType === 'application/json') {
+        // Try to extract content from JSON and render that
+        try {
+          const jsonData = JSON.parse(content);
+          if (jsonData.content && typeof jsonData.content === 'string') {
+            html = marked.parse(jsonData.content);
+          } else {
+            // Fallback to rendering the JSON as code
+            html = `<pre>${this.escapeHtml(content)}</pre>`;
+          }
+        } catch {
+          html = marked.parse(content);
+        }
+      } else {
+        // Assume markdown or plain text
+        html = marked.parse(content);
+      }
+      
+      // Add to cache
+      this.contentCache.set(contentReference, {
+        content,
+        html,
+        timestamp: now,
+        contentType
+      });
+      
+      console.log('Content cached successfully for:', contentReference);
+      return html;
+      
+    } catch (error) {
+      // If we have expired content in cache, return that instead of failing
+      if (cachedContent) {
+        console.warn(`Failed to fetch fresh content for ${contentReference}, using expired cache`);
+        return cachedContent.html;
+      }
+      
+      // No cached content available, rethrow the error
+      throw error;
+    }
+  }
+
+  /**
+   * Get content as text with caching
+   */
+  async getContent(contentReference: string, forceFresh: boolean = false): Promise<string> {
+    // Check if content is in cache and not expired
+    const cachedContent = this.contentCache.get(contentReference);
+    const now = Date.now();
+    
+    if (!forceFresh && cachedContent && (now - cachedContent.timestamp) < this.cacheExpiryTime) {
+      return cachedContent.content;
+    }
+    
+    // Content not in cache, expired, or force fresh requested
+    try {
+      const content = await this.fetchContentWithFallback(contentReference);
+      
+      // Detect content type for better rendering
+      const contentType = this.detectContentType(content);
+      
+      // Add to cache
+      this.contentCache.set(contentReference, {
+        content,
+        html: marked.parse(content),
+        timestamp: now,
+        contentType
+      });
+      
+      return content;
+    } catch (error) {
+      // If we have expired content in cache, return that instead of failing
+      if (cachedContent) {
+        console.warn(`Failed to fetch fresh content for ${contentReference}, using expired cache`);
+        return cachedContent.content;
+      }
+      
+      // No cached content available, rethrow the error
+      throw error;
+    }
+  }
+
+  /**
+   * Remove a specific reference from the cache
+   */
+  removeFromCache(contentReference: string): void {
+    this.contentCache.delete(contentReference);
+    console.log('Removed from cache:', contentReference);
+  }
+
+  /**
+   * Clear the content cache
+   */
+  clearCache(): void {
+    this.contentCache.clear();
+    console.log('Content cache cleared');
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): {
+    size: number;
+    entries: Array<{ reference: string; timestamp: number; contentType?: string; }>;
+  } {
+    const entries = Array.from(this.contentCache.entries()).map(([reference, data]) => ({
+      reference,
+      timestamp: data.timestamp,
+      contentType: data.contentType
+    }));
+
+    return {
+      size: this.contentCache.size,
+      entries
+    };
+  }
+
+  /**
+   * Fetch content with fallback to multiple methods and gateways
+   */
+  private async fetchContentWithFallback(contentReference: string): Promise<string> {
+    if (!contentReference || contentReference.trim() === '') {
+      throw new Error('Invalid content reference: empty or undefined');
+    }
+
+    // Clean up the reference if it has any prefixes
+    const cleanReference = contentReference
+      .replace('bzz://', '')
+      .replace('bytes://', '')
+      .trim();
+
+    console.log(`Fetching content for reference: ${cleanReference}`);
+
+    try {
+      // First try: Use SwarmService downloadText method
+      return await this.swarmService.downloadText(cleanReference);
+    } catch (error) {
+      console.warn('SwarmService downloadText failed:', error);
+      
+      // Fallback: Try direct fetch to various endpoints
+      const urls = this.swarmService.getContentUrls(cleanReference);
+      const urlsToTry = [
+        urls.localWeb,  // bzz endpoint for web content
+        urls.local,     // bytes endpoint
+        urls.publicWeb, // public bzz endpoint
+        urls.public,    // public bytes endpoint
+        ...urls.fallbacks // fallback gateways
+      ];
+
+      for (const url of urlsToTry) {
+        try {
+          console.log(`Trying fetch fallback: ${url}`);
+          const response = await fetch(url, { 
+            signal: AbortSignal.timeout(5000),
+            headers: {'Accept': 'text/html, text/markdown, application/json, text/plain, */*'}
+          });
+          
+          if (response.ok) {
+            const content = await response.text();
+            console.log(`Successfully retrieved content from ${url}`);
+            return content;
+          }
+        } catch (fetchError) {
+          console.warn(`Fetch fallback failed for ${url}:`, fetchError);
+          continue;
+        }
+      }
+
+      throw new Error(`Failed to fetch content using reference ${contentReference} after trying all methods`);
+    }
+  }
+
+  /**
+   * Detect content type from the content itself
+   */
+  private detectContentType(content: string): string {
+    // Try to detect HTML
+    if (content.trim().startsWith('<!DOCTYPE html>') || 
+        content.trim().startsWith('<html') ||
+        (content.includes('<body') && content.includes('</body>'))) {
+      return 'text/html';
+    }
+    
+    // Try to detect JSON
+    try {
+      JSON.parse(content);
+      return 'application/json';
+    } catch (e) {
+      // Not JSON
+    }
+    
+    // Check for markdown indicators
+    if (content.match(/^#+ /m) || // Headers
+        content.match(/\[.+\]\(.+\)/) || // Links
+        content.match(/\*\*.+\*\*/) || // Bold
+        content.match(/```[^`]*```/)) { // Code blocks
+      return 'text/markdown';
+    }
+    
+    // Default to plain text
+    return 'text/plain';
   }
 
   /**
@@ -693,8 +940,6 @@ ${contentJson}
   }
 }
 
-// Export singleton instance
-export const contentService = new ContentService(swarmService);
-
-// Re-export for backward compatibility if needed
+// Export the class for dependency injection in services/index.ts
+// The singleton instance is created there with proper dependency management
 export default ContentService;

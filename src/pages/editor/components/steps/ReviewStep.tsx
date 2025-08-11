@@ -36,6 +36,9 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     editorState.updateContent(value);
   }, [editorState]);
 
+  // FIXED: Check form validity using the new method that doesn't trigger setState during render
+  const canContinue = editorState.formValidation.isValidForStep('review');
+
   return (
     <div className="review-step">
       <div className="step-header">
@@ -119,12 +122,24 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           <button
             className="continue-btn"
             onClick={handleContinueToPublish}
-            disabled={!editorState.validateForm('review')}
+            disabled={!canContinue}
           >
             Continue to Publish →
           </button>
         </div>
       </div>
+
+      {/* Show validation errors if any */}
+      {!canContinue && Object.keys(editorState.formValidation.errors).length > 0 && (
+        <div className="validation-warning">
+          <h4>⚠️ Please fix the following issues before continuing:</h4>
+          <ul>
+            {Object.entries(editorState.formValidation.errors).map(([field, error]) => (
+              <li key={field}>{error as string}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };

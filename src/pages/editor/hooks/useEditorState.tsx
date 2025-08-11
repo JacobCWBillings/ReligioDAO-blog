@@ -1,5 +1,5 @@
 // src/pages/editor/hooks/useEditorState.tsx - FIXED VERSION
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useWallet } from '../../../contexts/WalletContext';
 import { 
   EnhancedBlogDraft, 
@@ -7,8 +7,8 @@ import {
   EditorWorkflowState, 
   EditorFormErrors,
   UnifiedBlogData 
-} from '../types/editorTypes';
-import { enhancedDraftStorage } from '../utils/draftStorage';
+} from '../../../types/editorTypes';
+import { enhancedDraftStorage } from '../../../utils/draftStorage';
 
 interface UseEditorStateProps {
   initialDraftId?: string;
@@ -18,7 +18,7 @@ interface UseEditorStateProps {
 
 /**
  * Centralized state management for the editor
- * FIXED: Prevents setState during render and ensures proper draft ID management
+ * FIXED: Separated validation checking from error setting to prevent setState during render
  */
 export const useEditorState = ({
   initialDraftId,
@@ -158,7 +158,50 @@ export const useEditorState = ({
     }));
   }, []);
 
-  // Validation
+  // FIXED: Create a validation function that only checks validity without setting state
+  const checkFormValidity = useCallback((step: EditorStep = 'draft'): boolean => {
+    if (!formData.title.trim()) return false;
+    if (!formData.content.trim()) return false;
+    if (!formData.category.trim()) return false;
+    
+    // Additional validation for governance step
+    if (step === 'governance' && !formData.description?.trim()) return false;
+    
+    return true;
+  }, [formData]);
+
+  // FIXED: Create a memoized validation result to prevent unnecessary recalculation
+  const formValidation = useMemo(() => {
+    const errors: EditorFormErrors = {};
+    
+    if (!formData.title.trim()) {
+      errors.title = 'Title is required';
+    }
+    
+    if (!formData.content.trim()) {
+      errors.content = 'Content is required';
+    }
+    
+    if (!formData.category.trim()) {
+      errors.category = 'Category is required';
+    }
+    
+    return {
+      errors: errors as EditorFormErrors, // Explicitly type the errors object
+      isValid: Object.keys(errors).length === 0,
+      isValidForStep: (step: EditorStep): boolean => {
+        if (!formData.title.trim() || !formData.content.trim() || !formData.category.trim()) {
+          return false;
+        }
+        if (step === 'governance' && !formData.description?.trim()) {
+          return false;
+        }
+        return true;
+      }
+    };
+  }, [formData]);
+
+  // FIXED: Keep the validateForm function for when we actually want to set errors (like form submission)
   const validateForm = useCallback((step: EditorStep = 'draft'): boolean => {
     const errors: EditorFormErrors = {};
     
@@ -315,9 +358,11 @@ export const useEditorState = ({
     updateContentReference,
     updateFormData,
     
-    // Validation
+    // Validation - FIXED: Separate checking from error setting
     formErrors,
-    validateForm,
+    formValidation, // NEW: Memoized validation result
+    checkFormValidity, // NEW: Check validity without setting state (safe for render)
+    validateForm, // EXISTING: Validate and set errors (for form submission)
     clearFieldError,
     
     // Draft operations

@@ -1,7 +1,18 @@
-// src/pages/editor/utils/draftStorage.ts - FIXED VERSION
-import { EnhancedBlogDraft, UnifiedBlogData, AssetReference, EditorStep } from '../types/editorTypes';
-// Import the existing BlogProposal type from blockchain types
-import { BlogProposal } from '../../../types/blockchain';
+// src/pages/editor/utils/draftStorage.ts - CORRECTED VERSION with proper imports
+// FIXED: Properly import types from editorTypes.ts instead of duplicating them
+
+import { BlogProposal } from '../types/blockchain';
+
+// FIXED: Import and re-export the types from the existing editorTypes file
+import { 
+  EnhancedBlogDraft, 
+  UnifiedBlogData, 
+  AssetReference, 
+  EditorStep 
+} from '../types/editorTypes';
+
+// Re-export the types so other files can import them from here
+export type { EnhancedBlogDraft, UnifiedBlogData, AssetReference, EditorStep };
 
 /**
  * Enhanced draft storage service that:
@@ -9,7 +20,7 @@ import { BlogProposal } from '../../../types/blockchain';
  * 2. Tracks asset usage within drafts
  * 3. Stores workflow progress
  * 4. Provides migration from legacy format
- * FIXED: Prevents duplicate drafts by proper ID management
+ * 5. Prevents duplicate drafts by proper ID management
  */
 export class EnhancedDraftStorage {
   private readonly DRAFT_PREFIX = 'enhanced-blog-draft-';
@@ -17,13 +28,13 @@ export class EnhancedDraftStorage {
   private readonly ASSETS_PREFIX = 'religiodao-assets-';
 
   /**
-   * FIXED: Save a draft with enhanced tracking and prevent duplicates
+   * Save a draft with enhanced tracking and prevent duplicates
    */
   saveDraft(
     draftData: Partial<EnhancedBlogDraft> & { title: string; content: string; authorAddress: string },
     workflowAction?: string
   ): EnhancedBlogDraft {
-    // FIXED: More robust draft ID management
+    // More robust draft ID management
     let draftId: string;
     
     if (draftData.id) {
@@ -93,7 +104,7 @@ export class EnhancedDraftStorage {
       JSON.stringify(enhancedDraft)
     );
 
-    // FIXED: Clean up any legacy version with same ID to prevent confusion
+    // Clean up any legacy version with same ID to prevent confusion
     localStorage.removeItem(`${this.LEGACY_PREFIX}${draftId}`);
 
     return enhancedDraft;
@@ -125,7 +136,7 @@ export class EnhancedDraftStorage {
   }
 
   /**
-   * FIXED: Get all drafts for a user with deduplication and migration support
+   * Get all drafts for a user with deduplication and migration support
    */
   getDrafts(authorAddress?: string): EnhancedBlogDraft[] {
     if (!authorAddress) return [];
@@ -174,7 +185,7 @@ export class EnhancedDraftStorage {
       }
     }
 
-    // FIXED: Clean up migrated legacy drafts to prevent confusion
+    // Clean up migrated legacy drafts to prevent confusion
     migratedDrafts.forEach(key => localStorage.removeItem(key));
 
     // Sort by last modified (newest first)
@@ -182,7 +193,7 @@ export class EnhancedDraftStorage {
   }
 
   /**
-   * FIXED: Delete a draft (both enhanced and legacy versions) and handle duplicates
+   * Delete a draft (both enhanced and legacy versions) and handle duplicates
    */
   deleteDraft(draftId: string): boolean {
     try {
@@ -202,7 +213,7 @@ export class EnhancedDraftStorage {
         deletedCount++;
       }
       
-      // FIXED: Also remove any drafts with same title (in case of duplicates)
+      // Also remove any drafts with same title (in case of duplicates)
       const draft = this.loadDraft(draftId);
       if (draft) {
         const allDrafts = this.getDrafts(draft.authorAddress);

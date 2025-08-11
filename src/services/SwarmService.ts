@@ -1,4 +1,4 @@
-// src/services/SwarmService.ts
+// src/services/SwarmService.ts - FIXED VERSION
 import { Bee } from '@ethersphere/bee-js';
 
 export interface SwarmConfig {
@@ -154,7 +154,8 @@ export class SwarmService {
     try {
       // Convert string to bytes and create File object
       const htmlBytes = new TextEncoder().encode(htmlContent);
-      const file = new File([htmlBytes], filename, { 
+      // FIXED: Create proper File with explicit type for Blob constructor
+      const file = new File([htmlBytes as BlobPart], filename, { 
         type: 'text/html',
         lastModified: Date.now()
       });
@@ -174,7 +175,8 @@ export class SwarmService {
     try {
       const jsonString = JSON.stringify(data, null, 2);
       const jsonBytes = new TextEncoder().encode(jsonString);
-      const file = new File([jsonBytes], filename, { 
+      // FIXED: Create proper File with explicit type for Blob constructor
+      const file = new File([jsonBytes as BlobPart], filename, { 
         type: 'application/json',
         lastModified: Date.now()
       });
@@ -192,7 +194,8 @@ export class SwarmService {
    */
   async uploadData(data: Uint8Array, filename: string, contentType: string): Promise<SwarmUploadResult> {
     try {
-      const file = new File([data], filename, { 
+      // FIXED: Create proper File with explicit type for Blob constructor
+      const file = new File([data as BlobPart], filename, { 
         type: contentType,
         lastModified: Date.now()
       });
@@ -307,7 +310,7 @@ export class SwarmService {
     await Promise.allSettled(
       allUrls.map(async (url) => {
         try {
-          const response = await fetch(url, { method: 'HEAD', timeout: 5000 } as any);
+          const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
           if (response.ok) {
             workingUrls.push(url);
           } else {
@@ -432,6 +435,3 @@ export class SwarmService {
     this.initialized = false;
   }
 }
-
-// Export singleton instance with default configuration
-export const swarmService = new SwarmService();

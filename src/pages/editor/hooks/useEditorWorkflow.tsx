@@ -1,8 +1,8 @@
 // src/pages/editor/hooks/useEditorWorkflow.tsx - FIXED VERSION
 import { useState, useCallback, useEffect } from 'react';
 import { useSimpleApp } from '../../../contexts/SimpleAppContext';
-import { EditorStep, EditorWorkflowState, EnhancedBlogDraft } from '../types/editorTypes';
-import { enhancedDraftStorage } from '../utils/draftStorage';
+import { EditorStep, EditorWorkflowState, EnhancedBlogDraft } from '../../../types/editorTypes';
+import { enhancedDraftStorage } from '../../../utils/draftStorage';
 
 interface UseEditorWorkflowProps {
   initialStep?: EditorStep;

@@ -1,6 +1,6 @@
-// src/contexts/SimpleAppContext.tsx
+// src/contexts/SimpleAppContext.tsx - REFACTORED for new service architecture
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { beeBlogService } from '../services/BeeBlogService';
+import { services } from '../services/index';
 
 /**
  * Simple app configuration interface
@@ -21,7 +21,9 @@ export interface PlatformStatus {
   beeNodeRunning: boolean;
   hasPostageStamp: boolean;
   swarmGateway: string;
+  publicGateway: string;
   lastChecked: number;
+  initialized: boolean;
 }
 
 /**
@@ -59,7 +61,9 @@ const defaultStatus: PlatformStatus = {
   beeNodeRunning: false,
   hasPostageStamp: false,
   swarmGateway: 'http://localhost:1633',
-  lastChecked: 0
+  publicGateway: 'https://api.gateway.ethswarm.org',
+  lastChecked: 0,
+  initialized: false
 };
 
 // Create context
@@ -97,8 +101,10 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Initialize the bee blog service
-        await beeBlogService.initialize();
+        console.log('Initializing ReligioDAO services...');
+        
+        // Initialize the new service architecture
+        await services.initialize();
         
         // Check platform status
         await refreshStatus();
@@ -108,6 +114,8 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
           isInitialized: true,
           error: null
         }));
+
+        console.log('ReligioDAO services initialized successfully');
       } catch (error) {
         console.error('Failed to initialize app:', error);
         setState(prev => ({
@@ -133,7 +141,7 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
   // Function to refresh platform status
   const refreshStatus = async (): Promise<void> => {
     try {
-      const serviceStatus = await beeBlogService.getServiceStatus();
+      const serviceStatus = await services.getStatus();
       
       setState(prev => ({
         ...prev,
@@ -141,6 +149,8 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
           beeNodeRunning: serviceStatus.nodeRunning,
           hasPostageStamp: serviceStatus.hasStamp,
           swarmGateway: serviceStatus.gateway,
+          publicGateway: serviceStatus.publicGateway,
+          initialized: services.isInitialized,
           lastChecked: Date.now()
         }
       }));
@@ -153,6 +163,7 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
           ...prev.status,
           beeNodeRunning: false,
           hasPostageStamp: false,
+          initialized: services.isInitialized,
           lastChecked: Date.now()
         }
       }));
@@ -166,6 +177,16 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
       
       // Save to localStorage
       localStorage.setItem('religiodao-simple-config', JSON.stringify(newConfig));
+      
+      // Update service configuration if needed
+      if (updates.swarmGateway || updates.postageBatchId) {
+        services.updateConfig({
+          swarm: {
+            local: updates.swarmGateway || prev.config.swarmGateway
+          },
+          postageBatchId: updates.postageBatchId
+        });
+      }
       
       return {
         ...prev,
@@ -208,7 +229,11 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
 // Helper hook for checking if platform is ready
 export const usePlatformReady = (): boolean => {
   const { state } = useSimpleApp();
-  return state.isInitialized && state.status.beeNodeRunning && state.status.hasPostageStamp;
+  return (
+    state.isInitialized && 
+    state.status.initialized &&
+    (state.status.beeNodeRunning || state.status.publicGateway !== '')
+  );
 };
 
 // Helper hook for platform diagnostics
@@ -219,7 +244,7 @@ export const usePlatformDiagnostics = () => {
     const { status, config, isInitialized, error } = state;
     
     return {
-      overall: isInitialized && !error && status.beeNodeRunning,
+      overall: isInitialized && !error && status.initialized && (status.beeNodeRunning || status.publicGateway !== ''),
       details: [
         {
           name: 'App Initialized',
@@ -227,14 +252,24 @@ export const usePlatformDiagnostics = () => {
           message: isInitialized ? 'Application initialized successfully' : (error || 'Initialization pending')
         },
         {
+          name: 'Services Initialized',
+          status: status.initialized ? 'OK' : 'ERROR',
+          message: status.initialized ? 'Service architecture initialized' : 'Services not initialized'
+        },
+        {
           name: 'Bee Node',
-          status: status.beeNodeRunning ? 'OK' : 'ERROR',
-          message: status.beeNodeRunning ? `Connected to ${config.swarmGateway}` : 'Bee node not reachable'
+          status: status.beeNodeRunning ? 'OK' : 'WARNING',
+          message: status.beeNodeRunning ? `Connected to ${config.swarmGateway}` : 'Local Bee node not reachable (using public gateway)'
+        },
+        {
+          name: 'Public Gateway',
+          status: status.publicGateway ? 'OK' : 'WARNING',
+          message: status.publicGateway ? `Available: ${status.publicGateway}` : 'No public gateway configured'
         },
         {
           name: 'Postage Stamp',
           status: status.hasPostageStamp ? 'OK' : 'WARNING',
-          message: status.hasPostageStamp ? 'Usable postage stamp found' : 'No usable postage stamp (using fallback)'
+          message: status.hasPostageStamp ? 'Usable postage stamp found' : 'No usable postage stamp (limited functionality)'
         },
         {
           name: 'Last Check',

@@ -1,7 +1,7 @@
 // src/components/EnhancedAssetBrowser.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
-import { assetService, Asset } from '../../services/AssetService';
+import { assetService, Asset } from '../../services';
 import './EnhancedAssetBrowser.css';
 
 interface AssetThumbnailProps {

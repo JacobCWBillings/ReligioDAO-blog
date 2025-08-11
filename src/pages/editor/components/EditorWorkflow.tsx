@@ -1,6 +1,6 @@
 // src/pages/editor/components/EditorWorkflow.tsx
 import React from 'react';
-import { EditorStep, EditorWorkflowState } from '../types/editorTypes';
+import { EditorStep, EditorWorkflowState } from '../../../types/editorTypes';
 
 interface EditorWorkflowProps {
   workflowState: EditorWorkflowState;
