@@ -1,13 +1,14 @@
-// src/pages/editor/SimpleEditorPage.tsx - Updated for new service architecture
+// src/pages/editor/SimpleEditorPage.tsx - FIXED VERSION
+// Updated to use enhanced state management with proper synchronization
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useWallet } from '../../contexts/WalletContext';
 import { PlatformStatusBanner, useSimpleApp } from '../../contexts/SimpleAppContext';
 
-// New service architecture
+// Services
 import { services, contentService, assetService } from '../../services';
 
-// Import our modular components and hooks (these remain the same)
+// Import our enhanced components and hooks
 import { useEditorState } from './hooks/useEditorState';
 import { useEditorWorkflow } from './hooks/useEditorWorkflow';
 import { EditorWorkflow } from './components/EditorWorkflow';
@@ -18,7 +19,7 @@ import { PublishStep } from './components/steps/PublishStep';
 import { GovernanceStep } from './components/steps/GovernanceStep';
 import { SuccessStep } from './components/steps/SuccessStep';
 
-// Import existing components that we'll integrate
+// Import existing components
 import { EnhancedAssetBrowser } from '../../components/editor/EnhancedAssetBrowser';
 
 // Types
@@ -28,10 +29,11 @@ import { EditorStep, EnhancedBlogDraft } from '../../types/editorTypes';
 import './SimpleEditorPage.css';
 
 /**
- * Refactored SimpleEditorPage using new service architecture
- * - Uses new SwarmService, ContentService, AssetService
- * - Maintains existing enhanced draft storage
- * - Improved error handling and service status monitoring
+ * FIXED: SimpleEditorPage with enhanced state synchronization
+ * Key improvements:
+ * 1. Automatic save before step transitions
+ * 2. Guaranteed current data publishing
+ * 3. Better error handling and state tracking
  */
 export const SimpleEditorPage: React.FC = () => {
   const navigate = useNavigate();
@@ -58,11 +60,7 @@ export const SimpleEditorPage: React.FC = () => {
     const initializeServices = async () => {
       try {
         console.log('Initializing services...');
-        
-        // Initialize the service container
         await services.initialize();
-        
-        // Check service health
         const swarmStatus = await services.getStatus();
         
         setServiceStatus({
@@ -97,7 +95,7 @@ export const SimpleEditorPage: React.FC = () => {
       } catch (error) {
         console.warn('Health check failed:', error);
       }
-    }, 30000); // Check every 30 seconds
+    }, 30000);
 
     return () => clearInterval(healthCheckInterval);
   }, []);
@@ -110,28 +108,30 @@ export const SimpleEditorPage: React.FC = () => {
       newUrl.searchParams.set('draftId', draft.id);
       window.history.replaceState({}, '', newUrl.toString());
     }
+    
+    console.log('Draft saved:', draft.title, 'Content length:', draft.content.length);
   }, [draftId]);
 
   const handleWorkflowChange = useCallback((step: EditorStep, workflowState: any) => {
-    // Handle global workflow state changes
     console.log('Workflow changed:', step, workflowState);
   }, []);
 
   const handleStepChange = useCallback((step: EditorStep, workflowState: any) => {
-    // Handle step navigation
     console.log('Step changed:', step, workflowState);
   }, []);
 
-  // Initialize state management hooks
+  // FIXED: Initialize enhanced state management with synchronization
   const editorState = useEditorState({
     initialDraftId: draftId || undefined,
     onDraftSaved: handleDraftSaved,
     onWorkflowChange: handleWorkflowChange
   });
 
+  // FIXED: Initialize workflow with save-before-transition capability
   const workflowState = useEditorWorkflow({
     draft: editorState.currentDraft,
-    onStepChange: handleStepChange
+    onStepChange: handleStepChange,
+    ensureSavedForTransition: editorState.ensureSavedForTransition // NEW: Pass the save function
   });
 
   // Asset browser integration
@@ -307,6 +307,16 @@ export const SimpleEditorPage: React.FC = () => {
       {/* Service status indicator */}
       <ServiceStatusIndicator />
       
+      {/* FIXED: Enhanced state synchronization indicators */}
+      {editorState.hasUnsavedChanges && workflowState.currentStep !== 'draft' && (
+        <div className="sync-warning">
+          <div className="warning-content">
+            <span className="warning-icon">💾</span>
+            <span>Unsaved changes detected - they will be automatically saved before publishing</span>
+          </div>
+        </div>
+      )}
+      
       {/* Connection warning for governance features */}
       {!isConnected && workflowState.currentStep === 'governance' && (
         <div className="connection-warning">
@@ -336,7 +346,7 @@ export const SimpleEditorPage: React.FC = () => {
           />
         )}
 
-        {/* Unified Asset Toolbar - Available in draft and review steps */}
+        {/* Enhanced Asset Toolbar - Available in draft and review steps */}
         {(workflowState.currentStep === 'draft' || workflowState.currentStep === 'review') && (
           <div className="unified-asset-toolbar">
             <div className="toolbar-content">
@@ -397,16 +407,22 @@ export const SimpleEditorPage: React.FC = () => {
                 onNewDraft={editorState.createNewDraft}
               />
               
-              {/* Show auto-save status */}
+              {/* FIXED: Enhanced save status indicators */}
               {editorState.isAutoSaving && (
                 <div className="auto-save-indicator">
-                  <span>💾 Auto-saving...</span>
+                  <span>💾 Auto-saving current work...</span>
                 </div>
               )}
               
-              {editorState.lastSaved && (
+              {editorState.lastSaved && !editorState.hasUnsavedChanges && (
                 <div className="last-saved-indicator">
                   <span>✅ Saved {editorState.lastSaved.toLocaleTimeString()}</span>
+                </div>
+              )}
+
+              {editorState.hasUnsavedChanges && (
+                <div className="unsaved-changes-indicator">
+                  <span>⚠️ Unsaved changes - Auto-save in progress</span>
                 </div>
               )}
 
@@ -424,6 +440,12 @@ export const SimpleEditorPage: React.FC = () => {
                     <span className="status-label">Services:</span>
                     <span className={`status-value ${serviceStatus.initialized ? 'healthy' : 'warning'}`}>
                       {serviceStatus.initialized ? '🟢 Ready' : '🔴 Initializing'}
+                    </span>
+                  </div>
+                  <div className="status-item">
+                    <span className="status-label">Sync:</span>
+                    <span className={`status-value ${!editorState.hasUnsavedChanges ? 'healthy' : 'warning'}`}>
+                      {!editorState.hasUnsavedChanges ? '🟢 Synced' : '🔄 Saving'}
                     </span>
                   </div>
                 </div>
@@ -449,77 +471,78 @@ export const SimpleEditorPage: React.FC = () => {
         onInsertAsset={handleAssetInsertion}
       />
 
-      {/* Enhanced Help section with service info */}
+      {/* Enhanced Help section with sync info */}
       <div className="editor-help-section">
         <details className="help-accordion">
           <summary>Need Help? 📚</summary>
           <div className="help-content">
             <div className="help-section">
-              <h4>Unified Workflow</h4>
+              <h4>FIXED: Enhanced State Synchronization</h4>
               <ul>
-                <li><strong>Draft:</strong> Write and edit your content using Markdown</li>
-                <li><strong>Review:</strong> Preview how your post will look</li>
-                <li><strong>Publish:</strong> Store permanently on Swarm network</li>
-                <li><strong>Governance:</strong> Submit as DAO proposal for voting</li>
+                <li><strong>Auto-save:</strong> Your work is automatically saved every 2 seconds</li>
+                <li><strong>Step transitions:</strong> Current changes are saved before moving to next step</li>
+                <li><strong>Publishing:</strong> Always uses your latest content, including unsaved changes</li>
+                <li><strong>Real-time sync:</strong> Status indicators show save progress and sync state</li>
               </ul>
             </div>
             
             <div className="help-section">
-              <h4>New Service Architecture</h4>
+              <h4>Workflow Improvements</h4>
               <ul>
-                <li><strong>SwarmService:</strong> Handles all Swarm network operations</li>
-                <li><strong>ContentService:</strong> Formats and processes blog content</li>
-                <li><strong>AssetService:</strong> Manages images and file uploads</li>
-                <li><strong>DraftStorage:</strong> Saves your work locally in browser</li>
+                <li><strong>Draft:</strong> Write and edit with automatic background saving</li>
+                <li><strong>Review:</strong> Preview ensures all content is synced and saved</li>
+                <li><strong>Publish:</strong> Guaranteed to publish your current work, not old drafts</li>
+                <li><strong>Governance:</strong> All form data is preserved through the process</li>
               </ul>
             </div>
             
             <div className="help-section">
-              <h4>Enhanced Features</h4>
+              <h4>Status Indicators</h4>
               <ul>
-                <li>Auto-save keeps your work safe as you type</li>
-                <li>Asset management tracks images used in your content</li>
-                <li>Draft history shows your workflow progress</li>
-                <li>Improved error handling and offline support</li>
-                <li>Seamless integration between local and public gateways</li>
-              </ul>
-            </div>
-            
-            <div className="help-section">
-              <h4>Service Status</h4>
-              <ul>
-                <li><strong>🟢 Online:</strong> Full functionality available</li>
-                <li><strong>🔴 Offline:</strong> Limited to public gateway operations</li>
-                <li><strong>⚠️ Warning:</strong> Some features may be unavailable</li>
-                <li>Drafts are always stored locally regardless of service status</li>
+                <li><strong>🟢 Synced:</strong> All changes are saved</li>
+                <li><strong>🔄 Saving:</strong> Auto-save in progress</li>
+                <li><strong>⚠️ Unsaved:</strong> Changes detected, auto-save will trigger</li>
+                <li><strong>💾 Auto-saving:</strong> Currently saving your work</li>
               </ul>
             </div>
 
             <div className="help-section">
               <h4>Troubleshooting</h4>
               <ul>
-                <li>If Swarm is offline, you can still write and save drafts</li>
-                <li>Publishing will use public gateway when local node is unavailable</li>
-                <li>Refresh the page if services fail to initialize</li>
-                <li>Check browser console for detailed error messages</li>
+                <li>If auto-save fails, you can manually save in the Draft step</li>
+                <li>Step transitions will attempt to save current work automatically</li>
+                <li>Publishing always uses current form data, never old saved drafts</li>
+                <li>Check the sync indicator in sidebar for current save status</li>
               </ul>
             </div>
           </div>
         </details>
       </div>
 
-      {/* Development info (only show in development) */}
+      {/* Development info */}
       {process.env.NODE_ENV === 'development' && (
         <div className="dev-info">
           <details>
-            <summary>🔧 Development Info</summary>
+            <summary>🔧 Development Info - State Sync</summary>
             <div className="dev-content">
               <h5>Service Status:</h5>
               <pre>{JSON.stringify(serviceStatus, null, 2)}</pre>
-              <h5>Current Draft:</h5>
-              <pre>{JSON.stringify(editorState.currentDraft?.id || 'None', null, 2)}</pre>
-              <h5>Workflow Step:</h5>
-              <pre>{workflowState.currentStep}</pre>
+              <h5>Editor State:</h5>
+              <pre>{JSON.stringify({
+                currentDraftId: editorState.currentDraft?.id || 'None',
+                hasUnsavedChanges: editorState.hasUnsavedChanges,
+                isAutoSaving: editorState.isAutoSaving,
+                lastSaved: editorState.lastSaved?.toISOString(),
+                formDataLength: editorState.formData.content.length,
+                formDataTitle: editorState.formData.title
+              }, null, 2)}</pre>
+              <h5>Workflow State:</h5>
+              <pre>{JSON.stringify({
+                currentStep: workflowState.currentStep,
+                stepStatus: workflowState.workflowState.stepStatus,
+                canProgress: workflowState.canProgress,
+                isLoading: workflowState.isLoading
+              }, null, 2)}</pre>
             </div>
           </details>
         </div>

@@ -1,4 +1,4 @@
-// src/pages/proposal/ProposalDetailPage.tsx - Updated to use new service architecture
+// src/pages/proposal/ProposalDetailPage.tsx - Enhanced with better execution handling
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
@@ -59,6 +59,9 @@ export const ProposalDetailPage: React.FC = () => {
   
   // Content expansion state
   const [showFullContent, setShowFullContent] = useState<boolean>(false);
+  
+  // Execution success notification
+  const [showExecutionSuccess, setShowExecutionSuccess] = useState<boolean>(false);
 
   // SIMPLIFIED: Use proposal ID directly (0-based like the contract)
   const contractProposalId = proposalId;
@@ -179,16 +182,27 @@ export const ProposalDetailPage: React.FC = () => {
     }
   };
   
-  // Handle execution success callback
+  // Enhanced execution success callback
   const handleExecuteSuccess = (tokenId: string | null) => {
     console.log(`Proposal executed successfully with token ID: ${tokenId}`);
     setNftTokenId(tokenId);
+    setShowExecutionSuccess(true);
     
     // Refresh the proposal data after execution
     if (contractProposalId) {
       getProposalById(contractProposalId).then(updatedProposal => {
         if (updatedProposal) {
           setProposal(updatedProposal);
+          
+          // Auto-hide success notification after 5 seconds
+          setTimeout(() => {
+            setShowExecutionSuccess(false);
+            // Smooth scroll to top to show updated status
+            window.scrollTo({
+              top: 0,
+              behavior: 'smooth'
+            });
+          }, 5000);
         }
       }).catch(err => {
         console.error('Error refreshing proposal after execution:', err);
@@ -348,8 +362,8 @@ export const ProposalDetailPage: React.FC = () => {
   const progress = calculateProgress(proposal.votesFor, proposal.votesAgainst);
   const isActive = isActiveVoting(proposal);
   
-  // Can only execute if status is "Accepted"
-  const canExecute = proposal.status === ProposalStatus.Accepted && isConnected;
+  // Can only execute if status is "Accepted" and user is connected
+  const canExecute = proposal.status === ProposalStatus.Accepted && isConnected && !proposal.executed;
   
   // Proposal is fully complete when status is Executed
   const isFullyExecuted = proposal.status === ProposalStatus.Executed;
@@ -358,6 +372,22 @@ export const ProposalDetailPage: React.FC = () => {
 
   return (
     <div className="proposal-detail-page">
+      {/* Execution Success Notification */}
+      {showExecutionSuccess && (
+        <div className="execution-success-banner">
+          <div className="success-content">
+            <span className="success-icon">🎉</span>
+            <span>Proposal executed successfully! NFT has been minted.</span>
+            <button 
+              onClick={() => setShowExecutionSuccess(false)}
+              className="close-notification"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="proposal-nav-bar">
         <Link to="/proposals" className="back-to-proposals">
           ← All Proposals
@@ -477,10 +507,14 @@ export const ProposalDetailPage: React.FC = () => {
             </div>
           )}
           
-          {/* Execution section - only show when status is Accepted */}
+          {/* Execution section - Enhanced with new component */}
           {canExecute && (
-            <div className="proposal-section">
+            <div className="proposal-section execution-section">
               <h2>Execute Proposal</h2>
+              <p className="execution-intro">
+                This proposal has been approved by the community and is ready for execution. 
+                Execution will mint an NFT representing the approved blog post.
+              </p>
               <BlogProposalMinting
                 proposalId={contractProposalId}
                 title={blogInfo.blogTitle || proposal.title}
@@ -500,13 +534,23 @@ export const ProposalDetailPage: React.FC = () => {
               <h2>Proposal Executed</h2>
               <div className="execution-success-message">
                 <div className="success-icon">✓</div>
-                <p>This proposal has been executed successfully. The NFT has been minted by the Q governance system.</p>
-              </div>
-              {nftTokenId && (
-                <div className="token-id-info">
-                  NFT Token ID: <span className="token-id">{nftTokenId}</span>
+                <div className="success-text">
+                  <p>This proposal has been executed successfully. The NFT has been minted by the Q governance system.</p>
+                  {nftTokenId && (
+                    <div className="token-id-info">
+                      <strong>NFT Token ID:</strong> <span className="token-id">{nftTokenId}</span>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+              <div className="view-blog-container">
+                <Link 
+                  to={`/blogs/${nftTokenId || proposal.id}`}
+                  className="view-blog-button"
+                >
+                  View Published Blog
+                </Link>
+              </div>
             </div>
           )}
         </div>

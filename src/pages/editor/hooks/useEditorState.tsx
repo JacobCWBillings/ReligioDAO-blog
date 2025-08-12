@@ -1,4 +1,5 @@
 // src/pages/editor/hooks/useEditorState.tsx - FIXED VERSION
+// Comprehensive fix for state synchronization issues
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useWallet } from '../../../contexts/WalletContext';
 import { 
@@ -17,8 +18,11 @@ interface UseEditorStateProps {
 }
 
 /**
- * Centralized state management for the editor
- * FIXED: Separated validation checking from error setting to prevent setState during render
+ * FIXED: Centralized state management for the editor with improved synchronization
+ * Key fixes:
+ * 1. Simplified and more reliable auto-save
+ * 2. Automatic save before step transitions
+ * 3. Better state tracking and error handling
  */
 export const useEditorState = ({
   initialDraftId,
@@ -53,10 +57,10 @@ export const useEditorState = ({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
-  // Auto-save timer and tracking
+  // FIXED: Simplified auto-save tracking
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
-  const lastFormDataRef = useRef<string>('');
   const isInitializedRef = useRef(false);
+  const lastSaveContentHash = useRef<string>('');
 
   // Load initial draft if provided
   useEffect(() => {
@@ -76,29 +80,43 @@ export const useEditorState = ({
     }
   }, [account]);
 
-  // FIXED: Track changes for auto-save without causing setState during render
+  // FIXED: Simplified auto-save mechanism - more reliable and predictable
   useEffect(() => {
-    const currentFormJson = JSON.stringify(formData);
-    const hasChanged = currentFormJson !== lastFormDataRef.current;
+    if (!isInitializedRef.current || !isConnected || !account) return;
+
+    // Create a simple hash of the important content
+    const contentHash = JSON.stringify({
+      title: formData.title.trim(),
+      content: formData.content.trim(),
+      category: formData.category.trim(),
+      tags: formData.tags,
+      description: formData.description?.trim(),
+      banner: formData.banner
+    });
+
+    // Check if content has actually changed
+    const hasChanged = contentHash !== lastSaveContentHash.current;
     
-    if (hasChanged && isInitializedRef.current) {
+    if (hasChanged) {
       setHasUnsavedChanges(true);
-      lastFormDataRef.current = currentFormJson;
       
-      // FIXED: Schedule auto-save only if connected and has required fields
-      // Use setTimeout to avoid setState during render
-      if (isConnected && account && formData.title.trim() && formData.content.trim()) {
+      // Only auto-save if we have minimum required content
+      if (formData.title.trim() && formData.content.trim()) {
+        // Clear existing timer
         if (autoSaveTimer.current) {
           clearTimeout(autoSaveTimer.current);
         }
         
-        autoSaveTimer.current = setTimeout(() => {
-          // Only auto-save if data is still current (user hasn't made more changes)
-          const latestFormJson = JSON.stringify(formData);
-          if (latestFormJson === currentFormJson) {
-            handleAutoSave();
+        // Set new timer - simpler logic, just wait and save
+        autoSaveTimer.current = setTimeout(async () => {
+          try {
+            await handleAutoSave();
+            lastSaveContentHash.current = contentHash;
+          } catch (error) {
+            console.warn('Auto-save failed:', error);
+            // Don't throw - auto-save failures shouldn't break the app
           }
-        }, 3000); // Auto-save after 3 seconds of inactivity
+        }, 2000); // Reduced to 2 seconds for better UX
       }
     }
 
@@ -109,7 +127,7 @@ export const useEditorState = ({
     };
   }, [formData, isConnected, account]);
 
-  // Form field update functions
+  // FIXED: Form field update functions with immediate state sync
   const updateTitle = useCallback((title: string) => {
     setFormData(prev => ({ ...prev, title, lastModified: Date.now() }));
     clearFieldError('title');
@@ -149,7 +167,7 @@ export const useEditorState = ({
     setFormData(prev => ({ ...prev, contentReference, lastModified: Date.now() }));
   }, []);
 
-  // Bulk update for external integrations (like SimpleBlogEditor)
+  // Bulk update for external integrations
   const updateFormData = useCallback((updates: Partial<UnifiedBlogData>) => {
     setFormData(prev => ({ 
       ...prev, 
@@ -170,7 +188,7 @@ export const useEditorState = ({
     return true;
   }, [formData]);
 
-  // FIXED: Create a memoized validation result to prevent unnecessary recalculation
+  // FIXED: Memoized validation result to prevent unnecessary recalculation
   const formValidation = useMemo(() => {
     const errors: EditorFormErrors = {};
     
@@ -187,7 +205,7 @@ export const useEditorState = ({
     }
     
     return {
-      errors: errors as EditorFormErrors, // Explicitly type the errors object
+      errors: errors as EditorFormErrors,
       isValid: Object.keys(errors).length === 0,
       isValidForStep: (step: EditorStep): boolean => {
         if (!formData.title.trim() || !formData.content.trim() || !formData.category.trim()) {
@@ -201,7 +219,7 @@ export const useEditorState = ({
     };
   }, [formData]);
 
-  // FIXED: Keep the validateForm function for when we actually want to set errors (like form submission)
+  // Validate and set form errors (for explicit validation like form submission)
   const validateForm = useCallback((step: EditorStep = 'draft'): boolean => {
     const errors: EditorFormErrors = {};
     
@@ -234,7 +252,7 @@ export const useEditorState = ({
     });
   }, []);
 
-  // FIXED: Draft operations with proper ID management
+  // FIXED: Enhanced saveDraft with better state management
   const saveDraft = useCallback(async (action?: string): Promise<EnhancedBlogDraft | null> => {
     if (!isConnected || !account) {
       throw new Error('Please connect your wallet to save drafts');
@@ -245,22 +263,41 @@ export const useEditorState = ({
     }
 
     try {
-      // FIXED: Always use existing draft ID if available to prevent multiple versions
-      const savedDraft = enhancedDraftStorage.saveDraft(
-        {
-          ...formData,
-          id: currentDraft?.id, // This ensures we update existing draft instead of creating new one
-          stepProgress: currentDraft?.stepProgress
-        },
-        action || 'Manual save'
-      );
+      // Always use current formData - this is the critical fix!
+      const draftToSave = {
+        ...formData,
+        id: currentDraft?.id, // Preserve existing ID if available
+        stepProgress: currentDraft?.stepProgress || {
+          draft: true,
+          swarm: Boolean(formData.contentReference),
+          governance: false
+        }
+      };
+      
+      console.log('Saving draft with current form data:', {
+        title: draftToSave.title.substring(0, 50) + '...',
+        contentLength: draftToSave.content.length,
+        category: draftToSave.category,
+        hasDescription: Boolean(draftToSave.description?.trim())
+      });
+      
+      const savedDraft = enhancedDraftStorage.saveDraft(draftToSave, action || 'Manual save');
       
       setCurrentDraft(savedDraft);
       setHasUnsavedChanges(false);
       setLastSaved(new Date());
       
+      // Update the hash to match what we just saved
+      lastSaveContentHash.current = JSON.stringify({
+        title: formData.title.trim(),
+        content: formData.content.trim(),
+        category: formData.category.trim(),
+        tags: formData.tags,
+        description: formData.description?.trim(),
+        banner: formData.banner
+      });
+      
       if (onDraftSaved) {
-        // FIXED: Use setTimeout to avoid setState during render
         setTimeout(() => onDraftSaved(savedDraft), 0);
       }
       
@@ -271,6 +308,7 @@ export const useEditorState = ({
     }
   }, [formData, currentDraft, isConnected, account, onDraftSaved]);
 
+  // FIXED: Simplified auto-save handler
   const handleAutoSave = useCallback(async () => {
     if (!isConnected || !account || !formData.title.trim()) return;
     
@@ -279,13 +317,29 @@ export const useEditorState = ({
       await saveDraft('Auto-save');
     } catch (error) {
       console.error('Auto-save failed:', error);
-      // Don't throw on auto-save failure to avoid disrupting user experience
+      // Don't throw on auto-save failure
     } finally {
       setIsAutoSaving(false);
     }
   }, [saveDraft, isConnected, account, formData.title]);
 
+  // FIXED: New function to ensure save before step transition
+  const ensureSavedForTransition = useCallback(async (targetStep: EditorStep): Promise<boolean> => {
+    try {
+      if (hasUnsavedChanges && formData.title.trim() && isConnected && account) {
+        console.log(`Saving before transition to ${targetStep}`);
+        await saveDraft(`Pre-${targetStep} save`);
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to save before step transition:', error);
+      return false;
+    }
+  }, [hasUnsavedChanges, formData.title, isConnected, account, saveDraft]);
+
   const loadDraftIntoForm = useCallback((draft: EnhancedBlogDraft) => {
+    console.log('Loading draft into form:', draft.title, 'Content length:', draft.content.length);
+    
     setFormData({
       title: draft.title,
       content: draft.content,
@@ -307,11 +361,20 @@ export const useEditorState = ({
     setLastSaved(new Date(draft.lastModified));
     setFormErrors({});
     
-    // Update reference for auto-save tracking
-    lastFormDataRef.current = JSON.stringify(formData);
+    // Update hash to match loaded content
+    lastSaveContentHash.current = JSON.stringify({
+      title: draft.title.trim(),
+      content: draft.content.trim(),
+      category: draft.category.trim(),
+      tags: draft.tags,
+      description: draft.description?.trim(),
+      banner: draft.banner
+    });
   }, []);
 
   const createNewDraft = useCallback(() => {
+    console.log('Creating new draft');
+    
     setFormData({
       title: '',
       content: '# Your Blog Title\n\nStart writing your blog post here...',
@@ -332,7 +395,7 @@ export const useEditorState = ({
     setFormErrors({});
     
     // Reset tracking
-    lastFormDataRef.current = '';
+    lastSaveContentHash.current = '';
   }, [account]);
 
   // Helper function to generate preview
@@ -358,17 +421,18 @@ export const useEditorState = ({
     updateContentReference,
     updateFormData,
     
-    // Validation - FIXED: Separate checking from error setting
+    // Validation
     formErrors,
-    formValidation, // NEW: Memoized validation result
-    checkFormValidity, // NEW: Check validity without setting state (safe for render)
-    validateForm, // EXISTING: Validate and set errors (for form submission)
+    formValidation,
+    checkFormValidity,
+    validateForm,
     clearFieldError,
     
     // Draft operations
     saveDraft,
     loadDraftIntoForm,
     createNewDraft,
+    ensureSavedForTransition, // NEW: Ensure save before step transition
     
     // UI state
     isAutoSaving,

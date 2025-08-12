@@ -1,134 +1,394 @@
 /* src/components/proposal/BlogProposalMinting.css */
 .blog-proposal-minting {
-    padding: 20px;
-    background-color: #f8f8f8;
-    border-radius: 8px;
-    margin-bottom: 20px;
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  overflow: hidden;
+}
+
+.execution-info {
+  padding: 24px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.execution-info h3 {
+  margin: 0 0 12px 0;
+  font-size: 1.3rem;
+  color: #333;
+}
+
+.execution-info p {
+  margin: 0 0 20px 0;
+  color: #666;
+  line-height: 1.5;
+}
+
+.blog-preview {
+  background-color: #f8f9fa;
+  padding: 16px;
+  border-radius: 6px;
+  margin-top: 16px;
+}
+
+.blog-preview h4 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  color: #495057;
+}
+
+.preview-item {
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+.preview-item strong {
+  color: #495057;
+  margin-right: 8px;
+}
+
+.description-text {
+  margin-top: 4px;
+  padding: 8px;
+  background-color: white;
+  border-radius: 4px;
+  font-style: italic;
+  color: #666;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.execution-actions {
+  padding: 24px;
+  text-align: center;
+  border-top: 1px solid #f0f0f0;
+}
+
+.connect-wallet-message {
+  color: #666;
+  font-style: italic;
+}
+
+.execute-button {
+  background-color: #ff8a00;
+  color: white;
+  border: none;
+  padding: 12px 32px;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 200px;
+  justify-content: center;
+}
+
+.execute-button:hover:not(:disabled) {
+  background-color: #ff9e2e;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(255, 138, 0, 0.3);
+}
+
+.execute-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: white;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.execution-progress {
+  padding: 24px;
+  background-color: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+}
+
+.progress-info h4 {
+  margin: 0 0 8px 0;
+  color: #495057;
+}
+
+.progress-info p {
+  margin: 0 0 20px 0;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.progress-steps {
+  display: flex;
+  justify-content: space-between;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+}
+
+.step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  width: 100%;
+  height: 2px;
+  background-color: #e9ecef;
+  z-index: 0;
+}
+
+.step.active .step-number {
+  background-color: #ff8a00;
+  color: white;
+  animation: pulse 1.5s infinite;
+}
+
+.step.active:not(:last-child)::after {
+  background-color: #ff8a00;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.step-number {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #e9ecef;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: bold;
+  margin-bottom: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.step-text {
+  font-size: 0.8rem;
+  color: #666;
+  text-align: center;
+  max-width: 100px;
+}
+
+.execution-error {
+  padding: 20px 24px;
+  background-color: #fff5f5;
+  border-top: 1px solid #fed7d7;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.error-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.error-content {
+  flex: 1;
+}
+
+.error-content h4 {
+  margin: 0 0 8px 0;
+  color: #c53030;
+  font-size: 1rem;
+}
+
+.error-content p {
+  margin: 0 0 12px 0;
+  color: #742a2a;
+  font-size: 0.9rem;
+}
+
+.retry-button {
+  background-color: #e53e3e;
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.retry-button:hover:not(:disabled) {
+  background-color: #c53030;
+}
+
+.retry-button:disabled {
+  background-color: #feb2b2;
+  cursor: not-allowed;
+}
+
+/* Success state styles */
+.execution-success {
+  background-color: #f0fff4;
+  border-color: #68d391;
+}
+
+.success-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 20px 24px 0 24px;
+}
+
+.success-icon {
+  font-size: 1.5rem;
+}
+
+.success-header h3 {
+  margin: 0;
+  color: #2f855a;
+  font-size: 1.3rem;
+}
+
+.success-details {
+  padding: 0 24px 24px 24px;
+}
+
+.success-details p {
+  margin: 0 0 16px 0;
+  color: #2f855a;
+  font-weight: 500;
+}
+
+.minted-nft-info {
+  background-color: white;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  border: 1px solid #c6f6d5;
+}
+
+.minted-nft-info strong {
+  color: #2f855a;
+  margin-right: 8px;
+}
+
+.token-id {
+  font-family: monospace;
+  background-color: #f0fff4;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.blog-summary {
+  background-color: white;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid #c6f6d5;
+}
+
+.blog-summary h4 {
+  margin: 0 0 12px 0;
+  color: #2f855a;
+  font-size: 1rem;
+}
+
+.detail-item {
+  display: flex;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+.detail-item .label {
+  font-weight: 600;
+  color: #2f855a;
+  margin-right: 8px;
+  min-width: 120px;
+}
+
+.detail-item .value {
+  color: #276749;
+  flex: 1;
+}
+
+.detail-item .blockchain-address {
+  font-family: monospace;
+  background-color: #f0fff4;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+
+.detail-item .content-ref {
+  font-family: monospace;
+  background-color: #f0fff4;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .execution-info,
+  .execution-actions,
+  .execution-progress {
+    padding: 16px;
   }
   
-  .execution-info {
-    margin-bottom: 20px;
+  .success-header,
+  .success-details {
+    padding-left: 16px;
+    padding-right: 16px;
   }
   
-  .execution-info p {
-    margin-bottom: 10px;
-  }
-  
-  .blog-info {
-    background-color: white;
-    padding: 15px;
-    border-radius: 6px;
-    margin: 15px 0;
-    border-left: 4px solid #ff8a00;
-  }
-  
-  .blog-info h4 {
-    margin-top: 0;
-    margin-bottom: 10px;
-    font-size: 1.2rem;
-  }
-  
-  .blog-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 10px;
-  }
-  
-  .blog-category {
-    background-color: #e8f5e9;
-    color: #2e7d32;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.8rem;
-  }
-  
-  .blog-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-  }
-  
-  .blog-tag {
-    background-color: #f0f0f0;
-    color: #666;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.8rem;
-  }
-  
-  .blog-author {
-    font-size: 0.9rem;
-    color: #666;
-    margin-top: 10px;
-  }
-  
-  .execution-actions {
-    display: flex;
+  .progress-steps {
     flex-direction: column;
-    gap: 15px;
+    gap: 12px;
+    max-width: 200px;
+  }
+  
+  .step:not(:last-child)::after {
+    display: none;
   }
   
   .execute-button {
-    background-color: #ff8a00;
-    color: white;
-    border: none;
-    padding: 12px 20px;
-    border-radius: 6px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: background-color 0.3s;
+    width: 100%;
+    min-width: auto;
   }
   
-  .execute-button:hover {
-    background-color: #ff9e2e;
+  .detail-item {
+    flex-direction: column;
+    gap: 4px;
   }
   
-  .execute-button:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
+  .detail-item .label {
+    min-width: auto;
   }
-  
-  .execution-error {
-    color: #c62828;
-    background-color: #ffebee;
-    padding: 10px;
-    border-radius: 4px;
-    font-size: 0.9rem;
-  }
-  
-  .execution-success {
-    text-align: center;
-    padding: 25px;
-    background-color: #e8f5e9;
-    border-radius: 6px;
-    border-left: 4px solid #4caf50;
-  }
-  
-  .execution-success h3 {
-    color: #2e7d32;
-    margin-bottom: 15px;
-  }
-  
-  .execution-success p {
-    margin-bottom: 20px;
-    line-height: 1.5;
-  }
-  
-  .token-id-info {
-    margin-top: 15px;
-    background-color: #f5f5f5;
-    padding: 10px;
-    border-radius: 6px;
-    font-size: 0.95rem;
-    display: inline-block;
-  }
-  
-  .token-id {
-    font-family: monospace;
-    font-weight: bold;
-    background-color: #e0f7fa;
-    padding: 3px 6px;
-    border-radius: 4px;
-    margin-left: 5px;
-  }
+}

@@ -1105,3 +1105,327 @@
     font-size: 0.85rem;
   }
 }
+
+/* Additional CSS for State Synchronization Features */
+/* Add this to SimpleEditorPage.css */
+
+/* Sync Status Indicators */
+.sync-warning {
+  background-color: #fff3e0;
+  border-left: 4px solid #ff8a00;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 0 6px 6px 0;
+}
+
+.sync-warning .warning-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #ef6c00;
+}
+
+.sync-warning .warning-icon {
+  font-size: 1.1rem;
+}
+
+/* Enhanced Auto-save Indicators */
+.auto-save-indicator {
+  padding: 8px 12px;
+  margin-top: 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  text-align: center;
+  background-color: #e3f2fd;
+  color: #1976d2;
+  border: 1px solid #90caf9;
+  animation: pulse 2s infinite;
+}
+
+.unsaved-changes-indicator {
+  padding: 8px 12px;
+  margin-top: 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  text-align: center;
+  background-color: #fff3e0;
+  color: #ef6c00;
+  border: 1px solid #ffcc80;
+}
+
+.last-saved-indicator {
+  padding: 8px 12px;
+  margin-top: 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  text-align: center;
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+/* Pulse animation for auto-save */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Current Content Summary in Publish Step */
+.current-content-summary {
+  margin: 20px 0;
+  padding: 16px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.current-content-summary h4 {
+  color: #333;
+  margin-bottom: 12px;
+  font-size: 1rem;
+}
+
+/* Unsaved Changes Warning */
+.unsaved-changes-warning {
+  margin: 16px 0;
+  padding: 12px;
+  background-color: #fff3e0;
+  border-radius: 6px;
+  border-left: 4px solid #ff8a00;
+}
+
+.unsaved-changes-warning h4 {
+  color: #ef6c00;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+.unsaved-changes-warning p {
+  margin: 0;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+/* Enhanced Service Status Grid */
+.sidebar-service-status {
+  margin-top: 20px;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+
+.sidebar-service-status h4 {
+  margin: 0 0 8px 0;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.service-status-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.service-status-grid .status-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  padding: 2px 0;
+}
+
+.service-status-grid .status-label {
+  color: #666;
+  font-weight: 500;
+}
+
+.service-status-grid .status-value {
+  font-weight: 600;
+}
+
+.service-status-grid .status-value.healthy {
+  color: #2e7d32;
+}
+
+.service-status-grid .status-value.warning {
+  color: #ef6c00;
+}
+
+/* Connection and Service Warnings */
+.connection-warning,
+.swarm-warning {
+  background-color: #fff3e0;
+  border-left: 4px solid #ff8a00;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 0 6px 6px 0;
+}
+
+.connection-warning .warning-content,
+.swarm-warning .warning-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #ef6c00;
+}
+
+/* Service Status Indicator (global) */
+.service-status {
+  padding: 8px 16px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.service-status.initializing {
+  background-color: #e3f2fd;
+  color: #1976d2;
+  border: 1px solid #90caf9;
+}
+
+.service-status.error {
+  background-color: #ffebee;
+  color: #d32f2f;
+  border: 1px solid #f8bbd9;
+}
+
+.service-status.warning {
+  background-color: #fff3e0;
+  color: #ef6c00;
+  border: 1px solid #ffcc80;
+}
+
+.service-status.healthy {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+.service-status .status-icon {
+  font-size: 1.1rem;
+}
+
+/* Enhanced Error Display */
+.simple-editor-loading,
+.simple-editor-error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #f8f9fa;
+}
+
+.loading-content,
+.error-content {
+  max-width: 600px;
+  padding: 40px;
+  text-align: center;
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f0f0f0;
+  border-top: 4px solid #ff8a00;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.retry-button,
+.continue-button {
+  background-color: #ff8a00;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  margin: 10px;
+  transition: background-color 0.3s;
+}
+
+.retry-button:hover,
+.continue-button:hover {
+  background-color: #ff9e2e;
+}
+
+.continue-button {
+  background-color: #6c757d;
+}
+
+.continue-button:hover {
+  background-color: #5a6268;
+}
+
+.error-note {
+  margin-top: 16px;
+  font-size: 0.9rem;
+  color: #666;
+  font-style: italic;
+}
+
+/* Enhanced Toolbar Status */
+.toolbar-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.toolbar-status.healthy {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.toolbar-status.warning {
+  background-color: #fff3e0;
+  color: #ef6c00;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .sync-warning,
+  .connection-warning,
+  .swarm-warning {
+    margin: 8px 0;
+    padding: 8px 12px;
+  }
+  
+  .current-content-summary {
+    margin: 16px 0;
+    padding: 12px;
+  }
+  
+  .service-status-grid {
+    gap: 2px;
+  }
+  
+  .service-status-grid .status-item {
+    font-size: 0.75rem;
+  }
+  
+  .loading-content,
+  .error-content {
+    margin: 20px;
+    padding: 30px 20px;
+  }
+}

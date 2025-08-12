@@ -1,4 +1,5 @@
 // src/pages/editor/components/steps/PublishStep.tsx - FIXED VERSION
+// Ensures current form data is used for publishing, not outdated draft data
 import React, { useState } from 'react';
 import { contentService, assetService, services } from '../../../../services';
 import { enhancedDraftStorage } from '../../../../utils/draftStorage';
@@ -31,45 +32,65 @@ export const PublishStep: React.FC<PublishStepProps> = ({
     loadServiceStatus();
   }, []);
 
+  // FIXED: Enhanced publish handler with guaranteed current data usage
   const handlePublishToSwarm = async () => {
     setIsPublishing(true);
     setPublishError(null);
     workflowState.setLoading(true);
 
     try {
-      // Validate required fields
-      if (!editorState.formData.title?.trim()) {
+      // CRITICAL FIX: Always use current formData, not stored draft
+      const currentFormData = editorState.formData;
+      
+      console.log('Publishing with CURRENT form data:', {
+        title: currentFormData.title,
+        contentLength: currentFormData.content.length,
+        category: currentFormData.category,
+        hasDescription: Boolean(currentFormData.description?.trim())
+      });
+
+      // Validate required fields using current data
+      if (!currentFormData.title?.trim()) {
         throw new Error('Title is required');
       }
 
-      if (!editorState.formData.content?.trim()) {
+      if (!currentFormData.content?.trim()) {
         throw new Error('Content is required');
       }
 
-      if (!editorState.formData.category?.trim()) {
+      if (!currentFormData.category?.trim()) {
         throw new Error('Category is required');
       }
 
-      if (!editorState.formData.authorAddress?.trim()) {
+      if (!currentFormData.authorAddress?.trim()) {
         throw new Error('Author address is required');
       }
 
-      // Save current draft first
-      const savedDraft = await editorState.saveDraft('Pre-publish save');
+      // FIXED: Save current state first to ensure draft storage is up-to-date
+      // This ensures the saved draft matches what we're about to publish
+      console.log('Saving current form data before publishing...');
+      let savedDraft;
+      try {
+        savedDraft = await editorState.saveDraft('Pre-publish save with current data');
+        console.log('Successfully saved current data to draft storage');
+      } catch (saveError) {
+        console.warn('Failed to save draft before publishing, continuing with current form data:', saveError);
+        // Continue with publish even if save fails - we'll use current form data
+      }
       
-      // Process content for publication (convert local URLs to public)
-      const processedContent = assetService.processMarkdownForPublication(editorState.formData.content);
+      // FIXED: Process content for publication using CURRENT form data
+      const processedContent = assetService.processMarkdownForPublication(currentFormData.content);
       
-      // Create blog content structure for ContentService
+      // FIXED: Create blog content structure using CURRENT form data (not saved draft)
       const blogContent = {
-        title: editorState.formData.title.trim(),
+        title: currentFormData.title.trim(),
         content: processedContent,
         metadata: {
-          author: editorState.formData.authorAddress,
-          category: editorState.formData.category.trim(),
-          tags: editorState.formData.tags || [],
-          createdAt: editorState.formData.createdAt || Date.now(),
-          banner: editorState.formData.banner || null
+          author: currentFormData.authorAddress,
+          category: currentFormData.category.trim(),
+          tags: currentFormData.tags || [],
+          createdAt: currentFormData.createdAt || Date.now(),
+          banner: currentFormData.banner || null
         }
       };
       
@@ -80,24 +101,40 @@ export const PublishStep: React.FC<PublishStepProps> = ({
       
       console.log('Content published successfully:', contentReference);
       
-      // Update form data with content reference
+      // FIXED: Update CURRENT form data with content reference
       editorState.updateContentReference(contentReference);
       
-      // Update the draft with published content and reference
+      // FIXED: Update the draft with published content and reference using current data
       if (savedDraft) {
         enhancedDraftStorage.saveDraft({
-          ...savedDraft,
+          ...currentFormData,  // Use current form data, not saved draft
+          id: savedDraft.id,   // Preserve the draft ID
           content: processedContent, // Store the processed content
           contentReference,
           stepProgress: {
-            ...savedDraft.stepProgress,
-            swarm: true
+            draft: true,
+            swarm: true,  // Mark as published to Swarm
+            governance: Boolean(savedDraft.stepProgress?.governance)
           }
-        }, 'Published to Swarm');
+        }, 'Published to Swarm with current data');
+      } else {
+        // If no saved draft, create a new one with current data
+        enhancedDraftStorage.saveDraft({
+          ...currentFormData,
+          content: processedContent,
+          contentReference,
+          stepProgress: {
+            draft: true,
+            swarm: true,
+            governance: false
+          }
+        }, 'Published to Swarm (new draft)');
       }
       
       // Update workflow status
       workflowState.updateStepStatus('swarm', true);
+      
+      console.log('Publish step completed successfully');
       
       // Auto-advance to governance step
       setTimeout(() => {
@@ -117,7 +154,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
 
   const isContentPublished = Boolean(editorState.formData.contentReference);
 
-  // FIXED: Check form validity using the new method that doesn't trigger setState during render
+  // Check form validity using current form data
   const canPublish = editorState.formValidation.isValidForStep('publish') &&
                      editorState.formData.title?.trim() &&
                      editorState.formData.content?.trim() &&
@@ -161,25 +198,46 @@ export const PublishStep: React.FC<PublishStepProps> = ({
         ) : (
           <div className="publish-info">
             <h3>Ready to Publish</h3>
-            <div className="publish-details">
-              <div className="detail-item">
-                <strong>Title:</strong> {editorState.formData.title}
-              </div>
-              <div className="detail-item">
-                <strong>Category:</strong> {editorState.formData.category}
-              </div>
-              <div className="detail-item">
-                <strong>Tags:</strong> {editorState.formData.tags?.join(', ') || 'None'}
-              </div>
-              <div className="detail-item">
-                <strong>Content Length:</strong> {editorState.formData.content?.length || 0} characters
-              </div>
-              {editorState.formData.usedAssets && editorState.formData.usedAssets.length > 0 && (
+            
+            {/* FIXED: Show current form data stats, not saved draft */}
+            <div className="current-content-summary">
+              <h4>📄 Current Content to Publish:</h4>
+              <div className="publish-details">
                 <div className="detail-item">
-                  <strong>Assets:</strong> {editorState.formData.usedAssets.length} image(s)
+                  <strong>Title:</strong> {editorState.formData.title || 'No title'}
                 </div>
-              )}
+                <div className="detail-item">
+                  <strong>Category:</strong> {editorState.formData.category || 'No category'}
+                </div>
+                <div className="detail-item">
+                  <strong>Tags:</strong> {editorState.formData.tags?.join(', ') || 'None'}
+                </div>
+                <div className="detail-item">
+                  <strong>Content Length:</strong> {editorState.formData.content?.length || 0} characters
+                </div>
+                {editorState.formData.description && (
+                  <div className="detail-item">
+                    <strong>Description:</strong> {editorState.formData.description.substring(0, 100)}...
+                  </div>
+                )}
+                {editorState.formData.usedAssets && editorState.formData.usedAssets.length > 0 && (
+                  <div className="detail-item">
+                    <strong>Assets:</strong> {editorState.formData.usedAssets.length} image(s)
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Unsaved changes warning */}
+            {editorState.hasUnsavedChanges && (
+              <div className="unsaved-changes-warning">
+                <h4>⚠️ Unsaved Changes Detected</h4>
+                <p>
+                  Your latest changes will be automatically saved and published. 
+                  The content shown above represents your current work, including any unsaved edits.
+                </p>
+              </div>
+            )}
 
             {/* Service Status Information */}
             <div className="service-status-info">
@@ -217,6 +275,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
               <h4>📋 Publishing Information:</h4>
               <ul>
                 <li>Content will be stored permanently on Swarm</li>
+                <li>Your current work (including any unsaved changes) will be published</li>
                 <li>Images will use public gateway URLs for universal access</li>
                 {serviceStatus?.nodeRunning ? (
                   <>
@@ -300,7 +359,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
               onClick={handlePublishToSwarm}
               disabled={isPublishing || !canPublish}
             >
-              {isPublishing ? '⏳ Publishing...' : '🚀 Publish to Swarm'}
+              {isPublishing ? '⏳ Publishing Current Content...' : '🚀 Publish to Swarm'}
             </button>
           ) : (
             <button
@@ -322,18 +381,22 @@ export const PublishStep: React.FC<PublishStepProps> = ({
             <div className="dev-content">
               <h5>Service Status:</h5>
               <pre>{JSON.stringify(serviceStatus, null, 2)}</pre>
-              <h5>Form Data:</h5>
+              <h5>Current Form Data (What Will Be Published):</h5>
               <pre>{JSON.stringify({
                 title: editorState.formData.title,
                 category: editorState.formData.category,
                 contentLength: editorState.formData.content?.length,
-                contentReference: editorState.formData.contentReference
+                hasDescription: Boolean(editorState.formData.description?.trim()),
+                contentReference: editorState.formData.contentReference,
+                hasUnsavedChanges: editorState.hasUnsavedChanges
               }, null, 2)}</pre>
               <h5>Validation:</h5>
               <pre>{JSON.stringify({
                 canPublish,
                 errors: editorState.formValidation.errors
               }, null, 2)}</pre>
+              <h5>Current Draft ID:</h5>
+              <pre>{editorState.currentDraft?.id || 'No current draft'}</pre>
             </div>
           </details>
         </div>

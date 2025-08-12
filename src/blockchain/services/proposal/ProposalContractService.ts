@@ -281,18 +281,97 @@ export class ProposalContractService extends BaseContractService {
         throw new Error('Content reference is required');
       }
 
-      // Prepare the remark (title + description)
-      const remark = `${proposal.title.trim()}\n${proposal.description?.trim() || ''}`;
-      
-      // Encode the content reference as callData
-      const callData = ethers.AbiCoder.defaultAbiCoder().encode(['string'], [proposal.contentReference]);
+      console.log('Creating proposal for:', {
+        title: proposal.title,
+        author: proposal.authorAddress,
+        contentRef: proposal.contentReference
+      });
 
+      // STEP 1: Create proper NFT metadata (like the working example)
+      const metadata = {
+        name: proposal.title,
+        description: proposal.description || `A blog post about ${proposal.category}`,
+        image: proposal.banner || "", // Empty string if no banner
+        attributes: [
+          {
+            trait_type: "Author",
+            value: proposal.authorAddress
+          },
+          {
+            trait_type: "PublishedDate", 
+            value: new Date().toISOString()
+          },
+          {
+            trait_type: "Category",
+            value: proposal.category
+          }
+        ],
+        properties: {
+          contentReference: proposal.contentReference,
+          approvalDate: new Date().toISOString(),
+          category: proposal.category,
+          tags: proposal.tags,
+          authorAddress: proposal.authorAddress
+        }
+      };
+
+      // Add tags as individual attributes (like the working example)
+      proposal.tags.forEach(tag => {
+        if (tag.trim()) {
+          metadata.attributes.push({
+            trait_type: "Tag",
+            value: tag.trim()
+          });
+        }
+      });
+
+      // STEP 2: Convert metadata to base64 data URI (exactly like working example)
+      const metadataJson = JSON.stringify(metadata);
+      const metadataBase64 = btoa(unescape(encodeURIComponent(metadataJson)));
+      const tokenURI = `data:application/json;base64,${metadataBase64}`;
+
+      console.log('Generated tokenURI:', tokenURI.substring(0, 100) + '...');
+
+      // STEP 3: Create proper callData for mintTo function (this is the key fix!)
+      // The callData MUST be a properly encoded function call to mintTo(address,string)
+      const mintToCallData = this.nftMintingModule.interface.encodeFunctionData(
+        "mintTo",
+        [
+          proposal.authorAddress, // recipient address
+          tokenURI               // the base64-encoded metadata
+        ]
+      );
+
+      console.log('Generated callData:', {
+        functionSelector: mintToCallData.substring(0, 10), // Should be 0x0075a317
+        length: mintToCallData.length,
+        targetContract: this.nftMintingModule.target
+      });
+
+      // STEP 4: Create the proper remark (description with blog details)
+      const remark = [
+        `Blog: ${proposal.title}`,
+        `Author: ${proposal.authorAddress}`,
+        `Category: ${proposal.category}`,
+        `Tags: ${proposal.tags.join(', ')}`,
+        `Content Reference: ${proposal.contentReference}`,
+        proposal.description || `A blog post about ${proposal.category} by ${proposal.authorAddress.substring(0, 6)}...${proposal.authorAddress.substring(38)}`
+      ].join(' ');
+
+      console.log('Created remark:', remark.substring(0, 200) + '...');
+
+      // STEP 5: Submit the proposal with correct callData
       const result = await this.executeTransaction(async () => {
         return this.generalDAOVoting.createProposal(
           votingSituationName,
           remark,
-          callData
+          mintToCallData // This MUST be the encoded mintTo function call, NOT just content reference
         );
+      });
+
+      console.log('Proposal creation result:', {
+        status: result.status,
+        hash: result.hash
       });
 
       return result;

@@ -1,4 +1,5 @@
 // src/pages/editor/hooks/useEditorWorkflow.tsx - FIXED VERSION
+// Enhanced with automatic save before step transitions
 import { useState, useCallback, useEffect } from 'react';
 import { useSimpleApp } from '../../../contexts/SimpleAppContext';
 import { EditorStep, EditorWorkflowState, EnhancedBlogDraft } from '../../../types/editorTypes';
@@ -8,16 +9,17 @@ interface UseEditorWorkflowProps {
   initialStep?: EditorStep;
   draft?: EnhancedBlogDraft | null;
   onStepChange?: (step: EditorStep, state: EditorWorkflowState) => void;
+  ensureSavedForTransition?: (targetStep: EditorStep) => Promise<boolean>; // NEW: Save before transition
 }
 
 /**
- * Manages the editor workflow state and step transitions
- * FIXED: Prevents auto-progression to review step
+ * FIXED: Enhanced workflow management with automatic save before step transitions
  */
 export const useEditorWorkflow = ({
   initialStep = 'draft',
   draft,
-  onStepChange
+  onStepChange,
+  ensureSavedForTransition
 }: UseEditorWorkflowProps = {}) => {
   const { state: appState } = useSimpleApp();
   
@@ -33,7 +35,7 @@ export const useEditorWorkflow = ({
     error: null
   });
 
-  // FIXED: Update workflow state based on draft changes but DON'T auto-advance steps
+  // Update workflow state based on draft changes
   useEffect(() => {
     if (draft) {
       const stepStatus = draft.stepProgress || {
@@ -42,8 +44,6 @@ export const useEditorWorkflow = ({
         governance: Boolean(draft.isPublished)
       };
       
-      // FIXED: Only update step status, not current step
-      // Let user manually navigate between steps
       setWorkflowState(prev => ({
         ...prev,
         stepStatus,
@@ -69,8 +69,8 @@ export const useEditorWorkflow = ({
     }
   }, [appState]);
 
-  const goToStep = useCallback((targetStep: EditorStep, force: boolean = false) => {
-    // FIXED: Allow going back to any previous step without restrictions
+  // FIXED: Enhanced goToStep with automatic save before transition
+  const goToStep = useCallback(async (targetStep: EditorStep, force: boolean = false) => {
     const stepOrder: EditorStep[] = ['draft', 'review', 'publish', 'governance', 'success'];
     const currentIndex = stepOrder.indexOf(workflowState.currentStep);
     const targetIndex = stepOrder.indexOf(targetStep);
@@ -87,6 +87,34 @@ export const useEditorWorkflow = ({
       }));
       return false;
     }
+
+    // FIXED: Ensure save before transition if handler is provided
+    if (ensureSavedForTransition && targetIndex > currentIndex) {
+      console.log(`Ensuring save before transitioning from ${workflowState.currentStep} to ${targetStep}`);
+      setWorkflowState(prev => ({ ...prev, isLoading: true }));
+      
+      try {
+        const saveSuccess = await ensureSavedForTransition(targetStep);
+        if (!saveSuccess) {
+          setWorkflowState(prev => ({
+            ...prev,
+            error: 'Failed to save current changes before step transition',
+            isLoading: false
+          }));
+          return false;
+        }
+      } catch (error) {
+        console.error('Error saving before step transition:', error);
+        setWorkflowState(prev => ({
+          ...prev,
+          error: 'Failed to save current changes before step transition',
+          isLoading: false
+        }));
+        return false;
+      } finally {
+        setWorkflowState(prev => ({ ...prev, isLoading: false }));
+      }
+    }
     
     setWorkflowState(prev => {
       const newState = {
@@ -97,7 +125,6 @@ export const useEditorWorkflow = ({
       };
       
       if (onStepChange) {
-        // FIXED: Use setTimeout to avoid calling setState during render
         setTimeout(() => onStepChange(targetStep, newState), 0);
       }
       
@@ -105,7 +132,7 @@ export const useEditorWorkflow = ({
     });
     
     return true;
-  }, [workflowState.stepStatus, workflowState.currentStep, canProgressFromStep, onStepChange]);
+  }, [workflowState.stepStatus, workflowState.currentStep, canProgressFromStep, onStepChange, ensureSavedForTransition]);
 
   const updateStepStatus = useCallback((step: 'draft' | 'swarm' | 'governance', completed: boolean) => {
     setWorkflowState(prev => {
@@ -125,7 +152,6 @@ export const useEditorWorkflow = ({
         governance: 'governance'
       };
       
-      // FIXED: Use setTimeout to avoid setState during render
       setTimeout(() => {
         enhancedDraftStorage.updateWorkflowProgress(
           draft.id,
