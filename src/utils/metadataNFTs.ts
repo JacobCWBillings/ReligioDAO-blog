@@ -1,6 +1,6 @@
 // src/blockchain/utils/metadata.ts
-import { BlogNFTMetadata, NFTAttribute } from '../../types/blockchain';
-import config from '../../config';
+import { BlogNFTMetadata, NFTAttribute } from '../types/blockchainTypes';
+import config from '../config';
 
 /**
  * Creates standardized metadata for a Blog NFT

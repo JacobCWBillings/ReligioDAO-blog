@@ -1,13 +1,13 @@
 // src/components/SimpleBlogEditor.tsx - FIXED VERSION
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useWallet } from '../../contexts/WalletContext';
+import { useWallet } from '../../../contexts/WalletContext';
 
 // New service architecture
-import { swarmService, contentService, assetService } from '../../services';
+import { swarmService, contentService, assetService } from '../../../swarm/services';
 
 // FIXED: Import EnhancedBlogDraft correctly
-import { enhancedDraftStorage, type EnhancedBlogDraft } from '../../utils/draftStorage';
+import { enhancedDraftStorage, type EnhancedBlogDraft } from '../../../utils/draftStorage';
 
 // Components
 import { EnhancedAssetBrowser } from './EnhancedAssetBrowser';

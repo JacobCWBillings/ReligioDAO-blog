@@ -3,10 +3,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
-import { Proposal, ProposalStatus } from '../../types/blockchain';
-import { BlogProposalMinting } from '../../components/proposal/BlogProposalMinting';
-import { services } from '../../services';
-import { formatAddress } from '../../blockchain/utils/walletUtils';
+import { Proposal, ProposalStatus } from '../../types/blockchainTypes';
+import { BlogProposalMinting } from './components/BlogProposalMinting';
+import { services } from '../../swarm/services';
+import { formatAddress } from '../../utils/walletUtils';
 import './ProposalDetailPage.css';
 
 /**

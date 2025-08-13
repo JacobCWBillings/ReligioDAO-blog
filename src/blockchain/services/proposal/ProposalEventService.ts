@@ -1,7 +1,7 @@
 // src/blockchain/services/proposal/ProposalEventService.ts
 import { ethers } from 'ethers';
-import { Proposal, BlockchainError, BlockchainErrorType } from '../../../types/blockchain';
-import { isEventLog, TypedCache, getBlockTimestamp, enrichEventsWithTimestamp } from './EventTypes';
+import { Proposal, BlockchainError, BlockchainErrorType } from '../../../types/blockchainTypes';
+import { isEventLog, TypedCache, getBlockTimestamp, enrichEventsWithTimestamp } from './types/eventTypes';
 
 export interface ProposalCreatedEvent {
   proposalId: string;

@@ -1,8 +1,8 @@
 // src/components/proposal/ProposalCard.tsx - Complete component with 0-based indexing fix
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Proposal, ProposalStatus } from '../../types/blockchain';
-import { formatAddress } from '../../blockchain/utils/walletUtils';
+import { Proposal, ProposalStatus } from '../../../types/blockchainTypes';
+import { formatAddress } from '../../../utils/walletUtils';
 import './ProposalCard.css';
 
 interface ProposalCardProps {

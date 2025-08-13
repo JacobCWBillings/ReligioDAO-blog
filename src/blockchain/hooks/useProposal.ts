@@ -8,7 +8,7 @@ import {
   BlockchainError, 
   BlockchainErrorType, 
   TransactionStatus 
-} from '../../types/blockchain';
+} from '../../types/blockchainTypes';
 import { ProposalService } from '../services/ProposalService';
 
 /**

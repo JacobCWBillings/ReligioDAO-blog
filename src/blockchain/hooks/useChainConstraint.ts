@@ -1,9 +1,9 @@
 // src/blockchain/hooks/useChainConstraint.ts
 import { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
-import { switchNetwork, isSupportedNetwork } from '../utils/walletUtils';
+import { switchNetwork, isSupportedNetwork } from '../../utils/walletUtils';
 import config from '../../config';
-import { BlockchainError, BlockchainErrorType } from '../../types/blockchain';
+import { BlockchainError, BlockchainErrorType } from '../../types/blockchainTypes';
 
 /**
  * Hook for constraining the app to the correct blockchain chain

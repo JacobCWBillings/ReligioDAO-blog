@@ -1,7 +1,7 @@
 // src/pages/editor/components/steps/PublishStep.tsx - FIXED VERSION
 // Ensures current form data is used for publishing, not outdated draft data
 import React, { useState } from 'react';
-import { contentService, assetService, services } from '../../../../services';
+import { contentService, assetService, services } from '../../../../swarm/services';
 import { enhancedDraftStorage } from '../../../../utils/draftStorage';
 
 interface PublishStepProps {

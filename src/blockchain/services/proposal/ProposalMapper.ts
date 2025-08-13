@@ -1,6 +1,6 @@
 // src/blockchain/services/proposal/ProposalMapper.ts - FIXED: Don't filter out proposal ID 0
 import { ethers } from 'ethers';
-import { Proposal, ProposalStatus } from '../../../types/blockchain';
+import { Proposal, ProposalStatus } from '../../../types/blockchainTypes';
 
 // Contract data structures (matching the GeneralDAOVoting ABI)
 export interface ContractDAOProposal {

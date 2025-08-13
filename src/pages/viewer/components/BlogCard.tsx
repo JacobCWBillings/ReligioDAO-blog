@@ -1,10 +1,10 @@
 // src/components/BlogCard.tsx
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { BlogNFT } from '../types/blockchain';
-import { formatAddress } from '../blockchain/utils/walletUtils';
-import { HighlightedTitle, HighlightedPreview } from './TextHighlighter';
-import defaultImage from '../static/media/default.jpg'
+import { BlogNFT } from '../../../types/blockchainTypes';
+import { formatAddress } from '../../../utils/walletUtils';
+import { HighlightedTitle, HighlightedPreview } from '../../../components/TextHighlighter';
+import defaultImage from '../../../static/media/default.jpg'
 import './BlogCard.css';
 
 interface BlogCardProps {

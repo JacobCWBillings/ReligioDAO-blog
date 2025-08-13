@@ -3,9 +3,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useBlogNFT } from '../../blockchain/hooks/useBlogNFT';
 import { useWallet } from '../../contexts/WalletContext';
-import { BlogCard } from '../../components/BlogCard';
+import { BlogCard } from './components/BlogCard';
 import { BlogListSkeleton } from '../../components/skeletons/Skeleton';
-import { BlogFilter, BlogSort } from '../../types/blockchain';
+import { BlogFilter, BlogSort } from '../../types/blockchainTypes';
 import './BlogListPage.css';
 
 export const BlogListPage: React.FC = () => {

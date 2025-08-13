@@ -6,9 +6,9 @@ import {
   TransactionStatus,
   BlockchainError,
   BlockchainErrorType 
-} from '../../../types/blockchain';
+} from '../../../types/blockchainTypes';
 import { ContractDAOProposal } from './ProposalMapper';
-import { createBigInt } from './EventTypes';
+import { createBigInt } from './types/eventTypes';
 import GeneralDAOVotingABI from '../../abis/GeneralDAOVoting.json';
 import NFTMintingModulePlusABI from '../../abis/NFTMintingModulePlus.json';
 import { getCurrentNetworkConfig, getVotingSituationName } from '../../../config';

@@ -1,7 +1,7 @@
 // src/pages/editor/components/steps/ReviewStep.tsx - FIXED VERSION
 import React, { useState, useCallback } from 'react';
 import { marked } from 'marked';
-import { SimpleMarkdownEditor } from '../../../../components/editor/SimpleMarkdownEditor';
+import { SimpleMarkdownEditor } from '../SimpleMarkdownEditor';
 
 interface ReviewStepProps {
   editorState: any;

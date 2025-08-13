@@ -1,7 +1,7 @@
 // src/blockchain/utils/walletUtils.ts
 import { ethers } from 'ethers';
-import { walletConnectionInfo } from '../../config';
-import { BlockchainError, BlockchainErrorType } from '../../types/blockchain';
+import { walletConnectionInfo } from '../config';
+import { BlockchainError, BlockchainErrorType } from '../types/blockchainTypes';
 
 /**
  * Wallet connection status

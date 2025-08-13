@@ -1,8 +1,8 @@
 // src/components/proposal/BlogProposalMinting.tsx
 import React, { useState, useCallback } from 'react';
-import { useProposal } from '../../blockchain/hooks/useProposal';
-import { useWallet } from '../../contexts/WalletContext';
-import { ProposalStatus } from '../../types/blockchain';
+import { useProposal } from '../../../blockchain/hooks/useProposal';
+import { useWallet } from '../../../contexts/WalletContext';
+import { ProposalStatus } from '../../../types/blockchainTypes';
 import './BlogProposalMinting.css';
 
 interface BlogProposalMintingProps {

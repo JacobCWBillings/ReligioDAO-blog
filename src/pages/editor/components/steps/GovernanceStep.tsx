@@ -3,9 +3,9 @@ import React, { useState } from 'react';
 import { useWallet } from '../../../../contexts/WalletContext';
 import { useProposal } from '../../../../blockchain/hooks/useProposal';
 import { enhancedDraftStorage } from '../../../../utils/draftStorage';
-import { contentService } from '../../../../services';
+import { contentService } from '../../../../swarm/services';
 // Import the existing BlogProposal type from blockchain types
-import { BlogProposal } from '../../../../types/blockchain';
+import { BlogProposal } from '../../../../types/blockchainTypes';
 
 interface GovernanceStepProps {
   editorState: any;

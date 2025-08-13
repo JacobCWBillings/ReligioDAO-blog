@@ -6,9 +6,9 @@ import {
   BlockchainError, 
   BlockchainErrorType, 
   TransactionStatus 
-} from '../../types/blockchain';
+} from '../../types/blockchainTypes';
 import { getContractAddresses } from '../../config';
-import { createBlogNFTMetadata, metadataToTokenURI } from '../utils/metadata';
+import { createBlogNFTMetadata, metadataToTokenURI } from '../../utils/metadataNFTs';
 
 import NFTMintingModulePlusABI from '../abis/NFTMintingModulePlus.json';
 import QRC721PlusABI from '../abis/QRC721Plus.json';

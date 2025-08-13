@@ -1,8 +1,8 @@
 // src/pages/editor/components/steps/DraftStep.tsx
 import React, { useRef, useCallback } from 'react';
 import { useWallet } from '../../../../contexts/WalletContext';
-import { assetService } from '../../../../services';
-import { SimpleMarkdownEditor } from '../../../../components/editor/SimpleMarkdownEditor';
+import { assetService } from '../../../../swarm/services';
+import { SimpleMarkdownEditor } from '../SimpleMarkdownEditor';
 
 interface DraftStepProps {
   editorState: any; // Type from useEditorState

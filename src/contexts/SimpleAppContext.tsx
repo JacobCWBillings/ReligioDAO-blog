@@ -1,6 +1,6 @@
 // src/contexts/SimpleAppContext.tsx - REFACTORED for new service architecture
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { services } from '../services/index';
+import { services } from '../swarm/services/index';
 
 /**
  * Simple app configuration interface

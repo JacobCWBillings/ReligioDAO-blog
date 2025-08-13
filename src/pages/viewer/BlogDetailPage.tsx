@@ -4,9 +4,9 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useBlogNFT } from '../../blockchain/hooks/useBlogNFT';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
-import { formatAddress } from '../../blockchain/utils/walletUtils';
+import { formatAddress } from '../../utils/walletUtils';
 import { BlogDetailSkeleton } from '../../components/skeletons/Skeleton';
-import { services } from '../../services'; // Use new service architecture
+import { services } from '../../swarm/services'; // Use new service architecture
 import defaultImage from '../../static/media/default.jpg';
 import './BlogDetailPage.css';
 

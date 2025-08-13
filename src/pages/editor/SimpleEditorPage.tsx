@@ -6,7 +6,7 @@ import { useWallet } from '../../contexts/WalletContext';
 import { PlatformStatusBanner, useSimpleApp } from '../../contexts/SimpleAppContext';
 
 // Services
-import { services, contentService, assetService } from '../../services';
+import { services, contentService, assetService } from '../../swarm/services';
 
 // Import our enhanced components and hooks
 import { useEditorState } from './hooks/useEditorState';
@@ -20,7 +20,7 @@ import { GovernanceStep } from './components/steps/GovernanceStep';
 import { SuccessStep } from './components/steps/SuccessStep';
 
 // Import existing components
-import { EnhancedAssetBrowser } from '../../components/editor/EnhancedAssetBrowser';
+import { EnhancedAssetBrowser } from './components/EnhancedAssetBrowser';
 
 // Types
 import { EditorStep, EnhancedBlogDraft } from '../../types/editorTypes';

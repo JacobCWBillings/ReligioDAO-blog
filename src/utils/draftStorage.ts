@@ -1,7 +1,7 @@
 // src/pages/editor/utils/draftStorage.ts - CORRECTED VERSION with proper imports
 // FIXED: Properly import types from editorTypes.ts instead of duplicating them
 
-import { BlogProposal } from '../types/blockchain';
+import { BlogProposal } from '../types/blockchainTypes';
 
 // FIXED: Import and re-export the types from the existing editorTypes file
 import { 

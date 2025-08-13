@@ -10,9 +10,9 @@ import {
   PaginatedBlogs,
   BlockchainErrorType, 
   BlockchainError 
-} from '../../types/blockchain';
+} from '../../types/blockchainTypes';
 import { getContractAddresses } from '../../config';
-import { parseMetadataFromURI } from '../utils/metadata';
+import { parseMetadataFromURI } from '../../utils/metadataNFTs';
 import { toNumber } from '../utils/blockchainUtils';
 
 import QRC721PlusABI from '../abis/QRC721Plus.json';
