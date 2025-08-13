@@ -1,4 +1,4 @@
-// src/services/SwarmService.ts - FIXED VERSION
+// src/services/SwarmService.ts - UPDATED: Added uploadMarkdownContent method
 import { Bee } from '@ethersphere/bee-js';
 
 export interface SwarmConfig {
@@ -165,6 +165,27 @@ export class SwarmService {
     } catch (error) {
       console.error('Error uploading HTML content:', error);
       throw new Error(`Failed to upload HTML content: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * NEW: Upload content as markdown file
+   * FIXED: This avoids Swarm's website hosting restrictions for index.html
+   */
+  async uploadMarkdownContent(markdownContent: string, filename: string = 'blog-content.md'): Promise<SwarmUploadResult> {
+    try {
+      // Convert string to bytes and create File object
+      const markdownBytes = new TextEncoder().encode(markdownContent);
+      const file = new File([markdownBytes as BlobPart], filename, { 
+        type: 'text/markdown',
+        lastModified: Date.now()
+      });
+
+      return await this.uploadFile(file);
+
+    } catch (error) {
+      console.error('Error uploading markdown content:', error);
+      throw new Error(`Failed to upload markdown content: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -378,6 +399,32 @@ export class SwarmService {
   }
 
   /**
+   * Get current configuration
+   */
+  getConfig(): SwarmConfig & { postageBatchId: string; initialized: boolean } {
+    return {
+      ...this.config,
+      postageBatchId: this.postageBatchId,
+      initialized: this.initialized
+    };
+  }
+
+  /**
+   * Update configuration (creates new Bee instance)
+   */
+  updateConfig(newConfig: Partial<SwarmConfig>, newPostageBatchId?: string): void {
+    this.config = { ...this.config, ...newConfig };
+    this.bee = new Bee(this.config.local);
+    
+    if (newPostageBatchId) {
+      this.postageBatchId = newPostageBatchId;
+    }
+    
+    // Reset initialization flag to force re-init with new config
+    this.initialized = false;
+  }
+
+  /**
    * Test connectivity to all configured gateways
    */
   async testGatewayConnectivity(): Promise<{
@@ -407,31 +454,5 @@ export class SwarmService {
     );
 
     return results;
-  }
-
-  /**
-   * Get current configuration
-   */
-  getConfig(): SwarmConfig & { postageBatchId: string; initialized: boolean } {
-    return {
-      ...this.config,
-      postageBatchId: this.postageBatchId,
-      initialized: this.initialized
-    };
-  }
-
-  /**
-   * Update configuration (creates new Bee instance)
-   */
-  updateConfig(newConfig: Partial<SwarmConfig>, newPostageBatchId?: string): void {
-    this.config = { ...this.config, ...newConfig };
-    this.bee = new Bee(this.config.local);
-    
-    if (newPostageBatchId) {
-      this.postageBatchId = newPostageBatchId;
-    }
-    
-    // Reset initialization flag to force re-init with new config
-    this.initialized = false;
   }
 }

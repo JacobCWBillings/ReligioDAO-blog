@@ -1,4 +1,4 @@
-// src/pages/viewer/BlogDetailPage.tsx - Updated to use new service architecture
+// src/pages/viewer/BlogDetailPage.tsx - Fixed with correct contentReference access
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useBlogNFT } from '../../blockchain/hooks/useBlogNFT';
@@ -25,8 +25,9 @@ export const BlogDetailPage: React.FC = () => {
   const [blog, setBlog] = useState<any>(null);
   const [fetchAttempted, setFetchAttempted] = useState<boolean>(false);
   const [relatedBlogs, setRelatedBlogs] = useState<any[]>([]);
+  const [debugInfo, setDebugInfo] = useState<string>('');
 
-  // Fetch blog content from Swarm using new service architecture
+  // Enhanced fetch blog content with better error handling and debugging
   const fetchBlogContent = useCallback(async (contentReference: string) => {
     if (!contentReference || contentReference.trim() === '') {
       setError('Blog content reference not found');
@@ -40,153 +41,221 @@ export const BlogDetailPage: React.FC = () => {
     
     try {
       setContentLoading(true);
+      setError(null);
       console.log(`Fetching blog content for reference: ${contentReference}`);
       
-      // Use the new ContentService with caching
+      // Add debug information
+      setDebugInfo(`Attempting to fetch content with reference: ${contentReference}`);
+      
+      // Use the enhanced ContentService with proper blog handling
       const html = await services.content.getContentAsHtml(contentReference);
       
       if (!html || html.trim() === '') {
         console.error('Retrieved empty content from Swarm');
         setError('Blog content is empty');
+        setDebugInfo('Retrieved empty content from Swarm');
       } else {
         console.log('Successfully retrieved blog content');
-        setBlogContent(html);
-        setError(null); // Clear any previous errors
+        
+        // FIXED: Check if content looks like proper HTML
+        if (html.includes('<!DOCTYPE html>') || html.includes('<html')) {
+          setBlogContent(html);
+          setError(null);
+          setDebugInfo(`Successfully loaded HTML content (${html.length} characters)`);
+        } else if (html.includes('{"website-index-document"') || html.includes('\x00')) {
+          // This indicates we got binary/collection data instead of HTML
+          console.error('Received binary/collection data instead of HTML. This suggests an endpoint mismatch.');
+          setError('Content format error: Received collection metadata instead of HTML. The blog may need to be re-uploaded or the content service needs fixing.');
+          setDebugInfo('ERROR: Received binary collection data. Check console for technical details.');
+          
+          // Log technical details for debugging
+          console.error('Raw content preview:', html.substring(0, 200));
+          console.error('Content reference:', contentReference);
+          console.error('This usually means the content was uploaded as a collection but is being accessed as raw bytes.');
+        } else {
+          // Content doesn't look like HTML but isn't binary either
+          console.warn('Content doesn\'t appear to be proper HTML');
+          setBlogContent(html); // Still try to display it
+          setDebugInfo(`Loaded content that may not be proper HTML (${html.length} characters)`);
+        }
       }
     } catch (err) {
       console.error('Error fetching blog content:', err);
-      setError(`Failed to load blog content: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(`Failed to load blog content: ${errorMessage}`);
+      setDebugInfo(`ERROR: ${errorMessage}`);
+      
+      // Additional debugging for common issues
+      if (errorMessage.includes('Failed to download blog HTML')) {
+        setDebugInfo(prev => prev + '\n\nTip: This error suggests the content was uploaded as a Swarm collection but the download is using the wrong endpoint. Check ContentService.downloadBlogHtml method.');
+      }
     } finally {
       setContentLoading(false);
     }
   }, [fetchAttempted]);
 
-  // Fetch blog data when the component mounts
-  useEffect(() => {
-    let isMounted = true; // Flag to track if component is mounted
-    
-    const fetchBlog = async () => {
-      if (!blogId) {
-        if (isMounted) {
-          setError('Blog ID not provided');
-          setLoading(false);
-        }
+  // Fetch blog metadata from blockchain
+  const fetchBlogData = useCallback(async (id: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log('Fetching blog data for ID:', id);
+      const blogData = await getNFTById(id);
+      
+      if (!blogData) {
+        setError('Blog not found');
         return;
       }
-
-      try {
-        // This should get blogs from the NFT contract
-        const blogData = await getNFTById(blogId);
-        
-        if (!isMounted) return; // Skip state updates if unmounted
-        
-        if (!blogData) {
-          // Detect if this is potentially a proposal ID mistakenly used as a blog ID
-          try {
-            const proposalData = await getProposalById(blogId);
-            if (proposalData) {
-              // This is actually a proposal ID, redirect to proposal page
-              console.log('This appears to be a proposal ID, redirecting to proposal page');
-              navigate(`/proposals/${blogId}`);
-              return;
-            }
-          } catch (err) {
-            // Not a valid proposal ID either, proceed with normal error
-            console.error('Blog not found for ID:', blogId);
-          }
-          
-          setError('Blog not found or not yet minted as NFT');
-          setLoading(false);
-          return;
-        }
-        
-        console.log('Retrieved blog data:', blogData);
-        setBlog(blogData);
-        setError(null); // Clear any previous errors
-        setLoading(false);
-        
-        // Extract and validate content reference
-        if (blogData.contentReference && typeof blogData.contentReference === 'string') {
-          const contentRef = blogData.contentReference.trim();
-          
-          if (contentRef) {
-            console.log(`Extracted content reference from blog metadata: ${contentRef}`);
-            // Fetch blog content
-            if (isMounted) {
-              fetchBlogContent(contentRef);
-            }
-          } else {
-            console.error('Content reference is empty in blog metadata');
-            if (isMounted) {
-              setError('Blog content reference is missing');
-              setContentLoading(false);
-            }
-          }
-        } else if (blogData.metadata?.properties?.contentReference && 
-                  typeof blogData.metadata.properties.contentReference === 'string') {
-          // Try fallback to nested content reference
-          const contentRef = blogData.metadata.properties.contentReference.trim();
-          
-          if (contentRef) {
-            console.log(`Using nested content reference from metadata properties: ${contentRef}`);
-            if (isMounted) {
-              fetchBlogContent(contentRef);
-            }
-          } else {
-            console.error('Nested content reference is empty');
-            if (isMounted) {
-              setError('Blog content reference is missing');
-              setContentLoading(false);
-            }
-          }
-        } else {
-          console.error('No content reference found in blog metadata');
-          if (isMounted) {
-            setError('Blog content reference is missing');
-            setContentLoading(false);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching blog:', err);
-        
-        if (!isMounted) return; // Skip state updates if unmounted
-        
-        // Check if error suggests this might be a proposal ID
-        if (err instanceof Error && err.message.includes('token does not exist')) {
-          try {
-            const proposalData = await getProposalById(blogId);
-            if (proposalData) {
-              // This is actually a proposal ID, redirect to proposal page
-              console.log('This appears to be a proposal ID, redirecting to proposal page');
-              navigate(`/proposals/${blogId}`);
-              return;
-            }
-          } catch (proposalErr) {
-            // Not a valid proposal ID either
-            setError('Blog not found or not yet minted as NFT');
-          }
-        } else {
-          setError('Failed to load blog');
-        }
-        
-        setLoading(false);
+      
+      console.log('Retrieved blog data:', blogData);
+      setBlog(blogData);
+      
+      // FIXED: Extract content reference from the correct location
+      // BlogNFT interface has contentReference as a top-level property
+      const contentRef = blogData.contentReference || 
+                        blogData.metadata?.properties?.contentReference;
+      
+      if (contentRef) {
+        console.log('Extracted content reference from blog data:', contentRef);
+        await fetchBlogContent(contentRef);
+      } else {
+        console.error('No content reference found in blog data');
+        setError('Blog content reference not found');
+        setDebugInfo('No contentReference found in blog data. Check BlogNFT structure.');
       }
-    };
+      
+    } catch (err) {
+      console.error('Error fetching blog data:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(`Failed to load blog: ${errorMessage}`);
+      setDebugInfo(`Blog fetch error: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [getNFTById, fetchBlogContent]);
 
-    // Fetch blog data
-    fetchBlog();
-    
-    return () => {
-      isMounted = false; // Cleanup function to handle unmounting
-    };
-  }, [blogId, getNFTById, getProposalById, navigate, fetchBlogContent]);
+  // Load blog on component mount
+  useEffect(() => {
+    if (blogId) {
+      fetchBlogData(blogId);
+    } else {
+      setError('No blog ID provided');
+      setLoading(false);
+    }
+  }, [blogId, fetchBlogData]);
 
-  // Handle edit button click (only available to blog author)
+  // Handler functions
   const handleEdit = () => {
-    navigate(`/editor/${blogId}`);
+    if (blog) {
+      navigate(`/editor?edit=${blog.tokenId}`);
+    }
   };
 
-  // Format date from timestamp
+  const handleShare = async () => {
+    if (navigator.share && blog) {
+      try {
+        await navigator.share({
+          title: blog.metadata.name,
+          text: blog.metadata.description,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.log('Error sharing:', err);
+      }
+    } else {
+      // Fallback to copying URL
+      navigator.clipboard.writeText(window.location.href);
+      alert('URL copied to clipboard!');
+    }
+  };
+
+  const handleRetry = () => {
+    if (blog?.contentReference) {
+      setFetchAttempted(false);
+      setError(null);
+      setBlogContent('');
+      setDebugInfo('Clearing cache and retrying...');
+      
+      // Clear the cached content for this reference
+      services.content.removeFromCache(blog.contentReference);
+      fetchBlogContent(blog.contentReference);
+    } else if (blogId) {
+      // Retry the entire process
+      setFetchAttempted(false);
+      setBlog(null);
+      setBlogContent('');
+      setError(null);
+      setDebugInfo('Retrying blog data fetch...');
+      fetchBlogData(blogId);
+    }
+  };
+
+  const handleForceRefresh = async () => {
+    if (!blog?.contentReference) return;
+    
+    try {
+      setContentLoading(true);
+      setError(null);
+      setDebugInfo('Force refreshing content...');
+      
+      const html = await services.content.forceRefreshContent(blog.contentReference);
+      setBlogContent(html);
+      setDebugInfo('Content force refreshed successfully');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Force refresh failed: ${errorMessage}`);
+      setDebugInfo(`Force refresh error: ${errorMessage}`);
+    } finally {
+      setContentLoading(false);
+    }
+  };
+
+  // Show loading skeleton while fetching
+  if (loading) {
+    return <BlogDetailSkeleton />;
+  }
+
+  // Show error state
+  if (error && !blog) {
+    return (
+      <div className="blog-detail-page">
+        <div className="blog-content-container">
+          <div className="error-state">
+            <h2>Error Loading Blog</h2>
+            <p>{error}</p>
+            {debugInfo && (
+              <details style={{ marginTop: '20px' }}>
+                <summary>Debug Information</summary>
+                <pre style={{ background: '#f5f5f5', padding: '10px', fontSize: '12px', whiteSpace: 'pre-wrap' }}>
+                  {debugInfo}
+                </pre>
+              </details>
+            )}
+            <button onClick={handleRetry} style={{ marginTop: '20px' }}>
+              Retry
+            </button>
+            <button onClick={() => navigate('/blogs')} style={{ marginTop: '10px', marginLeft: '10px' }}>
+              Back to Blogs
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!blog) {
+    return (
+      <div className="blog-detail-page">
+        <div className="blog-content-container">
+          <p>Blog not found.</p>
+          <button onClick={() => navigate('/blogs')}>Back to Blogs</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Helper functions
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -195,95 +264,11 @@ export const BlogDetailPage: React.FC = () => {
     });
   };
 
-  // Determine if current user is the blog author
-  const isAuthor = React.useMemo(() => {
-    if (!isConnected || !account || !blog) return false;
-    
-    const authorAddress = blog.metadata?.properties?.authorAddress;
-    return authorAddress && authorAddress.toLowerCase() === account.toLowerCase();
-  }, [account, blog, isConnected]);
+  const isAuthor = account && blog.owner && 
+    account.toLowerCase() === blog.owner.toLowerCase();
 
-  // Handle share button click with new service architecture
-  const handleShare = () => {
-    // If we have a direct Swarm link, offer to share that too
-    if (blog?.contentReference) {
-      const appLink = window.location.href;
-      const swarmDirectLink = services.content.getBlogUrl(blog.contentReference, true);
-      
-      if (window.confirm('Copy application link (OK) or direct Swarm link (Cancel)?')) {
-        navigator.clipboard.writeText(appLink);
-        alert('Application link copied to clipboard!');
-      } else {
-        navigator.clipboard.writeText(swarmDirectLink);
-        alert('Direct Swarm link copied to clipboard!');
-      }
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      alert('Link copied to clipboard!');
-    }
-  };
-  
-  // Handle retry content loading with new service architecture
-  const handleRetryContentLoad = async () => {
-    if (!blog) return;
-    
-    setError(null);
-    setContentLoading(true);
-    setFetchAttempted(false);
-    
-    // Extract content reference and retry
-    const contentRef = blog.contentReference || 
-                      (blog.metadata?.properties?.contentReference || '');
-    
-    if (contentRef.trim()) {
-      // Clear from cache to force fresh fetch using new ContentService
-      services.content.removeFromCache(contentRef);
-      
-      // Try to offer direct web link if content fails to load in the app
-      const webUrl = services.content.getBlogUrl(contentRef, true);
-      console.log(`Direct web access URL: ${webUrl}`);
-      
-      // Continue with in-app fetch
-      fetchBlogContent(contentRef);
-    } else {
-      setError('Blog content reference is missing');
-      setContentLoading(false);
-    }
-  };
-
-  // If loading the blog, show skeleton
-  if (loading) {
-    return <BlogDetailSkeleton />;
-  }
-
-  // If error and no blog, show error state
-  if (error && !blog) {
-    return (
-      <div className="blog-error-container">
-        <h2>Oops! Something went wrong</h2>
-        <p>{error}</p>
-        <div className="blog-error-actions">
-          <button onClick={() => window.location.reload()}>Try Again</button>
-          <Link to="/blogs" className="back-link">Back to Blogs</Link>
-        </div>
-      </div>
-    );
-  }
-
-  if (!blog) {
-    return (
-      <div className="blog-error-container">
-        <h2>Blog not found</h2>
-        <p>The blog you're looking for doesn't exist or has been removed.</p>
-        <Link to="/blogs" className="back-link">Back to Blogs</Link>
-      </div>
-    );
-  }
-
-  // Get tags from metadata
-  const tags = blog.metadata?.properties?.tags && Array.isArray(blog.metadata.properties.tags) 
-    ? blog.metadata.properties.tags 
-    : [];
+  const tags = blog.metadata?.properties?.tags || 
+    (Array.isArray(blog.metadata?.tags) ? blog.metadata.tags : []);
 
   return (
     <div className="blog-detail-page">
@@ -293,7 +278,6 @@ export const BlogDetailPage: React.FC = () => {
           src={blog.metadata.image} 
           alt={blog.metadata.name} 
           onError={(e) => {
-            // Fallback to default image on error
             (e.target as HTMLImageElement).src = defaultImage;
           }}
         />
@@ -349,109 +333,136 @@ export const BlogDetailPage: React.FC = () => {
             </button>
           </div>
         </div>
-        
-        {/* Debug Info (only in development) - Updated for new service architecture */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="content-debug-info" style={{background: '#f8f8f8', padding: '10px', marginBottom: '20px', fontSize: '12px', fontFamily: 'monospace'}}>
-            <div>Content Reference: {blog.contentReference || 'Not directly available'}</div>
-            <div>Nested Reference: {blog.metadata?.properties?.contentReference || 'Not available in properties'}</div>
-            {blog.contentReference && (
-              <>
-                <div>Web URL: {services.content.getBlogUrl(blog.contentReference, true)}</div>
-                <div>Local URL: {services.content.getBlogUrl(blog.contentReference, false)}</div>
-                <div>Asset URL: {services.swarm.getContentUrl(blog.contentReference, true, 'bytes')}</div>
-              </>
-            )}
-            <div>Service Status: {services.isInitialized ? 'Initialized' : 'Not Initialized'}</div>
-          </div>
-        )}
-        
+
         {/* Blog Content */}
-        {contentLoading ? (
-          <div className="blog-content-loading">
-            <div className="loading-spinner"></div>
-            <p>Loading content...</p>
-          </div>
-        ) : error ? (
-          <div className="blog-content-error">
-            <p>{error}</p>
-            <button onClick={handleRetryContentLoad} className="retry-button">
-              Retry Loading Content
-            </button>
-            {blog?.contentReference && (
-              <a 
-                href={services.content.getBlogUrl(blog.contentReference, true)}
-                target="_blank"
-                rel="noreferrer"
-                className="direct-link-button"
-                style={{marginLeft: '10px', textDecoration: 'underline'}}
-              >
-                Open Directly in Browser
-              </a>
-            )}
-          </div>
-        ) : blogContent ? (
-          <div 
-            className="blog-content"
-            dangerouslySetInnerHTML={{ __html: blogContent }}
-          />
-        ) : (
-          <div className="blog-content-error">
-            <p>Content could not be loaded. The content may be unavailable or has been removed from Swarm storage.</p>
-            <button onClick={handleRetryContentLoad} className="retry-button">
-              Retry Loading Content
-            </button>
-          </div>
-        )}
-        
-        {/* Blog Footer */}
-        <div className="blog-footer">
-          <Link to="/blogs" className="back-to-blogs">
-            ← Back to all blogs
-          </Link>
-          
-          <div className="blog-token-info">
-            <div className="blog-token-id">
-              Token ID: {blog.tokenId}
+        <div className="blog-content-section">
+          {contentLoading ? (
+            <div className="content-loading">
+              <div className="loading-spinner"></div>
+              <p>Loading blog content...</p>
+              {debugInfo && (
+                <p style={{ fontSize: '12px', color: '#666' }}>{debugInfo}</p>
+              )}
             </div>
-            <div className="blog-owner">
-              Owner: {formatAddress(blog.owner, 6, 4)}
+          ) : error ? (
+            <div className="content-error">
+              <h3>Content Loading Error</h3>
+              <p>{error}</p>
+              {debugInfo && (
+                <details style={{ marginTop: '15px' }}>
+                  <summary>Technical Details</summary>
+                  <pre style={{ background: '#fff5f5', padding: '10px', fontSize: '11px', whiteSpace: 'pre-wrap' }}>
+                    {debugInfo}
+                  </pre>
+                </details>
+              )}
+              <div style={{ marginTop: '15px' }}>
+                <button onClick={handleRetry} className="retry-button">
+                  Retry Loading Content
+                </button>
+                {blog.contentReference && (
+                  <div style={{ marginTop: '10px', fontSize: '12px' }}>
+                    <p>Content Reference: <code>{blog.contentReference}</code></p>
+                    <p>
+                      Direct Link: 
+                      <a 
+                        href={`http://localhost:1633/bzz/${blog.contentReference}`}
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ marginLeft: '5px' }}
+                      >
+                        Open in Swarm
+                      </a>
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-          
-          {/* Service Information Footer (Development Only) */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="service-info-footer" style={{marginTop: '20px', padding: '10px', background: '#f0f0f0', borderRadius: '4px', fontSize: '12px'}}>
-              <strong>Service Architecture Debug:</strong>
-              <div>Content Service Cache Size: {services.content.getCacheStats().size}</div>
-              <div>Swarm Service Config: {JSON.stringify(services.swarm.getConfig(), null, 2)}</div>
+          ) : blogContent ? (
+            <div 
+              className="blog-content"
+              dangerouslySetInnerHTML={{ __html: blogContent }}
+            />
+          ) : (
+            <div className="no-content">
+              <p>No content available for this blog.</p>
+              <button onClick={handleRetry} className="retry-button">
+                Retry Loading
+              </button>
             </div>
           )}
         </div>
-      </div>
-      
-      {/* Related Blogs Section */}
-      {relatedBlogs.length > 0 && (
-        <div className="related-blogs-section">
-          <h3>Related Blogs</h3>
-          <div className="related-blogs-grid">
-            {relatedBlogs.map(relatedBlog => (
-              <div key={relatedBlog.tokenId} className="related-blog-card">
-                <Link to={`/blogs/${relatedBlog.tokenId}`}>
-                  <img 
-                    src={relatedBlog.metadata.image || defaultImage} 
-                    alt={relatedBlog.metadata.name}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = defaultImage;
-                    }}
-                  />
+
+        {/* Debug Panel (only show in development or when there are issues) */}
+        {(process.env.NODE_ENV === 'development' || error || debugInfo) && (
+          <details className="debug-panel" style={{ marginTop: '40px', fontSize: '12px' }}>
+            <summary>Debug Information</summary>
+            <div style={{ background: '#f8f8f8', padding: '15px', marginTop: '10px' }}>
+              <h4>Blog Data:</h4>
+              <pre>{JSON.stringify(blog, null, 2)}</pre>
+              
+              <h4>Status:</h4>
+              <ul>
+                <li>Blog ID: {blogId}</li>
+                <li>Content Reference: {blog?.contentReference || 'Not found'}</li>
+                <li>Content Loading: {contentLoading ? 'Yes' : 'No'}</li>
+                <li>Content Length: {blogContent.length} characters</li>
+                <li>Error: {error || 'None'}</li>
+              </ul>
+              
+              {debugInfo && (
+                <>
+                  <h4>Debug Log:</h4>
+                  <pre>{debugInfo}</pre>
+                </>
+              )}
+              
+              <h4>Helpful Links:</h4>
+              <ul>
+                {blog?.contentReference && (
+                  <>
+                    <li>
+                      <a href={`http://localhost:1633/bzz/${blog.contentReference}`} target="_blank" rel="noopener noreferrer">
+                        Local Swarm (bzz)
+                      </a>
+                    </li>
+                    <li>
+                      <a href={`http://localhost:1633/bytes/${blog.contentReference}`} target="_blank" rel="noopener noreferrer">
+                        Local Swarm (bytes)
+                      </a>
+                    </li>
+                    <li>
+                      <a href={`https://api.gateway.ethswarm.org/bzz/${blog.contentReference}`} target="_blank" rel="noopener noreferrer">
+                        Public Swarm (bzz)
+                      </a>
+                    </li>
+                  </>
+                )}
+              </ul>
+            </div>
+          </details>
+        )}
+
+        {/* Related Blogs Section */}
+        {relatedBlogs.length > 0 && (
+          <div className="related-blogs">
+            <h3>Related Blogs</h3>
+            <div className="related-blogs-grid">
+              {relatedBlogs.map(relatedBlog => (
+                <Link
+                  key={relatedBlog.tokenId}
+                  to={`/blog/${relatedBlog.tokenId}`}
+                  className="related-blog-card"
+                >
+                  <img src={relatedBlog.metadata.image} alt={relatedBlog.metadata.name} />
                   <h4>{relatedBlog.metadata.name}</h4>
+                  <p>{relatedBlog.metadata.description}</p>
                 </Link>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

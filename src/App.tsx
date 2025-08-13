@@ -13,7 +13,6 @@ import { BlogListPage } from './pages/viewer/BlogListPage';
 import { BlogDetailPage } from './pages/viewer/BlogDetailPage';
 import { ProposalListPage } from './pages/proposal/ProposalListPage';
 import { ProposalDetailPage } from './pages/proposal/ProposalDetailPage';
-import { ProposalSubmissionPage } from './pages/proposal/ProposalSubmissionPage';
 import DiagnosticPage from './pages/DiagnosticPage';
 
 import './App.css';
@@ -56,9 +55,6 @@ export function App() {
                 <Route index element={<ProposalListPage />} />
                 <Route path=":proposalId" element={<ProposalDetailPage />} />
               </Route>
-              
-              {/* Keep ProposalSubmissionPage for backward compatibility, but it may not be needed */}
-              <Route path="submit-proposal" element={<ProposalSubmissionPage />} />
               
               {/* Diagnostic Route */}
               <Route path="diagnostics" element={<DiagnosticPage />} />
