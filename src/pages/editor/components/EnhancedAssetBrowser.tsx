@@ -1,7 +1,8 @@
 // src/components/EnhancedAssetBrowser.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useWallet } from '../../../contexts/WalletContext';
-import { assetService, Asset } from '../../../swarm/services';
+import { services } from '../../../swarm/services'; // Use new unified service container
+import { Asset, AssetUrls } from '../../../types/contentTypes';
 import './EnhancedAssetBrowser.css';
 
 interface AssetThumbnailProps {
@@ -27,15 +28,15 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
   const [currentImageUrl, setCurrentImageUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Try to load image with fallback URLs
+  // Load image with fallback URLs using new service
   useEffect(() => {
     const loadImageWithFallbacks = async () => {
       setIsLoading(true);
       setImageError(false);
       
-      // Get all possible URLs for this asset
-      const urls = assetService.getAssetUrls(asset);
-      // For images, always use bytes endpoint for direct access
+      // Get URLs using new AssetService
+      const urls = services.assets.getAssetUrls(asset);
+      // All URLs now correctly use bzz endpoint for web display
       const allUrls = [urls.local, urls.public, ...urls.fallbacks];
       
       // Try each URL until one works
@@ -48,7 +49,6 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
             return;
           }
         } catch (error) {
-          // Continue to next URL
           continue;
         }
       }
@@ -79,7 +79,6 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
   };
 
   const handleInsertAsset = () => {
-    // Always use public gateway for inserted assets so they're viewable by everyone
     onInsert(asset);
   };
 
@@ -87,7 +86,6 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
     onSelect(asset);
   };
 
-  // Determine if action buttons should be visible
   const showActions = isSelected || isDefaultSelected;
 
   return (
@@ -131,13 +129,11 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
           </span>
         </div>
         
-        {/* Gateway status indicator */}
         <div className="gateway-status">
           <GatewayStatusIndicator asset={asset} />
         </div>
       </div>
       
-      {/* Action buttons - now visible based on selection state */}
       <div className={`thumbnail-actions ${showActions ? 'visible' : ''}`}>
         <button 
           className="action-btn insert-btn"
@@ -145,7 +141,7 @@ const AssetThumbnail: React.FC<AssetThumbnailProps> = ({
             e.stopPropagation();
             handleInsertAsset();
           }}
-          title="Insert into editor (uses public gateway)"
+          title="Insert into editor"
         >
           📎
         </button>
@@ -181,12 +177,10 @@ const GatewayStatusIndicator: React.FC<{ asset: Asset }> = ({ asset }) => {
   const [status, setStatus] = useState<{
     local: boolean;
     public: boolean;
-    web: boolean;  // For web endpoint accessibility
     checking: boolean;
   }>({
     local: false,
     public: false,
-    web: false,
     checking: false
   });
 
@@ -194,17 +188,17 @@ const GatewayStatusIndicator: React.FC<{ asset: Asset }> = ({ asset }) => {
     setStatus(prev => ({ ...prev, checking: true }));
     
     try {
-      const validation = await assetService.validateAssetAccess(asset);
-      const urls = assetService.getAssetUrls(asset);
+      // Use new service method for validation
+      const validation = await services.assets.validateAssetAccess(asset);
+      const urls = services.assets.getAssetUrls(asset);
       
       setStatus({
         local: validation.workingUrls.includes(urls.local),
         public: validation.workingUrls.includes(urls.public),
-        web: validation.workingUrls.includes(urls.webAccessible),
         checking: false
       });
     } catch (error) {
-      setStatus({ local: false, public: false, web: false, checking: false });
+      setStatus({ local: false, public: false, checking: false });
     }
   };
 
@@ -230,14 +224,6 @@ const GatewayStatusIndicator: React.FC<{ asset: Asset }> = ({ asset }) => {
       >
         {status.public ? '🟢' : '🔴'} Public
       </span>
-      {!asset.contentType.startsWith('image/') && (
-        <span
-          className={`gateway-indicator ${status.web ? 'available' : 'unavailable'}`}
-          title={`Web access: ${status.web ? 'Available' : 'Unavailable'}`}
-        >
-          {status.web ? '🟢' : '🔴'} Web
-        </span>
-      )}
     </div>
   );
 };
@@ -259,8 +245,6 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>('date');
-  const [gatewayMode, setGatewayMode] = useState<'local' | 'public'>('public');
-  const [endpointMode, setEndpointMode] = useState<'auto' | 'bzz' | 'bytes'>('auto');
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [defaultSelectedAsset, setDefaultSelectedAsset] = useState<Asset | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -290,14 +274,14 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
     }
   }, [assets, sortBy, defaultSelectedAsset]);
 
-  // Load assets from localStorage
+  // Load assets using new service
   const loadAssets = () => {
     if (!account) return;
-    const userAssets = assetService.getAssets(account);
+    const userAssets = services.assets.getAssets(account);
     setAssets(userAssets);
   };
 
-  // Handle file upload
+  // Handle file upload using new service
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0 || !account) return;
@@ -316,7 +300,8 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
           throw new Error(`${file.name} is too large (max 10MB)`);
         }
 
-        return await assetService.uploadAsset(file, account);
+        // Use new AssetService for upload
+        return await services.assets.uploadAsset(file, account);
       });
 
       const uploadedAssets = await Promise.all(uploadPromises);
@@ -337,37 +322,37 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
     }
   };
 
-  // Handle asset insertion
+  // Handle asset insertion using new service
   const handleInsertAsset = (asset: Asset) => {
-    const markdownCode = assetService.generateAssetMarkdown(
+    // Generate markdown using new service (always uses bzz for web display)
+    const markdownCode = services.assets.generateAssetMarkdown(
       asset,
       undefined, // Use default alt text
-      gatewayMode === 'public' // Use public gateway based on current mode
+      true // Always use public gateway for maximum compatibility
     );
     onInsertAsset(markdownCode);
   };
 
-  // Handle asset renaming
+  // Handle asset renaming using new service
   const handleRenameAsset = (asset: Asset) => {
     const newName = prompt('Enter new name for asset:', asset.name);
     if (newName && newName.trim() && newName !== asset.name) {
       try {
-        assetService.renameAsset(asset.id, newName.trim(), account!);
-        loadAssets(); // Reload to show updated name
+        services.assets.renameAsset(asset.id, newName.trim(), account!);
+        loadAssets();
       } catch (error) {
         setUploadError(error instanceof Error ? error.message : 'Failed to rename asset');
       }
     }
   };
 
-  // Handle asset deletion
+  // Handle asset deletion using new service
   const handleDeleteAsset = (asset: Asset) => {
     if (window.confirm(`Are you sure you want to delete "${asset.name}"?`)) {
       try {
-        assetService.deleteAsset(asset.id, account!);
-        loadAssets(); // Reload to remove deleted asset
+        services.assets.deleteAsset(asset.id, account!);
+        loadAssets();
         
-        // Clear selection if deleted asset was selected
         if (selectedAsset?.id === asset.id) {
           setSelectedAsset(null);
         }
@@ -383,7 +368,6 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
   // Handle asset selection
   const handleAssetSelect = (asset: Asset) => {
     setSelectedAsset(asset === selectedAsset ? null : asset);
-    // Clear default selection when user makes an explicit selection
     if (defaultSelectedAsset) {
       setDefaultSelectedAsset(null);
     }
@@ -406,15 +390,15 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
       }
     });
 
-  // Get storage statistics
+  // Get storage statistics using new service
   const storageStats = account ? 
-    assetService.getStorageStats(account) : null;
+    services.assets.getStorageStats(account) : null;
 
   if (!isOpen) return null;
 
   return (
     <div className="asset-browser-overlay">
-      <div className="asset-browser-modal" data-gateway-mode={gatewayMode}>
+      <div className="asset-browser-modal">
         <div className="asset-browser-header">
           <h2>Asset Library</h2>
           <button 
@@ -473,25 +457,18 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
                   <option value="name">Sort by Name</option>
                   <option value="size">Sort by Size</option>
                 </select>
-                
-                <select
-                  className="gateway-select"
-                  value={gatewayMode}
-                  onChange={(e) => setGatewayMode(e.target.value as 'local' | 'public')}
-                >
-                  <option value="public">🌐 Public Gateway</option>
-                  <option value="local">💻 Local Gateway</option>
-                </select>
               </div>
             </div>
 
             {/* Storage stats */}
             {storageStats && (
               <div className="storage-stats">
-                <span className="gateway-mode-indicator">
-                  Using {gatewayMode === 'public' ? 'public' : 'local'} gateway | 
-                    {endpointMode === 'auto' ? ' Auto endpoint' : 
-                     endpointMode === 'bzz' ? ' Web (bzz)' : ' Binary (bytes)'}
+                <span className="stats-info">
+                  {storageStats.totalAssets} assets • 
+                  {(storageStats.totalSize / (1024 * 1024)).toFixed(2)} MB total
+                </span>
+                <span className="endpoint-info">
+                  Using bzz endpoint for web display
                 </span>
               </div>
             )}
@@ -529,3 +506,5 @@ export const EnhancedAssetBrowser: React.FC<EnhancedAssetBrowserProps> = ({
     </div>
   );
 };
+
+export default EnhancedAssetBrowser;

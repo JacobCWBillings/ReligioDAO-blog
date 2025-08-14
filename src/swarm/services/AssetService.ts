@@ -1,502 +1,230 @@
-// src/services/AssetService.ts - FIXED VERSION (No Circular Dependencies)
+// src/services/AssetService.ts
 import { SwarmService } from './SwarmService';
-
-export interface Asset {
-  id: string;
-  name: string;
-  originalName: string;
-  reference: string;
-  contentType: string;
-  size: number;
-  uploadedAt: number;
-  authorAddress: string;
-  tags?: string[];
-  description?: string;
-}
-
-export interface AssetMetadata {
-  name: string;
-  originalName: string;
-  reference: string;
-  contentType: string;
-  size: number;
-  authorAddress: string;
-  tags?: string[];
-  description?: string;
-}
-
-export interface AssetValidationResult {
-  workingUrls: string[];
-  failedUrls: string[];
-  isAccessible: boolean;
-}
-
-export interface AssetStorageStats {
-  totalAssets: number;
-  totalSize: number;
-  averageSize: number;
-  byContentType: { [type: string]: number };
-  storageUsed: number;
-}
+import { 
+  Asset, 
+  AssetUrls, 
+  StorageStats,
+  SwarmUploadResult 
+} from '../../types/contentTypes';
+import {
+  buildWebContentUrl,
+  processMarkdownUrls,
+  DEFAULT_GATEWAYS
+} from '../utils/swarmUtils';
 
 /**
- * FIXED: Asset management service with proper dependency injection
- * - Only handles asset metadata and local storage
- * - Delegates all Swarm operations to SwarmService
- * - No circular dependencies or singleton creation
+ * Service for managing user assets (images, documents, etc.)
  */
 export class AssetService {
-  private readonly STORAGE_PREFIX = 'religiodao-assets-';
+  private readonly STORAGE_KEY_PREFIX = 'religio_assets_';
   
-  // FIXED: Clean dependency injection without default singleton
   constructor(private swarmService: SwarmService) {}
 
   /**
-   * Upload asset file and store metadata
+   * Upload an asset
    */
-  async uploadAsset(file: File, authorAddress: string, options?: {
-    tags?: string[];
-    description?: string;
-    customName?: string;
-  }): Promise<Asset> {
+  async uploadAsset(file: File, userAddress: string): Promise<Asset> {
     try {
-      // Validate file before upload
-      this.validateFile(file);
+      // Validate file
+      this.validateAssetFile(file);
       
-      console.log(`Uploading asset: ${file.name} (${file.size} bytes)`);
+      // Upload to Swarm
+      const result = await this.swarmService.uploadFile(file);
       
-      // Delegate to SwarmService for upload
-      const uploadResult = await this.swarmService.uploadFile(file);
-      
-      // Create asset metadata
-      const assetMetadata: AssetMetadata = {
-        name: options?.customName || file.name,
-        originalName: file.name,
-        reference: uploadResult.reference,
+      // Create asset record
+      const asset: Asset = {
+        id: this.generateAssetId(),
+        name: file.name,
+        reference: result.reference,
         contentType: file.type,
         size: file.size,
-        authorAddress,
-        tags: options?.tags || [],
-        description: options?.description || ''
+        uploadedAt: Date.now(),
+        userAddress,
+        gateway: 'public'
       };
       
-      // Save metadata locally
-      const asset = this.saveAssetMetadata(assetMetadata);
+      // Save to local storage
+      this.saveAsset(asset, userAddress);
       
-      console.log('Asset uploaded successfully:', asset.id);
+      console.log(`Asset uploaded successfully: ${asset.name} (${asset.reference})`);
       return asset;
       
     } catch (error) {
-      console.error('Error uploading asset:', error);
+      console.error('Failed to upload asset:', error);
       throw new Error(`Failed to upload asset: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   /**
+   * Get URLs for an asset
+   */
+  getAssetUrls(asset: Asset): AssetUrls {
+    // Always use bzz for web-displayable content
+    return {
+      local: buildWebContentUrl(asset.reference, DEFAULT_GATEWAYS.local),
+      public: buildWebContentUrl(asset.reference, DEFAULT_GATEWAYS.public),
+      fallbacks: DEFAULT_GATEWAYS.fallbacks.map(gateway =>
+        buildWebContentUrl(asset.reference, gateway)
+      ),
+      webAccessible: buildWebContentUrl(asset.reference, DEFAULT_GATEWAYS.public)
+    };
+  }
+
+  /**
+   * Generate markdown for embedding an asset
+   */
+  generateAssetMarkdown(
+    asset: Asset,
+    altText?: string,
+    usePublicGateway: boolean = true
+  ): string {
+    const alt = altText || asset.name;
+    const gateway = usePublicGateway 
+      ? DEFAULT_GATEWAYS.public
+      : DEFAULT_GATEWAYS.local;
+    
+    // Use bzz endpoint for web display
+    const url = buildWebContentUrl(asset.reference, gateway);
+    
+    if (asset.contentType.startsWith('image/')) {
+      return `![${alt}](${url})`;
+    } else {
+      return `[${alt}](${url})`;
+    }
+  }
+
+  /**
+   * Process markdown for publication
+   */
+  processMarkdownForPublication(content: string): string {
+    return processMarkdownUrls(content, true);
+  }
+
+  /**
    * Get all assets for a user
    */
-  getAssets(authorAddress: string): Asset[] {
+  getAssets(userAddress: string): Asset[] {
+    const key = this.getStorageKey(userAddress);
+    const stored = localStorage.getItem(key);
+    
+    if (!stored) return [];
+    
     try {
-      const storageKey = `${this.STORAGE_PREFIX}${authorAddress}`;
-      const assetsJson = localStorage.getItem(storageKey);
-      
-      if (!assetsJson) return [];
-      
-      const assets = JSON.parse(assetsJson) as Asset[];
-      
-      // Sort by upload date (newest first)
-      return assets.sort((a, b) => b.uploadedAt - a.uploadedAt);
-      
-    } catch (error) {
-      console.error('Error loading assets:', error);
+      const assets = JSON.parse(stored);
+      return Array.isArray(assets) ? assets : [];
+    } catch {
       return [];
     }
   }
 
   /**
-   * Get single asset by ID
+   * Save an asset
    */
-  getAsset(assetId: string, authorAddress: string): Asset | null {
-    const assets = this.getAssets(authorAddress);
-    return assets.find(asset => asset.id === assetId) || null;
+  private saveAsset(asset: Asset, userAddress: string): void {
+    const assets = this.getAssets(userAddress);
+    assets.push(asset);
+    
+    const key = this.getStorageKey(userAddress);
+    localStorage.setItem(key, JSON.stringify(assets));
   }
 
   /**
-   * Get asset by Swarm reference
+   * Delete an asset
    */
-  getAssetByReference(reference: string, authorAddress: string): Asset | null {
-    const assets = this.getAssets(authorAddress);
-    return assets.find(asset => asset.reference === reference) || null;
+  deleteAsset(assetId: string, userAddress: string): void {
+    const assets = this.getAssets(userAddress);
+    const filtered = assets.filter(a => a.id !== assetId);
+    
+    const key = this.getStorageKey(userAddress);
+    localStorage.setItem(key, JSON.stringify(filtered));
   }
 
   /**
    * Rename an asset
    */
-  renameAsset(assetId: string, newName: string, authorAddress: string): Asset | null {
-    try {
-      const assets = this.getAssets(authorAddress);
-      const assetIndex = assets.findIndex(asset => asset.id === assetId);
-      
-      if (assetIndex === -1) {
-        throw new Error('Asset not found');
-      }
-      
-      if (!newName.trim()) {
-        throw new Error('Asset name cannot be empty');
-      }
-      
-      // Check for duplicate names
-      const duplicateExists = assets.some((asset, index) => 
-        index !== assetIndex && asset.name.toLowerCase() === newName.trim().toLowerCase()
-      );
-      
-      if (duplicateExists) {
-        throw new Error('An asset with this name already exists');
-      }
-      
-      // Update asset name
-      assets[assetIndex].name = newName.trim();
-      
-      // Save updated assets
-      this.saveAssetsToStorage(assets, authorAddress);
-      
-      return assets[assetIndex];
-      
-    } catch (error) {
-      console.error('Error renaming asset:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update asset metadata
-   */
-  updateAssetMetadata(assetId: string, updates: {
-    name?: string;
-    tags?: string[];
-    description?: string;
-  }, authorAddress: string): Asset | null {
-    try {
-      const assets = this.getAssets(authorAddress);
-      const assetIndex = assets.findIndex(asset => asset.id === assetId);
-      
-      if (assetIndex === -1) {
-        throw new Error('Asset not found');
-      }
-      
-      // Apply updates
-      if (updates.name !== undefined) {
-        if (!updates.name.trim()) {
-          throw new Error('Asset name cannot be empty');
-        }
-        assets[assetIndex].name = updates.name.trim();
-      }
-      
-      if (updates.tags !== undefined) {
-        assets[assetIndex].tags = updates.tags;
-      }
-      
-      if (updates.description !== undefined) {
-        assets[assetIndex].description = updates.description;
-      }
-      
-      // Save updated assets
-      this.saveAssetsToStorage(assets, authorAddress);
-      
-      return assets[assetIndex];
-      
-    } catch (error) {
-      console.error('Error updating asset metadata:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Delete an asset (only removes metadata, doesn't delete from Swarm)
-   */
-  deleteAsset(assetId: string, authorAddress: string): boolean {
-    try {
-      const assets = this.getAssets(authorAddress);
-      const filteredAssets = assets.filter(asset => asset.id !== assetId);
-      
-      if (filteredAssets.length === assets.length) {
-        return false; // Asset not found
-      }
-      
-      // Save updated assets list
-      this.saveAssetsToStorage(filteredAssets, authorAddress);
-      
-      console.log('Asset metadata deleted:', assetId);
-      return true;
-      
-    } catch (error) {
-      console.error('Error deleting asset:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Generate markdown for asset insertion
-   */
-  generateAssetMarkdown(asset: Asset, altText?: string, usePublicGateway: boolean = true): string {
-    const imageUrl = this.getAssetUrl(asset, usePublicGateway);
-    const alt = altText || asset.name.split('.')[0] || 'Asset';
+  renameAsset(assetId: string, newName: string, userAddress: string): void {
+    const assets = this.getAssets(userAddress);
+    const asset = assets.find(a => a.id === assetId);
     
-    if (asset.contentType.startsWith('image/')) {
-      return `![${alt}](${imageUrl})`;
-    } else {
-      // For non-images, create a link
-      return `[📎 ${asset.name}](${imageUrl})`;
+    if (asset) {
+      asset.name = newName;
+      const key = this.getStorageKey(userAddress);
+      localStorage.setItem(key, JSON.stringify(assets));
     }
   }
 
   /**
-   * Get asset URL
+   * Validate asset accessibility
    */
-  getAssetUrl(asset: Asset, usePublicGateway: boolean = true): string {
-    return this.swarmService.getContentUrl(asset.reference, usePublicGateway, 'bytes');
+  async validateAssetAccess(asset: Asset): Promise<{
+    workingUrls: string[];
+    failedUrls: string[];
+    isAccessible: boolean;
+  }> {
+    return this.swarmService.validateContentAccess(asset.reference);
   }
 
   /**
-   * Get all possible URLs for an asset
+   * Get storage statistics
    */
-  getAssetUrls(asset: Asset): {
-    local: string;
-    public: string;
-    webAccessible: string;
-    fallbacks: string[];
-  } {
-    const urls = this.swarmService.getContentUrls(asset.reference);
-    return {
-      local: urls.local,
-      public: urls.public,
-      webAccessible: urls.publicWeb,
-      fallbacks: urls.fallbacks
-    };
-  }
-
-  /**
-   * Validate asset accessibility across gateways
-   */
-  async validateAssetAccess(asset: Asset): Promise<AssetValidationResult> {
-    try {
-      return await this.swarmService.validateContentAccess(asset.reference);
-    } catch (error) {
-      console.error('Error validating asset access:', error);
-      return {
-        workingUrls: [],
-        failedUrls: [],
-        isAccessible: false
-      };
-    }
-  }
-
-  /**
-   * Process markdown content to use specified gateway URLs
-   */
-  processMarkdownForPublication(content: string): string {
-    try {
-      // Replace local asset URLs with public gateway URLs
-      return content.replace(
-        /!\[([^\]]*)\]\((http:\/\/localhost:1633\/bytes\/([^)]+))\)/g,
-        (match, alt, localUrl, reference) => {
-          const publicUrl = this.swarmService.getContentUrl(reference, true, 'bytes');
-          return `![${alt}](${publicUrl})`;
-        }
-      );
-    } catch (error) {
-      console.error('Error processing markdown for publication:', error);
-      return content;
-    }
-  }
-
-  /**
-   * Process markdown content to use local gateway URLs
-   */
-  processMarkdownForDevelopment(content: string): string {
-    try {
-      // Replace public gateway URLs with local gateway URLs
-      const publicGatewayPattern = new RegExp(
-        `!\\[([^\\]]*)\\]\\((https?://[^/]+)/(bytes|bzz)/([^)]+)\\)`,
-        'g'
-      );
-
-      return content.replace(publicGatewayPattern, (match, alt, gateway, endpoint, reference) => {
-        const localUrl = this.swarmService.getContentUrl(reference, false, 'bytes');
-        return `![${alt}](${localUrl})`;
-      });
-    } catch (error) {
-      console.error('Error processing markdown for development:', error);
-      return content;
-    }
-  }
-
-  /**
-   * Search assets by name, tags, or description
-   */
-  searchAssets(authorAddress: string, query: string): Asset[] {
-    const assets = this.getAssets(authorAddress);
-    const lowercaseQuery = query.toLowerCase();
+  getStorageStats(userAddress: string): StorageStats {
+    const assets = this.getAssets(userAddress);
     
-    return assets.filter(asset => {
-      return (
-        asset.name.toLowerCase().includes(lowercaseQuery) ||
-        asset.originalName.toLowerCase().includes(lowercaseQuery) ||
-        asset.description?.toLowerCase().includes(lowercaseQuery) ||
-        asset.tags?.some(tag => tag.toLowerCase().includes(lowercaseQuery))
-      );
-    });
-  }
-
-  /**
-   * Filter assets by content type
-   */
-  filterAssetsByType(authorAddress: string, contentType: string): Asset[] {
-    const assets = this.getAssets(authorAddress);
-    return assets.filter(asset => asset.contentType.startsWith(contentType));
-  }
-
-  /**
-   * Get storage statistics for a user
-   */
-  getStorageStats(authorAddress: string): AssetStorageStats {
-    const assets = this.getAssets(authorAddress);
+    const assetsByType: Record<string, number> = {};
+    let totalSize = 0;
     
-    const totalAssets = assets.length;
-    const totalSize = assets.reduce((sum, asset) => sum + asset.size, 0);
-    const averageSize = totalAssets > 0 ? totalSize / totalAssets : 0;
-    
-    // Group by content type
-    const byContentType: { [type: string]: number } = {};
     assets.forEach(asset => {
-      const mainType = asset.contentType.split('/')[0];
-      byContentType[mainType] = (byContentType[mainType] || 0) + 1;
+      const type = asset.contentType.split('/')[0];
+      assetsByType[type] = (assetsByType[type] || 0) + 1;
+      totalSize += asset.size;
     });
     
-    // Calculate storage used in localStorage
-    const storageUsed = this.calculateStorageSize(authorAddress);
-    
     return {
-      totalAssets,
+      totalAssets: assets.length,
       totalSize,
-      averageSize,
-      byContentType,
-      storageUsed
+      assetsByType,
+      oldestAsset: assets.length > 0 
+        ? Math.min(...assets.map(a => a.uploadedAt))
+        : undefined,
+      newestAsset: assets.length > 0
+        ? Math.max(...assets.map(a => a.uploadedAt))
+        : undefined
     };
   }
 
   /**
-   * Export assets metadata as JSON
+   * Find assets used in content
    */
-  exportAssets(authorAddress: string): string {
-    const assets = this.getAssets(authorAddress);
-    return JSON.stringify(assets, null, 2);
-  }
-
-  /**
-   * Import assets metadata from JSON
-   */
-  importAssets(authorAddress: string, assetsJson: string, merge: boolean = true): Asset[] {
-    try {
-      const importedAssets = JSON.parse(assetsJson) as Asset[];
-      
-      // Validate imported data
-      this.validateImportedAssets(importedAssets);
-      
-      if (merge) {
-        const existingAssets = this.getAssets(authorAddress);
-        const existingIds = new Set(existingAssets.map(asset => asset.id));
-        
-        // Add only new assets
-        const newAssets = importedAssets.filter(asset => !existingIds.has(asset.id));
-        const mergedAssets = [...existingAssets, ...newAssets];
-        
-        this.saveAssetsToStorage(mergedAssets, authorAddress);
-        return mergedAssets;
-      } else {
-        // Replace all assets
-        this.saveAssetsToStorage(importedAssets, authorAddress);
-        return importedAssets;
+  findAssetsInContent(content: string, userAddress: string): Asset[] {
+    const assets = this.getAssets(userAddress);
+    const usedAssets: Asset[] = [];
+    
+    assets.forEach(asset => {
+      if (content.includes(asset.reference)) {
+        usedAssets.push(asset);
       }
-      
-    } catch (error) {
-      console.error('Error importing assets:', error);
-      throw new Error(`Failed to import assets: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    });
+    
+    return usedAssets;
   }
 
   /**
-   * Clear all assets for a user
+   * Validate asset file
    */
-  clearAssets(authorAddress: string): void {
-    try {
-      const storageKey = `${this.STORAGE_PREFIX}${authorAddress}`;
-      localStorage.removeItem(storageKey);
-      console.log('All assets cleared for user:', authorAddress);
-    } catch (error) {
-      console.error('Error clearing assets:', error);
-      throw error;
+  private validateAssetFile(file: File): void {
+    // Size limit: 10MB
+    if (file.size > 10 * 1024 * 1024) {
+      throw new Error('File size exceeds 10MB limit');
     }
-  }
-
-  // Private helper methods
-
-  /**
-   * Validate file before upload
-   */
-  private validateFile(file: File): void {
-    if (!file) {
-      throw new Error('No file provided');
-    }
-
-    if (file.size === 0) {
-      throw new Error('Cannot upload empty file');
-    }
-
-    if (file.size > 100 * 1024 * 1024) { // 100MB limit
-      throw new Error('File too large (max 100MB)');
-    }
-
-    // Check for supported file types
-    const supportedTypes = [
-      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
-      'text/plain', 'text/markdown', 'text/csv',
-      'application/json', 'application/pdf'
+    
+    // Type validation (optional, customize as needed)
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf', 'text/plain', 'text/markdown'
     ];
-
-    if (!supportedTypes.includes(file.type)) {
-      console.warn('Unsupported file type, proceeding anyway:', file.type);
-    }
-  }
-
-  /**
-   * Save asset metadata to localStorage
-   */
-  private saveAssetMetadata(metadata: AssetMetadata): Asset {
-    const asset: Asset = {
-      id: this.generateAssetId(),
-      ...metadata,
-      uploadedAt: Date.now()
-    };
-
-    const assets = this.getAssets(metadata.authorAddress);
-    assets.push(asset);
     
-    this.saveAssetsToStorage(assets, metadata.authorAddress);
-    
-    return asset;
-  }
-
-  /**
-   * Save assets array to localStorage
-   */
-  private saveAssetsToStorage(assets: Asset[], authorAddress: string): void {
-    try {
-      const storageKey = `${this.STORAGE_PREFIX}${authorAddress}`;
-      localStorage.setItem(storageKey, JSON.stringify(assets));
-    } catch (error) {
-      console.error('Error saving assets to storage:', error);
-      throw new Error('Failed to save assets: Storage quota exceeded or unavailable');
+    if (!allowedTypes.some(type => file.type.startsWith(type.split('/')[0]))) {
+      throw new Error(`File type ${file.type} is not supported`);
     }
   }
 
@@ -504,42 +232,13 @@ export class AssetService {
    * Generate unique asset ID
    */
   private generateAssetId(): string {
-    return `asset-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `asset_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   }
 
   /**
-   * Calculate storage size for a user's assets
+   * Get storage key for user
    */
-  private calculateStorageSize(authorAddress: string): number {
-    try {
-      const storageKey = `${this.STORAGE_PREFIX}${authorAddress}`;
-      const data = localStorage.getItem(storageKey);
-      return data ? new Blob([data]).size : 0;
-    } catch (error) {
-      console.error('Error calculating storage size:', error);
-      return 0;
-    }
-  }
-
-  /**
-   * Validate imported assets data
-   */
-  private validateImportedAssets(assets: any[]): void {
-    if (!Array.isArray(assets)) {
-      throw new Error('Invalid assets data: Expected array');
-    }
-
-    for (const asset of assets) {
-      if (!asset.id || !asset.name || !asset.reference || !asset.contentType) {
-        throw new Error('Invalid asset data: Missing required fields');
-      }
-
-      if (typeof asset.reference !== 'string' || asset.reference.length !== 64) {
-        throw new Error('Invalid asset reference');
-      }
-    }
+  private getStorageKey(userAddress: string): string {
+    return `${this.STORAGE_KEY_PREFIX}${userAddress.toLowerCase()}`;
   }
 }
-
-// FIXED: Export only the class - let services/index.ts handle dependency injection
-export default AssetService;

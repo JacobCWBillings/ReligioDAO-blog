@@ -1,29 +1,20 @@
-// src/components/proposal/BlogProposalMinting.tsx
-import React, { useState, useCallback } from 'react';
+// src/pages/proposal/components/BlogProposalMinting.tsx
+import React, { useState, useCallback, useEffect } from 'react';
 import { useProposal } from '../../../blockchain/hooks/useProposal';
 import { useWallet } from '../../../contexts/WalletContext';
-import { ProposalStatus } from '../../../types/blockchainTypes';
+import { Proposal, ProposalStatus } from '../../../types/blockchainTypes';
+import { services } from '../../../swarm/services';
 import './BlogProposalMinting.css';
 
 interface BlogProposalMintingProps {
   proposalId: string;
-  title: string;
-  description: string;
-  contentReference: string;
-  category?: string;
-  tags?: string[];
-  authorAddress?: string;
+  proposal: Proposal;
   onExecuteSuccess?: (tokenId: string | null) => void;
 }
 
 export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
   proposalId,
-  title,
-  description,
-  contentReference,
-  category,
-  tags,
-  authorAddress,
+  proposal,
   onExecuteSuccess
 }) => {
   const { executeProposal, getProposalById } = useProposal();
@@ -33,6 +24,79 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
   const [executeError, setExecuteError] = useState<string | null>(null);
   const [executeSuccess, setExecuteSuccess] = useState(false);
   const [mintedTokenId, setMintedTokenId] = useState<string | null>(null);
+  const [metadataInfo, setMetadataInfo] = useState<{
+    hasMetadata: boolean;
+    isValid: boolean;
+    details?: any;
+  }>({
+    hasMetadata: false,
+    isValid: false
+  });
+
+  // Extract blog info from proposal
+  const extractBlogInfo = useCallback(() => {
+    try {
+      const lines = proposal.description.split('\n');
+      const blogTitle = lines.find(line => 
+        line.trim().startsWith('Blog:'))?.replace('Blog:', '').trim() || proposal.title;
+      const category = lines.find(line => 
+        line.trim().startsWith('Category:'))?.replace('Category:', '').trim() || 'Uncategorized';
+      const tags = lines.find(line => 
+        line.trim().startsWith('Tags:'))?.replace('Tags:', '').trim().split(',').map(tag => tag.trim()) || [];
+      const authorAddress = lines.find(line => 
+        line.trim().startsWith('Author:'))?.replace('Author:', '').trim() || proposal.proposer;
+      
+      return { blogTitle, category, tags, authorAddress };
+    } catch (e) {
+      return { 
+        blogTitle: proposal.title, 
+        category: 'Uncategorized', 
+        tags: [], 
+        authorAddress: proposal.proposer 
+      };
+    }
+  }, [proposal]);
+
+  // Check if metadata is properly prepared
+  useEffect(() => {
+    const checkMetadata = async () => {
+      if (!proposal.contentReference) {
+        setMetadataInfo({ hasMetadata: false, isValid: false });
+        return;
+      }
+
+      try {
+        // Check if we can access the content
+        const validation = await services.swarm.validateContentAccess(proposal.contentReference);
+        
+        if (validation.isAccessible) {
+          const blogInfo = extractBlogInfo();
+          setMetadataInfo({
+            hasMetadata: true,
+            isValid: true,
+            details: {
+              title: blogInfo.blogTitle,
+              category: blogInfo.category,
+              tags: blogInfo.tags,
+              author: blogInfo.authorAddress,
+              contentReference: proposal.contentReference
+            }
+          });
+        } else {
+          setMetadataInfo({
+            hasMetadata: true,
+            isValid: false,
+            details: { error: 'Content not accessible on Swarm' }
+          });
+        }
+      } catch (error) {
+        console.error('Error checking metadata:', error);
+        setMetadataInfo({ hasMetadata: false, isValid: false });
+      }
+    };
+
+    checkMetadata();
+  }, [proposal, extractBlogInfo]);
 
   const handleExecuteProposal = useCallback(async () => {
     if (!isConnected || !account) {
@@ -49,7 +113,7 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
     setExecuteError(null);
 
     try {
-      // First, verify the proposal is in the correct state
+      // Verify the proposal is in the correct state
       const currentProposal = await getProposalById(proposalId);
       if (!currentProposal) {
         throw new Error('Proposal not found');
@@ -118,45 +182,55 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
             </div>
           )}
           
-          <div className="blog-summary">
-            <h4>Blog Details:</h4>
-            <div className="detail-item">
-              <span className="label">Title:</span>
-              <span className="value">{title}</span>
-            </div>
-            
-            {category && (
+          {metadataInfo.isValid && metadataInfo.details && (
+            <div className="blog-summary">
+              <h4>Blog Details:</h4>
+              <div className="detail-item">
+                <span className="label">Title:</span>
+                <span className="value">{metadataInfo.details.title}</span>
+              </div>
+              
               <div className="detail-item">
                 <span className="label">Category:</span>
-                <span className="value">{category}</span>
+                <span className="value">{metadataInfo.details.category}</span>
               </div>
-            )}
-            
-            {tags && tags.length > 0 && (
-              <div className="detail-item">
-                <span className="label">Tags:</span>
-                <span className="value">{tags.join(', ')}</span>
-              </div>
-            )}
-            
-            {authorAddress && (
+              
+              {metadataInfo.details.tags && metadataInfo.details.tags.length > 0 && (
+                <div className="detail-item">
+                  <span className="label">Tags:</span>
+                  <span className="value">{metadataInfo.details.tags.join(', ')}</span>
+                </div>
+              )}
+              
               <div className="detail-item">
                 <span className="label">Author:</span>
-                <span className="value blockchain-address">{authorAddress}</span>
+                <span className="value blockchain-address">{metadataInfo.details.author}</span>
               </div>
-            )}
-            
-            {contentReference && (
-              <div className="detail-item">
-                <span className="label">Content Reference:</span>
-                <span className="value content-ref">{contentReference.substring(0, 16)}...</span>
-              </div>
-            )}
-          </div>
+              
+              {metadataInfo.details.contentReference && (
+                <div className="detail-item">
+                  <span className="label">Content:</span>
+                  <a 
+                    href={services.swarm.getContentUrl(metadataInfo.details.contentReference, {
+                      usePublicGateway: true,
+                      forWebDisplay: true
+                    })}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="content-link"
+                  >
+                    View on Swarm
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
   }
+
+  const blogInfo = extractBlogInfo();
 
   return (
     <div className="blog-proposal-minting">
@@ -167,36 +241,87 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
           Executing will mint an NFT representing the approved blog post.
         </p>
         
-        <div className="blog-preview">
-          <h4>Blog to be Minted:</h4>
-          <div className="preview-item">
-            <strong>Title:</strong> {title}
-          </div>
-          
-          {category && (
-            <div className="preview-item">
-              <strong>Category:</strong> {category}
+        {/* Metadata Status */}
+        <div className="metadata-status">
+          <h4>Metadata Status</h4>
+          {metadataInfo.isValid ? (
+            <div className="status-valid">
+              <span className="status-icon">✅</span>
+              <span>Metadata is valid and ready for minting</span>
             </div>
-          )}
-          
-          {tags && tags.length > 0 && (
-            <div className="preview-item">
-              <strong>Tags:</strong> {tags.join(', ')}
-            </div>
-          )}
-          
-          {description && (
-            <div className="preview-item">
-              <strong>Description:</strong> 
-              <div className="description-text">{description}</div>
+          ) : (
+            <div className="status-warning">
+              <span className="status-icon">⚠️</span>
+              <span>Metadata validation in progress or unavailable</span>
             </div>
           )}
         </div>
+        
+        <div className="blog-preview">
+          <h4>Blog to be Minted:</h4>
+          <div className="preview-item">
+            <strong>Title:</strong> {blogInfo.blogTitle}
+          </div>
+          
+          <div className="preview-item">
+            <strong>Category:</strong> {blogInfo.category}
+          </div>
+          
+          {blogInfo.tags.length > 0 && (
+            <div className="preview-item">
+              <strong>Tags:</strong> {blogInfo.tags.join(', ')}
+            </div>
+          )}
+          
+          <div className="preview-item">
+            <strong>Author:</strong> {blogInfo.authorAddress}
+          </div>
+          
+          {proposal.contentReference && (
+            <div className="preview-item">
+              <strong>Content Reference:</strong> 
+              <code className="reference-code">
+                {proposal.contentReference.substring(0, 16)}...
+              </code>
+            </div>
+          )}
+        </div>
+
+        {/* Content Access Status */}
+        {proposal.contentReference && (
+          <div className="content-access-info">
+            <h4>Content Accessibility</h4>
+            <div className="access-links">
+              <a 
+                href={services.swarm.getContentUrl(proposal.contentReference, {
+                  usePublicGateway: true,
+                  forWebDisplay: true
+                })}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="access-link"
+              >
+                View on Public Gateway
+              </a>
+              <a 
+                href={services.swarm.getContentUrl(proposal.contentReference, {
+                  usePublicGateway: false,
+                  forWebDisplay: true
+                })}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="access-link"
+              >
+                View on Local Node
+              </a>
+            </div>
+          </div>
+        )}
       </div>
 
       {executeError && (
         <div className="execution-error">
-          <div className="error-icon">❌</div>
+          <div className="error-icon">⌛</div>
           <div className="error-content">
             <h4>Execution Failed</h4>
             <p>{executeError}</p>
@@ -220,7 +345,7 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
           <button
             className="execute-button"
             onClick={handleExecuteProposal}
-            disabled={isExecuting}
+            disabled={isExecuting || !metadataInfo.isValid}
           >
             {isExecuting ? (
               <>

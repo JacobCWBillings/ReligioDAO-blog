@@ -112,9 +112,15 @@ export const SimpleBlogEditor: React.FC<SimpleBlogEditorProps> = ({
         // Initialize Swarm service
         await swarmService.initialize();
         
-        // Get service status
+        // Get service status and handle undefined postageBatchId
         const status = await swarmService.getStatus();
-        setServiceStatus(status);
+        setServiceStatus({
+          nodeRunning: status.nodeRunning,
+          hasStamp: status.hasStamp,
+          gateway: status.gateway,
+          postageBatchId: status.postageBatchId || '', // FIXED: Handle undefined
+          publicGateway: status.publicGateway
+        });
         
         // Load drafts if user is connected
         if (isConnected && account) {

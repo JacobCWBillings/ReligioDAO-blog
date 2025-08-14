@@ -1,35 +1,19 @@
-// src/services/ContentService.ts - FIXED: Markdown-based storage to avoid index.html restrictions
+// src/services/ContentService.ts
 import { SwarmService } from './SwarmService';
 import { marked } from 'marked';
+import {
+  BlogContent,
+  ProcessedBlogContent,
+  CachedContent,
+  ContentReferences,
+  ValidationResult
+} from '../../types/contentTypes';
+import {
+  STANDARD_MARKDOWN_FILENAME,
+  STANDARD_METADATA_FILENAME,
+  processMarkdownUrls
+} from '../utils/swarmUtils';
 
-export interface BlogContent {
-  title: string;
-  content: string;
-  metadata: {
-    author: string;
-    category: string;
-    tags: string[];
-    createdAt: number;
-    banner?: string | null;
-  };
-}
-
-export interface ProcessedBlogContent extends BlogContent {
-  version: string;
-  type: string;
-  uploadedAt: string;
-  contentReference?: string;
-}
-
-// Interface for cached content
-interface CachedContent {
-  content: string;
-  html: string;
-  timestamp: number;
-  contentType?: string;
-}
-
-// Interface for cache statistics
 export interface CacheStats {
   size: number;
   entries: Array<{
@@ -44,51 +28,55 @@ export interface CacheStats {
 }
 
 /**
- * Enhanced ContentService with markdown-based storage
- * FIXED: Uploads as markdown instead of index.html to avoid Swarm website restrictions
+ * Service for handling blog content storage and retrieval
  */
 export class ContentService {
   private contentCache: Map<string, CachedContent>;
-  private cacheExpiryTime: number; // Cache expiry time in milliseconds
+  private cacheExpiryTime: number;
 
   constructor(
-    private swarmService: SwarmService, 
+    private swarmService: SwarmService,
     cacheExpiryTimeInMinutes: number = 30
   ) {
-    // Initialize the cache
-    this.contentCache = new Map<string, CachedContent>();
+    this.contentCache = new Map();
     this.cacheExpiryTime = cacheExpiryTimeInMinutes * 60 * 1000;
-
-    // Configure marked for better HTML generation
+    
+    // Configure marked
     marked.setOptions({
       breaks: true,
-      gfm: true
+      gfm: true,
+      // headerIds: true,
+      // mangle: false
     });
-
-    // Auto-cleanup expired cache entries every 10 minutes
+    
+    // Auto-cleanup expired cache
     if (typeof window !== 'undefined') {
-      setInterval(() => {
-        this.cleanExpiredCache();
-      }, 10 * 60 * 1000); // 10 minutes
+      setInterval(() => this.cleanExpiredCache(), 10 * 60 * 1000);
     }
   }
 
   /**
-   * FIXED: Upload blog content as markdown instead of index.html
-   * This avoids Swarm's website hosting restrictions
+   * Upload blog content to Swarm
    */
   async uploadBlogContent(blogContent: BlogContent): Promise<string> {
     try {
+      // Validate content
+      const validation = this.validateBlogContent(blogContent);
+      if (!validation.valid) {
+        throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+      }
+      
       console.log('Uploading blog content:', blogContent.title);
       
-      // Validate blog content
-      this.validateBlogContent(blogContent);
-      
-      // Create structured content with metadata embedded in markdown
+      // Generate markdown with metadata
       const markdownWithMetadata = this.generateMarkdownWithMetadata(blogContent);
       
-      // FIXED: Upload as .md file instead of index.html to avoid website restrictions
-      const result = await this.swarmService.uploadMarkdownContent(markdownWithMetadata, 'blog-content.md');
+      // Upload to Swarm
+      const result = await this.swarmService.uploadContent(
+        markdownWithMetadata,
+        STANDARD_MARKDOWN_FILENAME,
+        'text/markdown'
+      );
       
       console.log('Blog content uploaded successfully:', result.reference);
       return result.reference;
@@ -100,16 +88,27 @@ export class ContentService {
   }
 
   /**
-   * FIXED: Download and process markdown content
+   * Download blog content from Swarm
    */
   async downloadBlogContent(reference: string): Promise<ProcessedBlogContent> {
     try {
       console.log('Downloading blog content:', reference);
       
-      // Download markdown content using /bzz endpoint (still correct endpoint)
-      const markdownContent = await this.swarmService.downloadText(reference);
+      // Try to download with filename first (collection format)
+      let markdownContent: string;
       
-      // Extract metadata and content from markdown
+      try {
+        markdownContent = await this.swarmService.downloadText(
+          reference,
+          STANDARD_MARKDOWN_FILENAME
+        );
+      } catch (error) {
+        // Fallback: try without filename (single file format)
+        console.log('Trying legacy single-file download...');
+        markdownContent = await this.swarmService.downloadText(reference);
+      }
+      
+      // Parse markdown with metadata
       const contentData = this.parseMarkdownWithMetadata(markdownContent);
       
       if (!contentData) {
@@ -126,64 +125,52 @@ export class ContentService {
   }
 
   /**
-   * FIXED: Get content as HTML by downloading markdown and rendering it
-   * Main method used by BlogDetailPage and ProposalDetailPage
+   * Get content as HTML (main method used by UI)
    */
-  async getContentAsHtml(contentReference: string, forceFresh: boolean = false): Promise<string> {
-    // Validate content reference format
-    if (!contentReference || contentReference.trim() === '') {
-      throw new Error('Invalid content reference: empty or undefined');
+  async getContentAsHtml(
+    contentReference: string,
+    forceFresh: boolean = false
+  ): Promise<string> {
+    // Validate reference
+    if (!contentReference || !/^[a-fA-F0-9]{64}$/.test(contentReference.trim())) {
+      throw new Error(`Invalid content reference: ${contentReference}`);
     }
-
-    const cleanReference = contentReference.trim();
-
-    // Validate that it looks like a proper Swarm hash
-    if (!/^[a-fA-F0-9]{64}$/.test(cleanReference)) {
-      throw new Error(`Invalid content reference format: ${cleanReference}. Expected 64-character hex string (Swarm hash), but got ${cleanReference.length} characters.`);
-    }
-
-    // Check cache first (unless force refresh requested)
+    
+    const cleanReference = contentReference.trim().toLowerCase();
+    
+    // Check cache first
     if (!forceFresh) {
-      const cachedContent = this.getCachedContent(cleanReference);
-      if (cachedContent) {
+      const cached = this.getCachedContent(cleanReference);
+      if (cached) {
         console.log(`Returning cached content for: ${cleanReference}`);
-        return cachedContent.html;
+        return cached.html;
       }
     }
-
+    
     try {
       console.log(`Fetching fresh blog content for: ${cleanReference}`);
       
-      // Try new markdown format first
-      try {
-        const blogData = await this.downloadBlogContent(cleanReference);
-        
-        // Process markdown content for display (handle asset URLs)
-        const processedMarkdown = this.processMarkdownForDisplay(blogData.content);
-        
-        // Convert markdown to HTML
-        const htmlContent = marked(processedMarkdown);
-        
-        // Create complete HTML document with metadata
-        const fullHtml = this.generateHtmlFromBlogData(blogData, htmlContent);
-        
-        // Cache the result
-        this.cacheContent(cleanReference, {
-          content: blogData.content,
-          html: fullHtml,
-          timestamp: Date.now(),
-          contentType: 'text/html'
-        });
-        
-        console.log('Blog content cached successfully for:', cleanReference);
-        return fullHtml;
-        
-      } catch (markdownError) {
-        console.warn('Failed to parse as markdown, trying legacy HTML format...', markdownError);
-        
-        // Fallback: try legacy HTML format for backwards compatibility
-        return await this.downloadLegacyHtmlContent(cleanReference);
-      }
+      // Download and parse content
+      const blogData = await this.downloadBlogContent(cleanReference);
+      
+      // Process markdown for web display
+      const processedMarkdown = processMarkdownUrls(blogData.content, true);
+      
+      // Convert to HTML
+      const htmlContent = marked(processedMarkdown);
+      
+      // Generate full HTML document
+      const fullHtml = this.generateHtmlDocument(blogData, htmlContent);
+      
+      // Cache the result
+      this.cacheContent(cleanReference, {
+        content: blogData.content,
+        html: fullHtml,
+        timestamp: Date.now(),
+        contentType: 'text/html'
+      });
+      
+      return fullHtml;
       
     } catch (error) {
       console.error('Error fetching blog content:', error);
@@ -192,7 +179,7 @@ export class ContentService {
   }
 
   /**
-   * Generate markdown with embedded metadata using frontmatter
+   * Generate markdown with frontmatter metadata
    */
   private generateMarkdownWithMetadata(blogContent: BlogContent): string {
     const frontmatter = {
@@ -202,89 +189,98 @@ export class ContentService {
       tags: blogContent.metadata.tags,
       createdAt: blogContent.metadata.createdAt,
       banner: blogContent.metadata.banner || null,
+      description: blogContent.metadata.description || null,
       version: '2.0',
       type: 'religiodao-blog-post',
       uploadedAt: new Date().toISOString()
     };
-
-    // Create frontmatter YAML
-    const yamlFrontmatter = Object.entries(frontmatter)
+    
+    // Create YAML frontmatter
+    const yamlLines = Object.entries(frontmatter)
       .map(([key, value]) => {
-        if (Array.isArray(value)) {
-          return `${key}: [${value.map(v => `"${v}"`).join(', ')}]`;
-        } else if (value === null) {
+        if (value === null) {
           return `${key}: null`;
+        } else if (Array.isArray(value)) {
+          return `${key}: [${value.map(v => `"${v}"`).join(', ')}]`;
         } else if (typeof value === 'string') {
           return `${key}: "${value.replace(/"/g, '\\"')}"`;
         } else {
           return `${key}: ${value}`;
         }
-      })
-      .join('\n');
-
+      });
+    
     return `---
-${yamlFrontmatter}
+${yamlLines.join('\n')}
 ---
 
 ${blogContent.content}`;
   }
 
   /**
-   * Parse markdown with embedded metadata from frontmatter
+   * Parse markdown with frontmatter
    */
   private parseMarkdownWithMetadata(markdownContent: string): ProcessedBlogContent | null {
     try {
-      // Check if content has frontmatter
+      // Check for frontmatter
       if (!markdownContent.startsWith('---')) {
-        // Fallback: try to parse as legacy format or plain markdown
         return this.parseLegacyContent(markdownContent);
       }
-
+      
       // Split frontmatter and content
-      const parts = markdownContent.split('---');
+      const parts = markdownContent.split(/^---$/m);
       if (parts.length < 3) {
         throw new Error('Invalid frontmatter format');
       }
-
+      
       const frontmatterText = parts[1].trim();
       const content = parts.slice(2).join('---').trim();
-
-      // Parse YAML frontmatter (simple implementation)
+      
+      // Parse YAML (simple implementation)
       const metadata: any = {};
       frontmatterText.split('\n').forEach(line => {
-        const match = line.match(/^(\w+):\s*(.+)$/);
-        if (match) {
-          const [, key, value] = match;
-          if (value.startsWith('[') && value.endsWith(']')) {
-            // Parse array
-            metadata[key] = value.slice(1, -1).split(', ').map(v => v.replace(/"/g, ''));
-          } else if (value === 'null') {
-            metadata[key] = null;
-          } else if (value.startsWith('"') && value.endsWith('"')) {
-            metadata[key] = value.slice(1, -1).replace(/\\"/g, '"');
-          } else if (!isNaN(Number(value))) {
-            metadata[key] = Number(value);
-          } else {
-            metadata[key] = value;
-          }
+        const colonIndex = line.indexOf(':');
+        if (colonIndex === -1) return;
+        
+        const key = line.substring(0, colonIndex).trim();
+        const value = line.substring(colonIndex + 1).trim();
+        
+        // Parse value based on format
+        if (value === 'null') {
+          metadata[key] = null;
+        } else if (value.startsWith('[') && value.endsWith(']')) {
+          // Array
+          metadata[key] = value
+            .slice(1, -1)
+            .split(',')
+            .map(v => v.trim().replace(/^"(.*)"$/, '$1'));
+        } else if (value.startsWith('"') && value.endsWith('"')) {
+          // String
+          metadata[key] = value.slice(1, -1).replace(/\\"/g, '"');
+        } else if (!isNaN(Number(value))) {
+          // Number
+          metadata[key] = Number(value);
+        } else {
+          // Raw string
+          metadata[key] = value;
         }
       });
-
+      
       return {
-        title: metadata.title,
+        title: metadata.title || 'Untitled',
         content: content,
         metadata: {
-          author: metadata.author,
-          category: metadata.category,
+          author: metadata.author || 'Unknown',
+          category: metadata.category || 'Uncategorized',
           tags: metadata.tags || [],
-          createdAt: metadata.createdAt,
-          banner: metadata.banner
+          createdAt: metadata.createdAt || Date.now(),
+          banner: metadata.banner,
+          description: metadata.description
         },
         version: metadata.version || '2.0',
         type: metadata.type || 'religiodao-blog-post',
         uploadedAt: metadata.uploadedAt || new Date().toISOString()
       };
-
+      
     } catch (error) {
       console.error('Error parsing markdown with metadata:', error);
       return null;
@@ -292,10 +288,9 @@ ${blogContent.content}`;
   }
 
   /**
-   * Fallback parser for legacy content
+   * Parse legacy content format
    */
-  private parseLegacyContent(content: string): ProcessedBlogContent | null {
-    // Try to extract title from first heading
+  private parseLegacyContent(content: string): ProcessedBlogContent {
     const titleMatch = content.match(/^#\s+(.+)$/m);
     const title = titleMatch ? titleMatch[1] : 'Untitled Blog Post';
     
@@ -316,243 +311,118 @@ ${blogContent.content}`;
   }
 
   /**
-   * Legacy HTML content download for backwards compatibility
+   * Generate HTML document
    */
-  private async downloadLegacyHtmlContent(reference: string): Promise<string> {
-    console.warn('Attempting legacy HTML download for reference:', reference);
-    
-    // Try to download as HTML and cache it
-    const urls = this.swarmService.getContentUrls(reference);
-    const urlsToTry = [
-      urls.localWeb,    // http://localhost:1633/bzz/[hash]
-      urls.publicWeb,   // https://api.gateway.ethswarm.org/bzz/[hash]
-      ...urls.fallbacks.map(url => url.replace('/bytes/', '/bzz/'))
-    ];
-
-    for (const url of urlsToTry) {
-      try {
-        console.log(`Trying legacy HTML fetch from: ${url}`);
-        const response = await fetch(url, { 
-          signal: AbortSignal.timeout(10000),
-          headers: {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-          }
-        });
-        
-        if (response.ok) {
-          const content = await response.text();
-          
-          // Check if we got actual HTML or the approval page
-          if (content.includes('Request Approval for This Hash')) {
-            console.warn(`Got approval page from ${url}, trying next...`);
-            continue;
-          }
-          
-          if (content.trim().startsWith('<!DOCTYPE html>') || content.includes('<html')) {
-            console.log(`Successfully retrieved legacy HTML from ${url}`);
-            
-            // Cache it
-            this.cacheContent(reference, {
-              content: content,
-              html: content,
-              timestamp: Date.now(),
-              contentType: 'text/html'
-            });
-            
-            return content;
-          }
-        }
-      } catch (fetchError) {
-        console.warn(`Legacy fetch failed for ${url}:`, fetchError);
-        continue;
-      }
-    }
-
-    throw new Error('Failed to download content in both markdown and legacy HTML formats');
-  }
-
-  /**
-   * Generate complete HTML document from blog data and rendered content
-   */
-  private generateHtmlFromBlogData(blogData: ProcessedBlogContent, htmlContent: string): string {
+  private generateHtmlDocument(
+    blogData: ProcessedBlogContent,
+    htmlContent: string
+  ): string {
     const title = this.escapeHtml(blogData.title);
     const author = this.formatAddress(blogData.metadata.author);
     const category = this.escapeHtml(blogData.metadata.category);
     const tags = blogData.metadata.tags.map(tag => this.escapeHtml(tag)).join(', ');
     const createdAt = new Date(blogData.metadata.createdAt).toLocaleDateString();
-    const banner = blogData.metadata.banner || '';
-
+    
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
-  <meta name="description" content="${this.generateDescription(blogData.content)}">
   <meta name="author" content="${author}">
   <meta name="keywords" content="${tags}">
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       line-height: 1.6;
       max-width: 800px;
       margin: 0 auto;
       padding: 20px;
-      background: #ffffff;
-      color: #333;
     }
     .blog-header {
-      margin-bottom: 30px;
       border-bottom: 2px solid #eee;
       padding-bottom: 20px;
+      margin-bottom: 30px;
     }
     .blog-title {
       font-size: 2.5em;
       margin: 0 0 10px 0;
-      color: #2c3e50;
     }
     .blog-meta {
       color: #666;
       font-size: 0.9em;
-      margin-bottom: 15px;
-    }
-    .blog-banner {
-      width: 100%;
-      max-height: 400px;
-      object-fit: cover;
-      border-radius: 8px;
-      margin: 20px 0;
-    }
-    .blog-content {
-      font-size: 1.1em;
-      line-height: 1.8;
     }
     .blog-content img {
       max-width: 100%;
       height: auto;
-      border-radius: 4px;
-      margin: 15px 0;
-    }
-    .blog-content h1, .blog-content h2, .blog-content h3 {
-      color: #2c3e50;
-      margin-top: 30px;
-      margin-bottom: 15px;
-    }
-    .blog-content code {
-      background: #f4f4f4;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-family: 'Monaco', 'Menlo', monospace;
-    }
-    .blog-content blockquote {
-      border-left: 4px solid #3498db;
-      padding-left: 20px;
-      margin: 20px 0;
-      font-style: italic;
-      color: #555;
     }
   </style>
 </head>
 <body>
-  <article class="blog-article">
+  <article>
     <header class="blog-header">
       <h1 class="blog-title">${title}</h1>
       <div class="blog-meta">
-        <span>By ${author}</span> •
-        <span>${createdAt}</span> •
+        <span>By ${author}</span> • 
+        <span>${createdAt}</span> • 
         <span>${category}</span>
         ${tags ? ` • <span>Tags: ${tags}</span>` : ''}
       </div>
-      ${banner ? `<img src="${banner}" alt="Blog banner" class="blog-banner">` : ''}
     </header>
     <main class="blog-content">
       ${htmlContent}
     </main>
   </article>
-  
-  <!-- Embedded blog data for processing -->
-  <script type="application/json" id="blog-data">
-    ${JSON.stringify(blogData, null, 2)}
-  </script>
 </body>
 </html>`;
   }
 
   /**
-   * Process markdown content for display (convert local asset URLs to public ones)
+   * Validate blog content
    */
-  private processMarkdownForDisplay(content: string): string {
-    try {
-      // Convert localhost asset URLs to public gateway URLs
-      let processedContent = content.replace(
-        /!\[([^\]]*)\]\((http:\/\/localhost:1633\/bytes\/([^)]+))\)/g,
-        (match, alt, localUrl, reference) => {
-          const publicUrl = this.swarmService.getContentUrl(reference, true, 'bytes');
-          return `![${alt}](${publicUrl})`;
-        }
-      );
-
-      return processedContent.replace(
-        /!\[([^\]]*)\]\((http:\/\/localhost:1633\/bzz\/([^)]+))\)/g,
-        (match, alt, localUrl, reference) => {
-          const publicUrl = this.swarmService.getContentUrl(reference, true, 'bytes');
-          return `![${alt}](${publicUrl})`;
-        }
-      );
-      
-    } catch (error) {
-      console.error('Error processing markdown for display:', error);
-      return content;
+  validateBlogContent(blogContent: BlogContent): ValidationResult {
+    const errors: string[] = [];
+    
+    if (!blogContent.title?.trim()) {
+      errors.push('Title is required');
     }
+    
+    if (!blogContent.content?.trim()) {
+      errors.push('Content is required');
+    }
+    
+    if (!blogContent.metadata?.author?.trim()) {
+      errors.push('Author is required');
+    }
+    
+    if (!blogContent.metadata?.category?.trim()) {
+      errors.push('Category is required');
+    }
+    
+    const contentSize = new TextEncoder().encode(blogContent.content).length;
+    if (contentSize > 10 * 1024 * 1024) {
+      errors.push('Content exceeds 10MB limit');
+    }
+    
+    return {
+      valid: errors.length === 0,
+      errors
+    };
   }
 
   /**
-   * Validate blog content structure
+   * Cache management
    */
-  private validateBlogContent(blogContent: BlogContent): void {
-    if (!blogContent.title || blogContent.title.trim() === '') {
-      throw new Error('Blog title is required');
-    }
-    
-    if (!blogContent.content || blogContent.content.trim() === '') {
-      throw new Error('Blog content is required');
-    }
-    
-    if (!blogContent.metadata) {
-      throw new Error('Blog metadata is required');
-    }
-    
-    if (!blogContent.metadata.author || blogContent.metadata.author.trim() === '') {
-      throw new Error('Blog author is required');
-    }
-    
-    if (!blogContent.metadata.category || blogContent.metadata.category.trim() === '') {
-      throw new Error('Blog category is required');
-    }
-    
-    if (!Array.isArray(blogContent.metadata.tags)) {
-      throw new Error('Blog tags must be an array');
-    }
-    
-    if (!blogContent.metadata.createdAt || isNaN(blogContent.metadata.createdAt)) {
-      throw new Error('Blog creation date is required and must be a valid timestamp');
-    }
-  }
-
-  // ==========================================
-  // CACHING METHODS
-  // ==========================================
-
   private getCachedContent(reference: string): CachedContent | null {
     const cached = this.contentCache.get(reference);
     if (!cached) return null;
-
+    
     const age = Date.now() - cached.timestamp;
     if (age > this.cacheExpiryTime) {
       this.contentCache.delete(reference);
       return null;
     }
-
+    
     return cached;
   }
 
@@ -560,144 +430,68 @@ ${blogContent.content}`;
     this.contentCache.set(reference, content);
   }
 
-  private cleanExpiredCache(): void {
+  removeFromCache(reference: string): void {
+    this.contentCache.delete(reference);
+  }
+
+  clearCache(): void {
+    this.contentCache.clear();
+  }
+
+  private cleanExpiredCache(): number {
     const now = Date.now();
+    let removed = 0;
+    
     for (const [reference, content] of this.contentCache.entries()) {
       if (now - content.timestamp > this.cacheExpiryTime) {
         this.contentCache.delete(reference);
+        removed++;
       }
     }
+    
+    return removed;
   }
 
-  /**
-   * Remove content from cache
-   */
-  removeFromCache(contentReference: string): void {
-    this.contentCache.delete(contentReference);
-    console.log('Content removed from cache:', contentReference);
-  }
-
-  /**
-   * Force refresh content (bypass cache)
-   */
-  async forceRefreshContent(contentReference: string): Promise<string> {
-    this.removeFromCache(contentReference);
-    return this.getContentAsHtml(contentReference, true);
-  }
-
-  /**
-   * Get cache statistics
-   */
   getCacheStats(): CacheStats {
-    const entries = Array.from(this.contentCache.entries()).map(([reference, content]) => ({
-      reference,
-      timestamp: content.timestamp,
-      contentType: content.contentType,
-      isExpired: Date.now() - content.timestamp > this.cacheExpiryTime,
-      ageInMinutes: Math.floor((Date.now() - content.timestamp) / (1000 * 60))
-    }));
-
-    const totalSize = Array.from(this.contentCache.values())
-      .reduce((sum, content) => sum + content.html.length + content.content.length, 0);
-
+    const now = Date.now();
+    const entries = Array.from(this.contentCache.entries()).map(([reference, content]) => {
+      const age = now - content.timestamp;
+      return {
+        reference,
+        timestamp: content.timestamp,
+        contentType: content.contentType,
+        isExpired: age > this.cacheExpiryTime,
+        ageInMinutes: Math.floor(age / 60000)
+      };
+    });
+    
     return {
       size: this.contentCache.size,
       entries,
-      totalSizeEstimate: totalSize,
+      totalSizeEstimate: entries.length * 1000, // Rough estimate
       expiredCount: entries.filter(e => e.isExpired).length
     };
   }
 
   /**
-   * Clear all cached content
+   * Force refresh content
    */
-  clearCache(): void {
-    this.contentCache.clear();
-    console.log('Content cache cleared');
+  async forceRefreshContent(reference: string): Promise<string> {
+    this.removeFromCache(reference);
+    return this.getContentAsHtml(reference, true);
   }
 
   /**
-   * Process markdown content for publication (convert asset URLs)
+   * Utility methods
    */
-  processMarkdownForPublication(content: string): string {
-    try {
-      // Convert localhost asset URLs to public gateway URLs for publication
-      let processedContent = content.replace(
-        /!\[([^\]]*)\]\((http:\/\/localhost:1633\/bytes\/([^)]+))\)/g,
-        (match, alt, localUrl, reference) => {
-          const publicUrl = this.swarmService.getContentUrl(reference, true, 'bytes');
-          return `![${alt}](${publicUrl})`;
-        }
-      );
-
-      return processedContent.replace(
-        /!\[([^\]]*)\]\((http:\/\/localhost:1633\/bzz\/([^)]+))\)/g,
-        (match, alt, localUrl, reference) => {
-          const publicUrl = this.swarmService.getContentUrl(reference, true, 'bytes');
-          return `![${alt}](${publicUrl})`;
-        }
-      );
-      
-    } catch (error) {
-      console.error('Error processing markdown for publication:', error);
-      return content;
-    }
-  }
-
-  /**
-   * Generate blog URL for viewing (now points to the app, not direct Swarm)
-   */
-  getBlogUrl(reference: string, usePublicGateway: boolean = true): string {
-    // Since we're storing as markdown, return the app URL for viewing
-    return `/blogs/${reference}`;
-  }
-
-  /**
-   * Generate multiple URLs for blog viewing
-   */
-  getBlogUrls(reference: string): {
-    local: string;
-    public: string;
-    fallbacks: string[];
-  } {
-    const urls = this.swarmService.getContentUrls(reference);
-    return {
-      local: urls.local,  // bytes endpoint for raw content
-      public: urls.public, // bytes endpoint for raw content
-      fallbacks: urls.fallbacks // bytes endpoints
-    };
-  }
-
-  // ==========================================
-  // UTILITY METHODS
-  // ==========================================
-
   private escapeHtml(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
   }
 
-  private unescapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.innerHTML = text;
-    return div.textContent || div.innerText || '';
-  }
-
   private formatAddress(address: string): string {
     if (!address || address.length < 10) return address;
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  }
-
-  private generateDescription(content: string): string {
-    const textContent = content
-      .replace(/[#*_`-]/g, '')
-      .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-      .replace(/!\[.*?\]\(.*?\)/g, '')
-      .trim();
-    
-    return textContent.length > 160 
-      ? textContent.substring(0, 157) + '...'
-      : textContent;
   }
 }

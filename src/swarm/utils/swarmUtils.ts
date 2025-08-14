@@ -1,202 +1,266 @@
 // src/utils/swarmUtils.ts
 /**
- * Utility functions for standardized Swarm content handling
- * Optimized for web-first blog content access
+ * Utility functions for Swarm content handling
+ * Single source of truth for URL patterns and best practices
  */
 
-// Standard file name for web content
+// Standard filenames for content types
 export const STANDARD_CONTENT_FILENAME = 'index.html';
-export const STANDARD_MARKDOWN_FILENAME = 'content.md';
-export const STANDARD_JSON_FILENAME = 'content.json';
+export const STANDARD_MARKDOWN_FILENAME = 'blog-content.md';
+export const STANDARD_METADATA_FILENAME = 'metadata.json';
+
+// Content type detection patterns
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+const WEB_CONTENT_TYPES = ['text/html', 'text/markdown', 'application/json', 'text/plain'];
+const BINARY_TYPES = ['application/octet-stream', 'application/zip', 'application/pdf'];
 
 /**
- * Clean any prefixes from a Swarm reference
- * @param reference The raw Swarm reference that might contain prefixes
- * @returns Cleaned reference
- */
-export const cleanSwarmReference = (reference: string): string => {
-  return reference
-    .replace('bzz://', '')
-    .replace('bytes://', '')
-    .trim();
-};
-
-/**
- * Content type categorization for optimal Swarm endpoint selection
+ * Content categories for endpoint selection
  */
 export enum ContentCategory {
-  WebContent, // HTML, markdown, JSON - use bzz endpoint
-  BinaryAsset, // Images, videos, audio - use bytes endpoint
-  Document,   // PDFs, docs - use bytes endpoint
-  Unknown     // Default
+  WebContent,   // HTML, markdown, JSON - use bzz
+  WebAsset,     // Images for web display - use bzz
+  RawBinary,    // Downloads, archives - use bytes
+  Unknown
 }
 
 /**
- * Determine content category based on MIME type
- * @param contentType MIME type of the content
- * @returns The appropriate content category
+ * Clean Swarm reference from any prefixes
+ */
+export const cleanSwarmReference = (reference: string): string => {
+  if (!reference) return '';
+  
+  return reference
+    .replace(/^bzz:\/\//, '')
+    .replace(/^bytes:\/\//, '')
+    .replace(/^swarm:\/\//, '')
+    .split('/')[0]  // Remove any path components
+    .trim()
+    .toLowerCase();
+};
+
+/**
+ * Validate Swarm reference format
+ */
+export const isValidSwarmReference = (reference: string): boolean => {
+  const cleaned = cleanSwarmReference(reference);
+  return /^[a-f0-9]{64}$/.test(cleaned);
+};
+
+/**
+ * Determine content category from MIME type
  */
 export const getContentCategory = (contentType: string = ''): ContentCategory => {
   const type = contentType.toLowerCase();
   
-  // Web content should use bzz endpoint for browser accessibility
-  if (
-    type.includes('text/html') || 
-    type.includes('text/markdown') || 
-    type.includes('application/json') ||
-    type.includes('text/plain')
-  ) {
+  // Web content and displayable assets use bzz
+  if (WEB_CONTENT_TYPES.some(t => type.includes(t))) {
     return ContentCategory.WebContent;
   }
   
-  // Binary media assets
-  if (
-    type.startsWith('image/') || 
-    type.startsWith('audio/') || 
-    type.startsWith('video/')
-  ) {
-    return ContentCategory.BinaryAsset;
+  // Images for web display use bzz for proper headers
+  if (IMAGE_TYPES.some(t => type.includes(t))) {
+    return ContentCategory.WebAsset;
   }
   
-  // Document formats
-  if (
-    type.includes('application/pdf') ||
-    type.includes('application/msword') ||
-    type.includes('application/vnd.openxmlformats')
-  ) {
-    return ContentCategory.Document;
+  // True binary data uses bytes
+  if (BINARY_TYPES.some(t => type.includes(t))) {
+    return ContentCategory.RawBinary;
   }
   
-  // Default to unknown
-  return ContentCategory.Unknown;
+  // Default to web content for unknown types
+  return ContentCategory.WebContent;
 };
 
 /**
- * Build a web-optimized URL for retrieving content from Swarm
- * Uses bzz endpoint for web content with proper path structure
- * 
- * @param reference Swarm content reference
- * @param gateway Swarm gateway URL (defaults to local node)
- * @param filename Optional filename within the collection
- * @returns Full URL to the content
+ * Determine the appropriate endpoint for content type
  */
-export const buildSwarmContentUrl = (
-  reference: string, 
-  gateway: string = 'http://localhost:1633',
-  filename: string = STANDARD_CONTENT_FILENAME
-): string => {
-  const cleanRef = cleanSwarmReference(reference);
-  // For web content, we use the bzz endpoint with proper path
-  return `${gateway}/bzz/${cleanRef}/${filename}`;
-};
-
-/**
- * Build a URL for retrieving raw binary content from Swarm
- * @param reference Swarm content reference
- * @param gateway Swarm gateway URL (defaults to local node)
- * @returns Full URL to access the raw bytes
- */
-export const buildSwarmBytesUrl = (
-  reference: string,
-  gateway: string = 'http://localhost:1633'
-): string => {
-  const cleanRef = cleanSwarmReference(reference);
-  return `${gateway}/bytes/${cleanRef}`;
-};
-
-/**
- * Determine if a reference is a raw file or a collection
- * @param reference The reference string to analyze
- * @returns Boolean indicating if the reference is likely a raw file reference
- */
-export const isRawFileReference = (reference: string): boolean => {
-  // Raw files typically don't have path components and are shorter
-  return !reference.includes('/') && reference.length <= 64;
-};
-
-/**
- * Extract just the hash portion from a reference that may contain path information
- * @param reference The reference that might contain path information
- * @returns The clean hash portion only
- */
-export const extractHashFromReference = (reference: string): string => {
-  // Remove any protocol prefixes first
-  const cleanRef = cleanSwarmReference(reference);
-  // If there's a path component, extract just the hash
-  return cleanRef.split('/')[0];
-};
-
-/**
- * Create the appropriate URL to access content in Swarm based on its type
- * Uses best practice of bzz endpoint for web content and bytes for binary
- * 
- * @param reference Swarm reference to the content
- * @param type Optional content type to determine appropriate endpoint
- * @param gateway Optional Swarm gateway URL
- * @returns The full URL to access the content
- */
-export const createContentUrl = (
-  reference: string, 
-  type?: string,
-  gateway: string = 'http://localhost:1633'
-): string => {
-  // If no type provided, use the hash format to guess
-  if (!type) {
-    return isRawFileReference(reference) 
-      ? buildSwarmBytesUrl(reference, gateway)
-      : buildSwarmContentUrl(reference, gateway);
-  }
+export const getEndpointForContent = (
+  contentType: string,
+  forceBytes: boolean = false
+): 'bzz' | 'bytes' => {
+  if (forceBytes) return 'bytes';
   
-  // Use content category to determine endpoint
-  const category = getContentCategory(type);
+  const category = getContentCategory(contentType);
   
   switch (category) {
+    case ContentCategory.RawBinary:
+      return 'bytes';
     case ContentCategory.WebContent:
-      // Web content should use bzz endpoint
-      return buildSwarmContentUrl(
-        reference, 
-        gateway, 
-        type.includes('markdown') ? STANDARD_MARKDOWN_FILENAME : 
-        type.includes('json') ? STANDARD_JSON_FILENAME : 
-        STANDARD_CONTENT_FILENAME
-      );
-    
-    case ContentCategory.BinaryAsset:
-    case ContentCategory.Document:
-    case ContentCategory.Unknown:
+    case ContentCategory.WebAsset:
     default:
-      // Binary content uses bytes endpoint
-      return buildSwarmBytesUrl(reference, gateway);
+      return 'bzz';
   }
 };
 
 /**
- * Create a URL specifically for asset (binary content) access
- * @param reference Swarm reference to the asset
- * @param type Optional content type
- * @param gateway Optional Swarm gateway URL
- * @returns The full URL to access the asset
+ * Build URL for accessing content from Swarm
  */
-export const createAssetUrl = (
-  reference: string, 
-  type?: string,
-  gateway: string = 'http://localhost:1633'
+export const buildSwarmUrl = (
+  reference: string,
+  gateway: string,
+  options: {
+    endpoint?: 'bzz' | 'bytes';
+    filename?: string;
+    path?: string;
+  } = {}
 ): string => {
-  // Assets almost always use bytes endpoint for direct access
-  return buildSwarmBytesUrl(reference, gateway);
+  const cleanRef = cleanSwarmReference(reference);
+  
+  if (!isValidSwarmReference(cleanRef)) {
+    throw new Error(`Invalid Swarm reference: ${reference}`);
+  }
+  
+  const endpoint = options.endpoint || 'bzz';
+  const pathComponent = options.filename || options.path || '';
+  
+  // Build URL with optional path/filename
+  const baseUrl = `${gateway}/${endpoint}/${cleanRef}`;
+  return pathComponent ? `${baseUrl}/${pathComponent}` : baseUrl;
 };
 
 /**
- * Create a blog-friendly URL for sharing content
- * @param reference Swarm reference to the blog content
- * @param gateway Optional Swarm gateway URL (preferably public)
- * @returns A web-friendly URL for the blog post
+ * Build URL specifically for web content
  */
-export const createBlogUrl = (
+export const buildWebContentUrl = (
   reference: string,
-  gateway: string = 'https://gateway.ethswarm.org'
+  gateway: string = 'https://api.gateway.ethswarm.org',
+  filename?: string
 ): string => {
-  const cleanRef = cleanSwarmReference(reference);
-  // Blog content should always use bzz endpoint for web accessibility
-  return `${gateway}/bzz/${cleanRef}/`;
+  return buildSwarmUrl(reference, gateway, {
+    endpoint: 'bzz',
+    filename
+  });
+};
+
+/**
+ * Build URL specifically for raw bytes
+ */
+export const buildBytesUrl = (
+  reference: string,
+  gateway: string = 'https://api.gateway.ethswarm.org'
+): string => {
+  return buildSwarmUrl(reference, gateway, {
+    endpoint: 'bytes'
+  });
+};
+
+/**
+ * Generate gateway fallback URLs
+ */
+export const generateFallbackUrls = (
+  reference: string,
+  primaryGateway: string,
+  fallbackGateways: string[],
+  options: {
+    endpoint?: 'bzz' | 'bytes';
+    filename?: string;
+  } = {}
+): string[] => {
+  const allGateways = [primaryGateway, ...fallbackGateways];
+  return allGateways.map(gateway => 
+    buildSwarmUrl(reference, gateway, options)
+  );
+};
+
+/**
+ * Extract filename from path or URL
+ */
+export const extractFilename = (path: string): string => {
+  const parts = path.split('/');
+  return parts[parts.length - 1] || '';
+};
+
+/**
+ * Determine if content should be cached
+ */
+export const shouldCacheContent = (contentType: string): boolean => {
+  // Cache web content and images, not large binaries
+  const category = getContentCategory(contentType);
+  return category !== ContentCategory.RawBinary;
+};
+
+/**
+ * Process markdown for Swarm URLs
+ * Ensures all embedded content uses correct endpoints
+ */
+export const processMarkdownUrls = (
+  markdown: string,
+  usePublicGateway: boolean = true
+): string => {
+  const gateway = usePublicGateway 
+    ? 'https://api.gateway.ethswarm.org'
+    : 'http://localhost:1633';
+  
+  // Convert any bytes URLs to bzz for images
+  return markdown
+    .replace(
+      /!\[([^\]]*)\]\((https?:\/\/[^\/]+)\/bytes\/([a-f0-9]{64})\)/gi,
+      `![$1](${gateway}/bzz/$3)`
+    )
+    // Ensure local URLs use public gateway if specified
+    .replace(
+      /!\[([^\]]*)\]\(http:\/\/localhost:1633\/bzz\/([a-f0-9]{64})\)/gi,
+      usePublicGateway ? `![$1](${gateway}/bzz/$2)` : '$&'
+    );
+};
+
+/**
+ * Create a shareable blog URL
+ */
+export const createShareableUrl = (
+  reference: string,
+  usePublicGateway: boolean = true
+): string => {
+  const gateway = usePublicGateway
+    ? 'https://api.gateway.ethswarm.org'
+    : 'http://localhost:1633';
+    
+  return buildWebContentUrl(reference, gateway);
+};
+
+/**
+ * Parse Swarm URL to extract components
+ */
+export const parseSwarmUrl = (url: string): {
+  gateway: string;
+  endpoint: 'bzz' | 'bytes';
+  reference: string;
+  path?: string;
+} | null => {
+  const match = url.match(
+    /^(https?:\/\/[^\/]+)\/(bzz|bytes)\/([a-f0-9]{64})(?:\/(.+))?$/i
+  );
+  
+  if (!match) return null;
+  
+  return {
+    gateway: match[1],
+    endpoint: match[2] as 'bzz' | 'bytes',
+    reference: match[3],
+    path: match[4]
+  };
+};
+
+/**
+ * Default gateway configuration
+ */
+export const DEFAULT_GATEWAYS = {
+  local: 'http://localhost:1633',
+  public: 'https://api.gateway.ethswarm.org',
+  fallbacks: [
+    'https://gateway.ethswarm.org',
+    'https://download.gateway.ethswarm.org'
+  ]
+};
+
+/**
+ * Swarm limits and constraints
+ */
+export const SWARM_LIMITS = {
+  MAX_CHUNK_SIZE: 4096,           // 4KB per chunk
+  MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB recommended max
+  REFERENCE_LENGTH: 64,             // Hex characters
+  DEFAULT_TIMEOUT: 30000,           // 30 seconds
+  UPLOAD_TIMEOUT: 60000,            // 60 seconds
 };

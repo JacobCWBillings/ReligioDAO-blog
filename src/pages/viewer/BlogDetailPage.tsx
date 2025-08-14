@@ -1,4 +1,4 @@
-// src/pages/viewer/BlogDetailPage.tsx - Fixed with correct contentReference access
+// src/pages/viewer/BlogDetailPage.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useBlogNFT } from '../../blockchain/hooks/useBlogNFT';
@@ -6,7 +6,7 @@ import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
 import { formatAddress } from '../../utils/walletUtils';
 import { BlogDetailSkeleton } from '../../components/skeletons/Skeleton';
-import { services } from '../../swarm/services'; // Use new service architecture
+import { services } from '../../swarm/services'; // Use new unified service container
 import defaultImage from '../../static/media/default.jpg';
 import './BlogDetailPage.css';
 
@@ -23,11 +23,22 @@ export const BlogDetailPage: React.FC = () => {
   const [contentLoading, setContentLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [blog, setBlog] = useState<any>(null);
-  const [fetchAttempted, setFetchAttempted] = useState<boolean>(false);
   const [relatedBlogs, setRelatedBlogs] = useState<any[]>([]);
-  const [debugInfo, setDebugInfo] = useState<string>('');
+  
+  // Diagnostic info for development
+  const [diagnostics, setDiagnostics] = useState<{
+    cacheStatus: string;
+    downloadMethod: string;
+    gatewayUsed: string;
+  }>({
+    cacheStatus: 'unknown',
+    downloadMethod: 'unknown',
+    gatewayUsed: 'unknown'
+  });
 
-  // Enhanced fetch blog content with better error handling and debugging
+  /**
+   * Fetch blog content using new ContentService
+   */
   const fetchBlogContent = useCallback(async (contentReference: string) => {
     if (!contentReference || contentReference.trim() === '') {
       setError('Blog content reference not found');
@@ -35,66 +46,61 @@ export const BlogDetailPage: React.FC = () => {
       return;
     }
     
-    // Avoid double fetch
-    if (fetchAttempted) return;
-    setFetchAttempted(true);
-    
     try {
       setContentLoading(true);
       setError(null);
+      
       console.log(`Fetching blog content for reference: ${contentReference}`);
       
-      // Add debug information
-      setDebugInfo(`Attempting to fetch content with reference: ${contentReference}`);
+      // Check cache status
+      const cacheStats = services.content.getCacheStats();
+      const isCached = cacheStats.entries.some(e => e.reference === contentReference);
       
-      // Use the enhanced ContentService with proper blog handling
+      setDiagnostics(prev => ({
+        ...prev,
+        cacheStatus: isCached ? 'cached' : 'not cached'
+      }));
+      
+      // Use the new ContentService method
       const html = await services.content.getContentAsHtml(contentReference);
       
       if (!html || html.trim() === '') {
-        console.error('Retrieved empty content from Swarm');
-        setError('Blog content is empty');
-        setDebugInfo('Retrieved empty content from Swarm');
-      } else {
-        console.log('Successfully retrieved blog content');
-        
-        // FIXED: Check if content looks like proper HTML
-        if (html.includes('<!DOCTYPE html>') || html.includes('<html')) {
-          setBlogContent(html);
-          setError(null);
-          setDebugInfo(`Successfully loaded HTML content (${html.length} characters)`);
-        } else if (html.includes('{"website-index-document"') || html.includes('\x00')) {
-          // This indicates we got binary/collection data instead of HTML
-          console.error('Received binary/collection data instead of HTML. This suggests an endpoint mismatch.');
-          setError('Content format error: Received collection metadata instead of HTML. The blog may need to be re-uploaded or the content service needs fixing.');
-          setDebugInfo('ERROR: Received binary collection data. Check console for technical details.');
-          
-          // Log technical details for debugging
-          console.error('Raw content preview:', html.substring(0, 200));
-          console.error('Content reference:', contentReference);
-          console.error('This usually means the content was uploaded as a collection but is being accessed as raw bytes.');
-        } else {
-          // Content doesn't look like HTML but isn't binary either
-          console.warn('Content doesn\'t appear to be proper HTML');
-          setBlogContent(html); // Still try to display it
-          setDebugInfo(`Loaded content that may not be proper HTML (${html.length} characters)`);
-        }
+        throw new Error('Retrieved empty content from Swarm');
       }
+      
+      setBlogContent(html);
+      setError(null);
+      
+      // Update diagnostics
+      setDiagnostics(prev => ({
+        ...prev,
+        downloadMethod: isCached ? 'from cache' : 'fresh download',
+        gatewayUsed: isCached ? 'N/A' : 'see console'
+      }));
+      
+      console.log('Successfully retrieved blog content');
+      
     } catch (err) {
       console.error('Error fetching blog content:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-      setError(`Failed to load blog content: ${errorMessage}`);
-      setDebugInfo(`ERROR: ${errorMessage}`);
+      setError(errorMessage);
       
-      // Additional debugging for common issues
-      if (errorMessage.includes('Failed to download blog HTML')) {
-        setDebugInfo(prev => prev + '\n\nTip: This error suggests the content was uploaded as a Swarm collection but the download is using the wrong endpoint. Check ContentService.downloadBlogHtml method.');
+      // Provide helpful error messages based on error type
+      if (errorMessage.includes('Invalid content reference')) {
+        setError('Invalid content reference format. The blog may be corrupted.');
+      } else if (errorMessage.includes('Failed to download from all gateways')) {
+        setError('Unable to access content. Please check your connection or try again later.');
+      } else {
+        setError(`Failed to load blog content: ${errorMessage}`);
       }
     } finally {
       setContentLoading(false);
     }
-  }, [fetchAttempted]);
+  }, []);
 
-  // Fetch blog metadata from blockchain
+  /**
+   * Fetch blog metadata from blockchain
+   */
   const fetchBlogData = useCallback(async (id: string) => {
     try {
       setLoading(true);
@@ -111,31 +117,30 @@ export const BlogDetailPage: React.FC = () => {
       console.log('Retrieved blog data:', blogData);
       setBlog(blogData);
       
-      // FIXED: Extract content reference from the correct location
-      // BlogNFT interface has contentReference as a top-level property
+      // Extract content reference
       const contentRef = blogData.contentReference || 
                         blogData.metadata?.properties?.contentReference;
       
       if (contentRef) {
-        console.log('Extracted content reference from blog data:', contentRef);
+        console.log('Content reference found:', contentRef);
         await fetchBlogContent(contentRef);
       } else {
         console.error('No content reference found in blog data');
         setError('Blog content reference not found');
-        setDebugInfo('No contentReference found in blog data. Check BlogNFT structure.');
       }
       
     } catch (err) {
       console.error('Error fetching blog data:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(`Failed to load blog: ${errorMessage}`);
-      setDebugInfo(`Blog fetch error: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
   }, [getNFTById, fetchBlogContent]);
 
-  // Load blog on component mount
+  /**
+   * Load blog on component mount
+   */
   useEffect(() => {
     if (blogId) {
       fetchBlogData(blogId);
@@ -145,7 +150,9 @@ export const BlogDetailPage: React.FC = () => {
     }
   }, [blogId, fetchBlogData]);
 
-  // Handler functions
+  /**
+   * Handler functions
+   */
   const handleEdit = () => {
     if (blog) {
       navigate(`/editor?edit=${blog.tokenId}`);
@@ -170,48 +177,56 @@ export const BlogDetailPage: React.FC = () => {
     }
   };
 
-  const handleRetry = () => {
+  const handleRefreshContent = async () => {
     if (blog?.contentReference) {
-      setFetchAttempted(false);
-      setError(null);
-      setBlogContent('');
-      setDebugInfo('Clearing cache and retrying...');
-      
-      // Clear the cached content for this reference
-      services.content.removeFromCache(blog.contentReference);
-      fetchBlogContent(blog.contentReference);
-    } else if (blogId) {
-      // Retry the entire process
-      setFetchAttempted(false);
-      setBlog(null);
-      setBlogContent('');
-      setError(null);
-      setDebugInfo('Retrying blog data fetch...');
-      fetchBlogData(blogId);
+      try {
+        setContentLoading(true);
+        setError(null);
+        
+        // Force refresh using new service method
+        const html = await services.content.forceRefreshContent(blog.contentReference);
+        setBlogContent(html);
+        
+        setDiagnostics(prev => ({
+          ...prev,
+          cacheStatus: 'refreshed',
+          downloadMethod: 'forced refresh'
+        }));
+        
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        setError(`Refresh failed: ${errorMessage}`);
+      } finally {
+        setContentLoading(false);
+      }
     }
   };
 
-  const handleForceRefresh = async () => {
-    if (!blog?.contentReference) return;
-    
-    try {
-      setContentLoading(true);
-      setError(null);
-      setDebugInfo('Force refreshing content...');
-      
-      const html = await services.content.forceRefreshContent(blog.contentReference);
-      setBlogContent(html);
-      setDebugInfo('Content force refreshed successfully');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      setError(`Force refresh failed: ${errorMessage}`);
-      setDebugInfo(`Force refresh error: ${errorMessage}`);
-    } finally {
-      setContentLoading(false);
-    }
+  const handleClearCache = () => {
+    services.content.clearCache();
+    setDiagnostics(prev => ({
+      ...prev,
+      cacheStatus: 'cleared'
+    }));
+    alert('Cache cleared. Refresh the page to reload content.');
   };
 
-  // Show loading skeleton while fetching
+  // Helper functions
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  const isAuthor = account && blog?.owner && 
+    account.toLowerCase() === blog.owner.toLowerCase();
+
+  const tags = blog?.metadata?.properties?.tags || 
+    (Array.isArray(blog?.metadata?.tags) ? blog.metadata.tags : []);
+
+  // Show loading skeleton
   if (loading) {
     return <BlogDetailSkeleton />;
   }
@@ -224,20 +239,14 @@ export const BlogDetailPage: React.FC = () => {
           <div className="error-state">
             <h2>Error Loading Blog</h2>
             <p>{error}</p>
-            {debugInfo && (
-              <details style={{ marginTop: '20px' }}>
-                <summary>Debug Information</summary>
-                <pre style={{ background: '#f5f5f5', padding: '10px', fontSize: '12px', whiteSpace: 'pre-wrap' }}>
-                  {debugInfo}
-                </pre>
-              </details>
-            )}
-            <button onClick={handleRetry} style={{ marginTop: '20px' }}>
-              Retry
-            </button>
-            <button onClick={() => navigate('/blogs')} style={{ marginTop: '10px', marginLeft: '10px' }}>
-              Back to Blogs
-            </button>
+            <div className="error-actions">
+              <button onClick={() => window.location.reload()} className="retry-btn">
+                Retry
+              </button>
+              <button onClick={() => navigate('/blogs')} className="back-btn">
+                Back to Blogs
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -254,21 +263,6 @@ export const BlogDetailPage: React.FC = () => {
       </div>
     );
   }
-
-  // Helper functions
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
-  const isAuthor = account && blog.owner && 
-    account.toLowerCase() === blog.owner.toLowerCase();
-
-  const tags = blog.metadata?.properties?.tags || 
-    (Array.isArray(blog.metadata?.tags) ? blog.metadata.tags : []);
 
   return (
     <div className="blog-detail-page">
@@ -315,7 +309,7 @@ export const BlogDetailPage: React.FC = () => {
           
           <div className="blog-author-info">
             <div className="blog-author-address">
-              By: {formatAddress(blog.metadata?.properties?.authorAddress, 6, 4)}
+              By: {formatAddress(blog.metadata?.properties?.authorAddress || blog.owner, 6, 4)}
             </div>
             {isAuthor && (
               <div className="blog-author-badge">Author</div>
@@ -331,6 +325,9 @@ export const BlogDetailPage: React.FC = () => {
             <button onClick={handleShare} className="share-button">
               Share
             </button>
+            <button onClick={handleRefreshContent} className="refresh-button" disabled={contentLoading}>
+              Refresh Content
+            </button>
           </div>
         </div>
 
@@ -340,38 +337,30 @@ export const BlogDetailPage: React.FC = () => {
             <div className="content-loading">
               <div className="loading-spinner"></div>
               <p>Loading blog content...</p>
-              {debugInfo && (
-                <p style={{ fontSize: '12px', color: '#666' }}>{debugInfo}</p>
-              )}
             </div>
           ) : error ? (
             <div className="content-error">
               <h3>Content Loading Error</h3>
               <p>{error}</p>
-              {debugInfo && (
-                <details style={{ marginTop: '15px' }}>
-                  <summary>Technical Details</summary>
-                  <pre style={{ background: '#fff5f5', padding: '10px', fontSize: '11px', whiteSpace: 'pre-wrap' }}>
-                    {debugInfo}
-                  </pre>
-                </details>
-              )}
-              <div style={{ marginTop: '15px' }}>
-                <button onClick={handleRetry} className="retry-button">
-                  Retry Loading Content
+              <div className="error-actions">
+                <button onClick={handleRefreshContent} className="retry-button">
+                  Retry Loading
                 </button>
                 {blog.contentReference && (
-                  <div style={{ marginTop: '10px', fontSize: '12px' }}>
+                  <div className="content-reference-info">
                     <p>Content Reference: <code>{blog.contentReference}</code></p>
                     <p>
-                      Direct Link: 
+                      View on Swarm: 
                       <a 
-                        href={`http://localhost:1633/bzz/${blog.contentReference}`}
+                        href={services.swarm.getContentUrl(blog.contentReference, {
+                          usePublicGateway: true,
+                          forWebDisplay: true
+                        })}
                         target="_blank" 
                         rel="noopener noreferrer"
                         style={{ marginLeft: '5px' }}
                       >
-                        Open in Swarm
+                        Open in Browser
                       </a>
                     </p>
                   </div>
@@ -386,61 +375,26 @@ export const BlogDetailPage: React.FC = () => {
           ) : (
             <div className="no-content">
               <p>No content available for this blog.</p>
-              <button onClick={handleRetry} className="retry-button">
-                Retry Loading
+              <button onClick={handleRefreshContent} className="retry-button">
+                Try Loading Again
               </button>
             </div>
           )}
         </div>
 
-        {/* Debug Panel (only show in development or when there are issues) */}
-        {(process.env.NODE_ENV === 'development' || error || debugInfo) && (
-          <details className="debug-panel" style={{ marginTop: '40px', fontSize: '12px' }}>
-            <summary>Debug Information</summary>
-            <div style={{ background: '#f8f8f8', padding: '15px', marginTop: '10px' }}>
-              <h4>Blog Data:</h4>
-              <pre>{JSON.stringify(blog, null, 2)}</pre>
-              
-              <h4>Status:</h4>
-              <ul>
-                <li>Blog ID: {blogId}</li>
-                <li>Content Reference: {blog?.contentReference || 'Not found'}</li>
-                <li>Content Loading: {contentLoading ? 'Yes' : 'No'}</li>
-                <li>Content Length: {blogContent.length} characters</li>
-                <li>Error: {error || 'None'}</li>
-              </ul>
-              
-              {debugInfo && (
-                <>
-                  <h4>Debug Log:</h4>
-                  <pre>{debugInfo}</pre>
-                </>
-              )}
-              
-              <h4>Helpful Links:</h4>
-              <ul>
-                {blog?.contentReference && (
-                  <>
-                    <li>
-                      <a href={`http://localhost:1633/bzz/${blog.contentReference}`} target="_blank" rel="noopener noreferrer">
-                        Local Swarm (bzz)
-                      </a>
-                    </li>
-                    <li>
-                      <a href={`http://localhost:1633/bytes/${blog.contentReference}`} target="_blank" rel="noopener noreferrer">
-                        Local Swarm (bytes)
-                      </a>
-                    </li>
-                    <li>
-                      <a href={`https://api.gateway.ethswarm.org/bzz/${blog.contentReference}`} target="_blank" rel="noopener noreferrer">
-                        Public Swarm (bzz)
-                      </a>
-                    </li>
-                  </>
-                )}
-              </ul>
+        {/* Cache Management (for development/debugging) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="cache-management">
+            <h4>Cache Management</h4>
+            <div className="cache-stats">
+              <p>Cache Status: {diagnostics.cacheStatus}</p>
+              <p>Download Method: {diagnostics.downloadMethod}</p>
+              <p>Gateway Used: {diagnostics.gatewayUsed}</p>
             </div>
-          </details>
+            <button onClick={handleClearCache} className="clear-cache-btn">
+              Clear All Cache
+            </button>
+          </div>
         )}
 
         {/* Related Blogs Section */}

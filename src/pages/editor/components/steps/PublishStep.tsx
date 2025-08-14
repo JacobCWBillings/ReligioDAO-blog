@@ -1,8 +1,8 @@
-// src/pages/editor/components/steps/PublishStep.tsx - FIXED VERSION
-// Ensures current form data is used for publishing, not outdated draft data
-import React, { useState } from 'react';
-import { contentService, assetService, services } from '../../../../swarm/services';
-import { enhancedDraftStorage } from '../../../../utils/draftStorage';
+// src/pages/editor/components/steps/PublishStep.tsx
+import React, { useState, useEffect } from 'react';
+import { services } from '../../../../swarm/services';
+import { UnifiedBlogData } from '../../../../types/editorTypes';
+import { PreparedContent } from '../../../../types/contentTypes';
 
 interface PublishStepProps {
   editorState: any;
@@ -15,10 +15,11 @@ export const PublishStep: React.FC<PublishStepProps> = ({
 }) => {
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [preparedContent, setPreparedContent] = useState<PreparedContent | null>(null);
   const [serviceStatus, setServiceStatus] = useState<any>(null);
 
   // Load service status when component mounts
-  React.useEffect(() => {
+  useEffect(() => {
     const loadServiceStatus = async () => {
       try {
         const status = await services.getStatus();
@@ -32,24 +33,43 @@ export const PublishStep: React.FC<PublishStepProps> = ({
     loadServiceStatus();
   }, []);
 
-  // FIXED: Enhanced publish handler with guaranteed current data usage
+  // Initialize blockchain services if not already done
+  useEffect(() => {
+    const initBlockchainServices = async () => {
+      try {
+        // Check if pipeline is available
+        if (!services.pipeline && window.ethereum) {
+          // This would need to be implemented based on your blockchain initialization
+          console.log('Blockchain services need to be initialized');
+        }
+      } catch (error) {
+        console.warn('Blockchain services not available:', error);
+      }
+    };
+
+    initBlockchainServices();
+  }, []);
+
+  /**
+   * Handle publishing using ContentPipeline
+   */
   const handlePublishToSwarm = async () => {
     setIsPublishing(true);
     setPublishError(null);
     workflowState.setLoading(true);
 
     try {
-      // CRITICAL FIX: Always use current formData, not stored draft
-      const currentFormData = editorState.formData;
+      // Use current form data
+      const currentFormData: UnifiedBlogData = editorState.formData;
       
-      console.log('Publishing with CURRENT form data:', {
+      console.log('Publishing with current form data:', {
         title: currentFormData.title,
         contentLength: currentFormData.content.length,
         category: currentFormData.category,
         hasDescription: Boolean(currentFormData.description?.trim())
       });
 
-      // Validate required fields using current data
+      // Validate required fields
       if (!currentFormData.title?.trim()) {
         throw new Error('Title is required');
       }
@@ -66,22 +86,12 @@ export const PublishStep: React.FC<PublishStepProps> = ({
         throw new Error('Author address is required');
       }
 
-      // FIXED: Save current state first to ensure draft storage is up-to-date
-      // This ensures the saved draft matches what we're about to publish
-      console.log('Saving current form data before publishing...');
-      let savedDraft;
-      try {
-        savedDraft = await editorState.saveDraft('Pre-publish save with current data');
-        console.log('Successfully saved current data to draft storage');
-      } catch (saveError) {
-        console.warn('Failed to save draft before publishing, continuing with current form data:', saveError);
-        // Continue with publish even if save fails - we'll use current form data
-      }
-      
-      // FIXED: Process content for publication using CURRENT form data
-      const processedContent = assetService.processMarkdownForPublication(currentFormData.content);
-      
-      // FIXED: Create blog content structure using CURRENT form data (not saved draft)
+      // Process content using AssetService
+      const processedContent = services.assets.processMarkdownForPublication(
+        currentFormData.content
+      );
+
+      // Create blog content structure
       const blogContent = {
         title: currentFormData.title.trim(),
         content: processedContent,
@@ -90,45 +100,36 @@ export const PublishStep: React.FC<PublishStepProps> = ({
           category: currentFormData.category.trim(),
           tags: currentFormData.tags || [],
           createdAt: currentFormData.createdAt || Date.now(),
-          banner: currentFormData.banner || null
+          banner: currentFormData.banner || null,
+          description: currentFormData.description || undefined
         }
       };
+
+      console.log('Uploading blog content to Swarm...');
       
-      console.log('Publishing blog content to Swarm:', blogContent.title);
-      
-      // Upload to Swarm using ContentService
-      const contentReference = await contentService.uploadBlogContent(blogContent);
+      // Upload using ContentService
+      const contentReference = await services.content.uploadBlogContent(blogContent);
       
       console.log('Content published successfully:', contentReference);
       
-      // FIXED: Update CURRENT form data with content reference
+      // Update form data with content reference
       editorState.updateContentReference(contentReference);
       
-      // FIXED: Update the draft with published content and reference using current data
-      if (savedDraft) {
-        enhancedDraftStorage.saveDraft({
-          ...currentFormData,  // Use current form data, not saved draft
-          id: savedDraft.id,   // Preserve the draft ID
-          content: processedContent, // Store the processed content
-          contentReference,
-          stepProgress: {
-            draft: true,
-            swarm: true,  // Mark as published to Swarm
-            governance: Boolean(savedDraft.stepProgress?.governance)
-          }
-        }, 'Published to Swarm with current data');
-      } else {
-        // If no saved draft, create a new one with current data
-        enhancedDraftStorage.saveDraft({
-          ...currentFormData,
-          content: processedContent,
-          contentReference,
-          stepProgress: {
-            draft: true,
-            swarm: true,
-            governance: false
-          }
-        }, 'Published to Swarm (new draft)');
+      // If ContentPipeline is available, prepare full content
+      if (services.pipeline) {
+        try {
+          const prepared = await services.pipeline.prepareForPublication(currentFormData);
+          setPreparedContent(prepared);
+          console.log('Content prepared for NFT/Proposal:', prepared);
+        } catch (pipelineError) {
+          console.warn('Pipeline preparation not available:', pipelineError);
+          // This is non-critical, continue without it
+        }
+      }
+      
+      // Save to draft storage
+      if (editorState.saveDraft) {
+        await editorState.saveDraft('Published to Swarm');
       }
       
       // Update workflow status
@@ -154,7 +155,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
 
   const isContentPublished = Boolean(editorState.formData.contentReference);
 
-  // Check form validity using current form data
+  // Check form validity
   const canPublish = editorState.formValidation.isValidForStep('publish') &&
                      editorState.formData.title?.trim() &&
                      editorState.formData.content?.trim() &&
@@ -163,7 +164,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
   return (
     <div className="publish-step">
       <div className="step-header">
-        <h2>📡 Publish to Swarm Network</h2>
+        <h2>🚀 Publish to Swarm Network</h2>
         <p>Store your content permanently on the decentralized Swarm network, making it censorship-resistant and always available.</p>
       </div>
 
@@ -180,17 +181,46 @@ export const PublishStep: React.FC<PublishStepProps> = ({
               <strong>Access URLs:</strong>
               <div className="url-list">
                 <div className="url-item">
-                  <span className="url-label">Public Web:</span>
-                  <code>{contentService.getBlogUrl(editorState.formData.contentReference, true)}</code>
+                  <span className="url-label">Public Gateway:</span>
+                  <a 
+                    href={services.swarm.getContentUrl(editorState.formData.contentReference, {
+                      usePublicGateway: true,
+                      forWebDisplay: true
+                    })}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View on Swarm
+                  </a>
                 </div>
                 {serviceStatus?.nodeRunning && (
                   <div className="url-item">
-                    <span className="url-label">Local Web:</span>
-                    <code>{contentService.getBlogUrl(editorState.formData.contentReference, false)}</code>
+                    <span className="url-label">Local Node:</span>
+                    <a 
+                      href={services.swarm.getContentUrl(editorState.formData.contentReference, {
+                        usePublicGateway: false,
+                        forWebDisplay: true
+                      })}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      View Locally
+                    </a>
                   </div>
                 )}
               </div>
             </div>
+            {preparedContent && (
+              <div className="prepared-content-info">
+                <h4>📋 Content Prepared for Governance</h4>
+                <p>NFT metadata and proposal data have been generated.</p>
+                {preparedContent.tokenURI && (
+                  <div className="token-uri">
+                    <strong>Token URI Ready:</strong> ✅
+                  </div>
+                )}
+              </div>
+            )}
             <p className="reference-notice">
               Your content is now permanently stored on the decentralized web and accessible worldwide.
             </p>
@@ -199,9 +229,9 @@ export const PublishStep: React.FC<PublishStepProps> = ({
           <div className="publish-info">
             <h3>Ready to Publish</h3>
             
-            {/* FIXED: Show current form data stats, not saved draft */}
+            {/* Current content summary */}
             <div className="current-content-summary">
-              <h4>📄 Current Content to Publish:</h4>
+              <h4>📄 Content to Publish:</h4>
               <div className="publish-details">
                 <div className="detail-item">
                   <strong>Title:</strong> {editorState.formData.title || 'No title'}
@@ -227,17 +257,6 @@ export const PublishStep: React.FC<PublishStepProps> = ({
                 )}
               </div>
             </div>
-
-            {/* Unsaved changes warning */}
-            {editorState.hasUnsavedChanges && (
-              <div className="unsaved-changes-warning">
-                <h4>⚠️ Unsaved Changes Detected</h4>
-                <p>
-                  Your latest changes will be automatically saved and published. 
-                  The content shown above represents your current work, including any unsaved edits.
-                </p>
-              </div>
-            )}
 
             {/* Service Status Information */}
             <div className="service-status-info">
@@ -265,6 +284,12 @@ export const PublishStep: React.FC<PublishStepProps> = ({
                       }
                     </span>
                   </div>
+                  <div className="status-item">
+                    <span className="status-label">Content Pipeline:</span>
+                    <span className={`status-value ${services.pipeline ? 'available' : 'unavailable'}`}>
+                      {services.pipeline ? '🟢 Ready' : '🟡 Limited'}
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <div className="status-loading">⏳ Checking service status...</div>
@@ -275,40 +300,16 @@ export const PublishStep: React.FC<PublishStepProps> = ({
               <h4>📋 Publishing Information:</h4>
               <ul>
                 <li>Content will be stored permanently on Swarm</li>
-                <li>Your current work (including any unsaved changes) will be published</li>
-                <li>Images will use public gateway URLs for universal access</li>
+                <li>Images will automatically use the correct endpoints for web display</li>
+                <li>NFT metadata will be generated for governance proposals</li>
                 {serviceStatus?.nodeRunning ? (
-                  <>
-                    <li>Publishing through your local Bee node</li>
-                    {!serviceStatus.hasStamp && (
-                      <li className="warning">⚠️ No postage stamp - may fall back to public gateway</li>
-                    )}
-                  </>
+                  <li>Publishing through your local Bee node for faster uploads</li>
                 ) : (
                   <li className="info">ℹ️ Publishing through public gateway (local node offline)</li>
                 )}
                 <li>Publishing creates a permanent, immutable reference</li>
               </ul>
             </div>
-
-            {/* Additional warnings based on service status */}
-            {!serviceStatus?.nodeRunning && !serviceStatus?.error && (
-              <div className="service-warning">
-                <h4>🔴 Local Node Offline</h4>
-                <p>
-                  Your local Bee node is not running. Publishing will use the public gateway, 
-                  which may be slower but ensures your content is still published successfully.
-                </p>
-              </div>
-            )}
-
-            {serviceStatus?.error && (
-              <div className="service-error">
-                <h4>⚠️ Service Error</h4>
-                <p>{serviceStatus.error}</p>
-                <p>You can still publish using the public gateway.</p>
-              </div>
-            )}
           </div>
         )}
 
@@ -327,7 +328,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
           </div>
         )}
 
-        {/* Show validation errors if any and not already published */}
+        {/* Validation errors */}
         {!isContentPublished && !canPublish && Object.keys(editorState.formValidation.errors).length > 0 && (
           <div className="validation-warning">
             <h4>⚠️ Please fix the following issues before publishing:</h4>
@@ -359,7 +360,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
               onClick={handlePublishToSwarm}
               disabled={isPublishing || !canPublish}
             >
-              {isPublishing ? '⏳ Publishing Current Content...' : '🚀 Publish to Swarm'}
+              {isPublishing ? '⏳ Publishing...' : '🚀 Publish to Swarm'}
             </button>
           ) : (
             <button
@@ -372,35 +373,8 @@ export const PublishStep: React.FC<PublishStepProps> = ({
           )}
         </div>
       </div>
-
-      {/* Development info */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="dev-info">
-          <details>
-            <summary>🔧 Development Info</summary>
-            <div className="dev-content">
-              <h5>Service Status:</h5>
-              <pre>{JSON.stringify(serviceStatus, null, 2)}</pre>
-              <h5>Current Form Data (What Will Be Published):</h5>
-              <pre>{JSON.stringify({
-                title: editorState.formData.title,
-                category: editorState.formData.category,
-                contentLength: editorState.formData.content?.length,
-                hasDescription: Boolean(editorState.formData.description?.trim()),
-                contentReference: editorState.formData.contentReference,
-                hasUnsavedChanges: editorState.hasUnsavedChanges
-              }, null, 2)}</pre>
-              <h5>Validation:</h5>
-              <pre>{JSON.stringify({
-                canPublish,
-                errors: editorState.formValidation.errors
-              }, null, 2)}</pre>
-              <h5>Current Draft ID:</h5>
-              <pre>{editorState.currentDraft?.id || 'No current draft'}</pre>
-            </div>
-          </details>
-        </div>
-      )}
     </div>
   );
 };
+
+export default PublishStep;

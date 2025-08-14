@@ -1,11 +1,11 @@
-// src/pages/proposal/ProposalDetailPage.tsx - Fixed with correct BlogProposalMinting props
+// src/pages/proposal/ProposalDetailPage.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
 import { Proposal, ProposalStatus } from '../../types/blockchainTypes';
 import { BlogProposalMinting } from './components/BlogProposalMinting';
-import { services } from '../../swarm/services';
+import { services } from '../../swarm/services'; // Use new unified service container
 import { formatAddress } from '../../utils/walletUtils';
 import './ProposalDetailPage.css';
 
@@ -52,8 +52,6 @@ export const ProposalDetailPage: React.FC = () => {
   const [proposalContent, setProposalContent] = useState<string>('');
   const [contentLoading, setContentLoading] = useState<boolean>(false);
   const [contentError, setContentError] = useState<string | null>(null);
-  const [fetchContentAttempted, setFetchContentAttempted] = useState<boolean>(false);
-  const [debugInfo, setDebugInfo] = useState<string>('');
   
   // NFT token ID after execution
   const [nftTokenId, setNftTokenId] = useState<string | null>(null);
@@ -66,7 +64,9 @@ export const ProposalDetailPage: React.FC = () => {
 
   const contractProposalId = proposalId;
 
-  // Load proposal data
+  /**
+   * Load proposal data
+   */
   useEffect(() => {
     const loadProposal = async () => {
       if (!contractProposalId) {
@@ -83,109 +83,85 @@ export const ProposalDetailPage: React.FC = () => {
           
           console.log('Proposal loaded:', {
             proposalId: contractProposalId,
-            dataId: proposalData.id,
             status: proposalData.status,
             statusName: getStatusName(proposalData.status),
-            executed: proposalData.executed,
-            hasContentReference: !!proposalData.contentReference,
-            contentReference: proposalData.contentReference
+            hasContentReference: !!proposalData.contentReference
           });
-          
-          // Reset debug info for new proposal
-          setDebugInfo(`Loaded proposal ${proposalData.id} with status ${getStatusName(proposalData.status)}`);
           
         } else {
           console.warn(`No proposal found for ID ${contractProposalId}`);
-          setDebugInfo(`No proposal found for ID ${contractProposalId}`);
         }
       } catch (err) {
         console.error('Error loading proposal:', err);
-        setDebugInfo(`Error loading proposal: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     };
     
     loadProposal();
   }, [contractProposalId, getProposalById]);
 
-  // FIXED: Enhanced content fetching with better error handling
+  /**
+   * Fetch proposal content using new ContentService
+   */
   const fetchProposalContent = async (contentReference: string) => {
     if (!contentReference || contentReference.trim() === '') {
       setContentError('Content reference not found in proposal data');
-      setDebugInfo(prev => prev + '\nNo content reference available for this proposal');
       return;
     }
     
-    if (fetchContentAttempted) {
-      return; // Avoid double fetch
-    }
-    
-    setFetchContentAttempted(true);
     setContentLoading(true);
     setContentError(null);
     
     try {
       console.log(`Fetching proposal content for reference: ${contentReference}`);
-      setDebugInfo(prev => prev + `\nAttempting to fetch content: ${contentReference}`);
       
       // Validate content reference format
-      if (!/^[a-fA-F0-9]{64}$/.test(contentReference)) {
-        throw new Error(`Invalid content reference format: ${contentReference}. Expected 64-character hex string.`);
+      if (!/^[a-fA-F0-9]{64}$/.test(contentReference.trim())) {
+        throw new Error(`Invalid content reference format: ${contentReference}`);
       }
       
-      // Use the enhanced ContentService (which now has proper blog HTML handling)
+      // Use the new ContentService with proper error handling
       const html = await services.content.getContentAsHtml(contentReference);
       
       if (!html || html.trim() === '') {
-        setContentError('Retrieved empty content from Swarm');
-        setDebugInfo(prev => prev + '\nRetrieved empty content');
-      } else {
-        console.log('Successfully retrieved proposal content');
-        
-        // Check if content looks like proper HTML or is binary/metadata
-        if (html.includes('<!DOCTYPE html>') || html.includes('<html')) {
-          setProposalContent(html);
-          setContentError(null);
-          setDebugInfo(prev => prev + `\nSuccessfully loaded HTML content (${html.length} characters)`);
-        } else if (html.includes('{"website-index-document"') || html.includes('\x00')) {
-          // This indicates we got collection metadata instead of content
-          setContentError('Content format error: Retrieved Swarm collection metadata instead of blog content. This may indicate the content reference is incorrect or the content was uploaded in a different format.');
-          setDebugInfo(prev => prev + '\nERROR: Got Swarm collection metadata instead of blog content');
-        } else {
-          // Content might be markdown or plain text
-          console.log('Content appears to be text/markdown, displaying as-is');
-          setProposalContent(html);
-          setDebugInfo(prev => prev + `\nLoaded text content (${html.length} characters) - may need formatting`);
-        }
+        throw new Error('Retrieved empty content from Swarm');
       }
+      
+      setProposalContent(html);
+      setContentError(null);
+      console.log('Successfully retrieved proposal content');
+      
     } catch (err) {
       console.error('Error fetching proposal content:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      setContentError(`Failed to load content: ${errorMessage}`);
-      setDebugInfo(prev => prev + `\nContent fetch error: ${errorMessage}`);
       
-      // Provide specific guidance for common issues
-      if (errorMessage.includes('Invalid content reference format')) {
-        setDebugInfo(prev => prev + '\nTip: The content reference appears to be callData rather than a Swarm hash. Check ProposalMapper.extractContentReference implementation.');
-      } else if (errorMessage.includes('404')) {
-        setDebugInfo(prev => prev + '\nTip: Content not found on Swarm. The reference may be invalid or the content may not have been uploaded properly.');
+      // Provide user-friendly error messages
+      if (errorMessage.includes('Invalid content reference')) {
+        setContentError('The content reference appears to be invalid. This proposal may have corrupted data.');
+      } else if (errorMessage.includes('Failed to download from all gateways')) {
+        setContentError('Unable to access content. The Swarm network may be unavailable.');
+      } else {
+        setContentError(`Failed to load content: ${errorMessage}`);
       }
     } finally {
       setContentLoading(false);
     }
   };
 
-  // Fetch content when proposal loads
+  /**
+   * Fetch content when proposal loads
+   */
   useEffect(() => {
     if (proposal?.contentReference) {
-      console.log('Proposal has content reference, attempting to fetch content...');
+      console.log('Proposal has content reference, fetching content...');
       fetchProposalContent(proposal.contentReference);
     } else if (proposal) {
       console.log('Proposal loaded but no content reference found');
-      setDebugInfo(prev => prev + '\nProposal has no content reference - this is normal for non-blog proposals');
     }
   }, [proposal]);
   
-  // Check if the user has already voted
+  /**
+   * Check if the user has already voted
+   */
   useEffect(() => {
     const checkVoteStatus = async () => {
       if (!contractProposalId || !account || !isConnected) return;
@@ -201,7 +177,9 @@ export const ProposalDetailPage: React.FC = () => {
     checkVoteStatus();
   }, [contractProposalId, account, isConnected, hasVoted]);
   
-  // Handle voting
+  /**
+   * Handle voting
+   */
   const handleVote = async (support: boolean) => {
     if (!contractProposalId || !isConnected) return;
     
@@ -231,7 +209,31 @@ export const ProposalDetailPage: React.FC = () => {
     }
   };
 
-  // Format relative time
+  /**
+   * Handle content refresh
+   */
+  const handleRefreshContent = async () => {
+    if (!proposal?.contentReference) return;
+    
+    try {
+      setContentLoading(true);
+      setContentError(null);
+      
+      // Force refresh using new service method
+      const html = await services.content.forceRefreshContent(proposal.contentReference);
+      setProposalContent(html);
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setContentError(`Refresh failed: ${errorMessage}`);
+    } finally {
+      setContentLoading(false);
+    }
+  };
+
+  /**
+   * Format relative time
+   */
   const formatRelativeTime = (timestamp: number): string => {
     const now = Date.now();
     const diff = timestamp - now;
@@ -247,8 +249,10 @@ export const ProposalDetailPage: React.FC = () => {
     return `${minutes}m`;
   };
 
-  // Get status display info
-  const getStatusInfo = (status: ProposalStatus, proposal?: Proposal) => {
+  /**
+   * Get status display info
+   */
+  const getStatusInfo = (status: ProposalStatus) => {
     switch (status) {
       case ProposalStatus.Pending:
         return { color: '#2196f3', label: 'Active', description: 'Currently accepting votes' };
@@ -260,23 +264,23 @@ export const ProposalDetailPage: React.FC = () => {
         return { color: '#f44336', label: 'Rejected', description: 'Proposal was rejected by voters' };
       case ProposalStatus.Expired:
         return { color: '#607d8b', label: 'Expired', description: 'Proposal voting period has expired' };
-      case ProposalStatus.UnderReview:
-        return { color: '#ff9800', label: 'Under Review', description: 'Proposal is under review' };
-      case ProposalStatus.UnderEvaluation:
-        return { color: '#795548', label: 'Under Evaluation', description: 'Proposal is under evaluation' };
       default:
         return { color: 'gray', label: 'Unknown', description: 'Unknown status' };
     }
   };
   
-  // Calculate voting progress
+  /**
+   * Calculate voting progress
+   */
   const calculateProgress = (votesFor: number, votesAgainst: number) => {
     const total = votesFor + votesAgainst;
     if (total === 0) return 0;
     return (votesFor / total) * 100;
   };
   
-  // Extract blog information from proposal description
+  /**
+   * Extract blog information from proposal description
+   */
   const extractBlogInfo = () => {
     if (!proposal) return { blogTitle: '', category: '', tags: [], authorAddress: '' };
     
@@ -294,40 +298,6 @@ export const ProposalDetailPage: React.FC = () => {
       return { blogTitle, category, tags, authorAddress };
     } catch (e) {
       return { blogTitle: '', category: '', tags: [], authorAddress: '' };
-    }
-  };
-  
-  // Handle retry content loading
-  const handleRetryContentLoad = () => {
-    if (!proposal?.contentReference) return;
-    
-    setContentError(null);
-    setContentLoading(true);
-    setFetchContentAttempted(false);
-    setDebugInfo(prev => prev + '\n--- RETRY ATTEMPT ---');
-    
-    // Clear cache and retry using the new service container method
-    services.content.removeFromCache(proposal.contentReference);
-    fetchProposalContent(proposal.contentReference);
-  };
-
-  const handleForceRefreshContent = async () => {
-    if (!proposal?.contentReference) return;
-    
-    try {
-      setContentLoading(true);
-      setContentError(null);
-      setDebugInfo(prev => prev + '\n--- FORCE REFRESH ---');
-      
-      const html = await services.content.forceRefreshContent(proposal.contentReference);
-      setProposalContent(html);
-      setDebugInfo(prev => prev + '\nContent force refreshed successfully');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      setContentError(`Force refresh failed: ${errorMessage}`);
-      setDebugInfo(prev => prev + `\nForce refresh error: ${errorMessage}`);
-    } finally {
-      setContentLoading(false);
     }
   };
   
@@ -366,11 +336,10 @@ export const ProposalDetailPage: React.FC = () => {
     );
   }
   
-  const statusInfo = getStatusInfo(proposal.status, proposal);
+  const statusInfo = getStatusInfo(proposal.status);
   const progress = calculateProgress(proposal.votesFor, proposal.votesAgainst);
   const isActive = isActiveVoting(proposal);
   const canExecute = proposal.status === ProposalStatus.Accepted && isConnected && !proposal.executed;
-  const isFullyExecuted = proposal.status === ProposalStatus.Executed;
   const blogInfo = extractBlogInfo();
 
   return (
@@ -432,23 +401,26 @@ export const ProposalDetailPage: React.FC = () => {
                 <h4>Content Loading Error</h4>
                 <p>{contentError}</p>
                 <div className="error-actions">
-                  <button onClick={handleRetryContentLoad} className="retry-button">
+                  <button onClick={handleRefreshContent} className="retry-button">
                     Retry Loading
-                  </button>
-                  <button onClick={handleForceRefreshContent} className="retry-button" style={{ marginLeft: '10px' }}>
-                    Force Refresh
                   </button>
                   {proposal.contentReference && (
                     <div className="content-reference-info">
                       <p>Content Reference: <code>{proposal.contentReference}</code></p>
-                      <div className="swarm-links">
-                        <a href={`http://localhost:1633/bzz/${proposal.contentReference}`} target="_blank" rel="noopener noreferrer">
-                          Local Swarm (bzz)
+                      <p>
+                        View on Swarm:
+                        <a 
+                          href={services.swarm.getContentUrl(proposal.contentReference, {
+                            usePublicGateway: true,
+                            forWebDisplay: true
+                          })}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{ marginLeft: '5px' }}
+                        >
+                          Open in Browser
                         </a>
-                        <a href={`http://localhost:1633/bytes/${proposal.contentReference}`} target="_blank" rel="noopener noreferrer">
-                          Local Swarm (bytes)
-                        </a>
-                      </div>
+                      </p>
                     </div>
                   )}
                 </div>
@@ -544,46 +516,34 @@ export const ProposalDetailPage: React.FC = () => {
         <div className="proposal-details">
           <h3>Proposal Details</h3>
           <div className="details-grid">
-            <div className="detail-group">
-              <div className="detail-item">
-                <div className="detail-label">Status</div>
-                <div className="detail-value">
-                  <span 
-                    className="status-indicator" 
-                    style={{ backgroundColor: statusInfo.color }}
-                  ></span>
-                  {statusInfo.description}
-                </div>
+            <div className="detail-item">
+              <div className="detail-label">Status</div>
+              <div className="detail-value">
+                <span 
+                  className="status-indicator" 
+                  style={{ backgroundColor: statusInfo.color }}
+                ></span>
+                {statusInfo.description}
               </div>
-              <div className="detail-item">
-                <div className="detail-label">Voting Ends</div>
-                <div className="detail-value">
-                  {isActive ? (
-                    formatRelativeTime(proposal.votingEnds)
-                  ) : (
-                    'Ended'
-                  )}
-                </div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Proposer</div>
-                <div className="detail-value address">{formatAddress(proposal.proposer, 6, 4)}</div>
-              </div>
-              {blogInfo.authorAddress && blogInfo.authorAddress !== proposal.proposer && (
-                <div className="detail-item">
-                  <div className="detail-label">Blog Author</div>
-                  <div className="detail-value address">{formatAddress(blogInfo.authorAddress, 6, 4)}</div>
-                </div>
-              )}
-              {proposal.contentReference && (
-                <div className="detail-item">
-                  <div className="detail-label">Content Ref</div>
-                  <div className="detail-value content-ref">
-                    {proposal.contentReference.substring(0, 10)}...
-                  </div>
-                </div>
-              )}
             </div>
+            <div className="detail-item">
+              <div className="detail-label">Voting Ends</div>
+              <div className="detail-value">
+                {isActive ? formatRelativeTime(proposal.votingEnds) : 'Ended'}
+              </div>
+            </div>
+            <div className="detail-item">
+              <div className="detail-label">Proposer</div>
+              <div className="detail-value address">{formatAddress(proposal.proposer, 6, 4)}</div>
+            </div>
+            {proposal.contentReference && (
+              <div className="detail-item">
+                <div className="detail-label">Content Ref</div>
+                <div className="detail-value content-ref">
+                  {proposal.contentReference.substring(0, 10)}...
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -592,12 +552,7 @@ export const ProposalDetailPage: React.FC = () => {
           <div className="execution-section">
             <BlogProposalMinting 
               proposalId={proposal.id}
-              title={proposal.title}
-              description={proposal.description}
-              contentReference={proposal.contentReference || ''}
-              category={blogInfo.category}
-              tags={blogInfo.tags}
-              authorAddress={blogInfo.authorAddress}
+              proposal={proposal}
               onExecuteSuccess={(tokenId: string | null) => {
                 setNftTokenId(tokenId);
                 setShowExecutionSuccess(true);
@@ -608,22 +563,6 @@ export const ProposalDetailPage: React.FC = () => {
               }}
             />
           </div>
-        )}
-
-        {/* Debug Information (Development) */}
-        {(process.env.NODE_ENV === 'development' || contentError) && debugInfo && (
-          <details className="debug-panel">
-            <summary>Debug Information</summary>
-            <div className="debug-content">
-              <pre>{debugInfo}</pre>
-              {proposal && (
-                <div>
-                  <h4>Proposal Data:</h4>
-                  <pre>{JSON.stringify(proposal, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-          </details>
         )}
       </div>
     </div>

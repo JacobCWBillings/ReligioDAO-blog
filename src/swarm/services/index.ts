@@ -1,32 +1,43 @@
-// src/services/index.ts - CONSERVATIVE update that doesn't break existing code
-import { SwarmService, SwarmConfig } from './SwarmService';
+// src/services/index.ts
+import { SwarmService } from './SwarmService';
 import { ContentService } from './ContentService';
 import { AssetService } from './AssetService';
+import { ContentPipeline } from './ContentPipeline';
+import { NFTMintingService } from '../../blockchain/services/NFTMintingService';
+import { ProposalService } from '../../blockchain/services/ProposalService';
+import { ServiceConfig } from '../../types/contentTypes';
 
 /**
- * Service configuration interface
- */
-export interface ServiceConfig {
-  swarm?: Partial<SwarmConfig>;
-  postageBatchId?: string;
-  autoInitialize?: boolean;
-}
-
-/**
- * Service container for dependency injection and configuration
+ * Integrated service container
+ * Provides centralized access to all services with proper dependency injection
  */
 export class ServiceContainer {
+  // Core Swarm services
   private _swarmService: SwarmService;
   private _contentService: ContentService;
   private _assetService: AssetService;
+  
+  // Blockchain services (optional, initialized on demand)
+  private _nftMintingService?: NFTMintingService;
+  private _proposalService?: ProposalService;
+  
+  // Integration layer
+  private _contentPipeline?: ContentPipeline;
+  
   private _initialized: boolean = false;
 
   constructor(config?: ServiceConfig) {
-    // Initialize SwarmService with config
-    this._swarmService = new SwarmService(config?.swarm, config?.postageBatchId);
+    // Initialize core services
+    this._swarmService = new SwarmService(
+      config?.swarm,
+      config?.postageBatchId
+    );
     
-    // Initialize other services with SwarmService dependency
-    this._contentService = new ContentService(this._swarmService);
+    this._contentService = new ContentService(
+      this._swarmService,
+      config?.cacheExpiryMinutes || 30
+    );
+    
     this._assetService = new AssetService(this._swarmService);
     
     // Auto-initialize if requested
@@ -75,6 +86,47 @@ export class ServiceContainer {
   }
 
   /**
+   * Get or create ContentPipeline
+   */
+  get pipeline(): ContentPipeline {
+    if (!this._contentPipeline) {
+      if (!this._nftMintingService || !this._proposalService) {
+        throw new Error('Blockchain services must be initialized before accessing pipeline');
+      }
+      
+      this._contentPipeline = new ContentPipeline(
+        this._contentService,
+        this._assetService,
+        this._nftMintingService,
+        this._proposalService
+      );
+    }
+    
+    return this._contentPipeline;
+  }
+
+  /**
+   * Initialize blockchain services
+   */
+  initializeBlockchainServices(
+    nftMintingService: NFTMintingService,
+    proposalService: ProposalService
+  ): void {
+    this._nftMintingService = nftMintingService;
+    this._proposalService = proposalService;
+    
+    // Create pipeline if both services are available
+    if (this._nftMintingService && this._proposalService) {
+      this._contentPipeline = new ContentPipeline(
+        this._contentService,
+        this._assetService,
+        this._nftMintingService,
+        this._proposalService
+      );
+    }
+  }
+
+  /**
    * Check if services are initialized
    */
   get isInitialized(): boolean {
@@ -89,187 +141,42 @@ export class ServiceContainer {
   }
 
   /**
+   * Clear all caches
+   */
+  clearCache(): void {
+    this._contentService.clearCache();
+    console.log('Content cache cleared');
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats() {
+    return this._contentService.getCacheStats();
+  }
+
+  /**
+   * Force refresh content
+   */
+  async forceRefreshContent(reference: string): Promise<string> {
+    return await this._contentService.forceRefreshContent(reference);
+  }
+
+  /**
    * Update configuration
    */
   updateConfig(config: ServiceConfig): void {
     if (config.swarm || config.postageBatchId) {
-      this._swarmService.updateConfig(config.swarm || {}, config.postageBatchId);
-      this._initialized = false; // Force re-initialization
-    }
-  }
-
-  /**
-   * Reset services (useful for testing)
-   */
-  reset(): void {
-    this._initialized = false;
-  }
-
-  // ==========================================
-  // SAFE CACHE MANAGEMENT METHODS
-  // Only add methods that work with existing ContentService
-  // ==========================================
-
-  /**
-   * Clear content cache (if ContentService has clearCache method)
-   */
-  clearContentCache(): void {
-    try {
-      // Check if the method exists before calling it
-      if (this._contentService && typeof (this._contentService as any).clearCache === 'function') {
-        (this._contentService as any).clearCache();
-        console.log('ContentService: Cache cleared via services container');
-      } else {
-        console.warn('ContentService: clearCache method not available');
-      }
-    } catch (error) {
-      console.error('Error clearing content cache:', error);
-    }
-  }
-
-  /**
-   * Get content cache stats (if ContentService has getCacheStats method)
-   */
-  getContentCacheStats(): any {
-    try {
-      // Check if the method exists before calling it
-      if (this._contentService && typeof (this._contentService as any).getCacheStats === 'function') {
-        return (this._contentService as any).getCacheStats();
-      } else {
-        console.warn('ContentService: getCacheStats method not available');
-        return { size: 0, entries: [], message: 'Cache stats not available' };
-      }
-    } catch (error) {
-      console.error('Error getting content cache stats:', error);
-      return { size: 0, entries: [], error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }
-
-  /**
-   * Clean expired content cache entries (if ContentService has cleanExpiredCache method)
-   */
-  cleanExpiredContentCache(): number {
-    try {
-      // Check if the method exists before calling it
-      if (this._contentService && typeof (this._contentService as any).cleanExpiredCache === 'function') {
-        return (this._contentService as any).cleanExpiredCache();
-      } else {
-        console.warn('ContentService: cleanExpiredCache method not available');
-        return 0;
-      }
-    } catch (error) {
-      console.error('Error cleaning expired content cache:', error);
-      return 0;
-    }
-  }
-
-  /**
-   * Check if content is cached (if ContentService has isCached method)
-   */
-  isContentCached(contentReference: string): boolean {
-    try {
-      // Check if the method exists before calling it
-      if (this._contentService && typeof (this._contentService as any).isCached === 'function') {
-        return (this._contentService as any).isCached(contentReference);
-      } else {
-        // Fallback: assume not cached if method doesn't exist
-        return false;
-      }
-    } catch (error) {
-      console.error('Error checking cache status:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Force refresh content (if ContentService has forceRefreshContent method)
-   */
-  async forceRefreshContent(contentReference: string): Promise<string> {
-    try {
-      // Check if the method exists before calling it
-      if (this._contentService && typeof (this._contentService as any).forceRefreshContent === 'function') {
-        return await (this._contentService as any).forceRefreshContent(contentReference);
-      } else {
-        // Fallback: use regular getContentAsHtml method
-        console.warn('ContentService: forceRefreshContent method not available, using getContentAsHtml');
-        return await this._contentService.getContentAsHtml(contentReference, true);
-      }
-    } catch (error) {
-      console.error('Error force refreshing content:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Basic performance maintenance (safe version)
-   */
-  async performMaintenance(): Promise<{ message: string; cacheCleanedEntries?: number }> {
-    try {
-      console.log('Services: Performing basic maintenance...');
-      
-      // Try to clean expired cache if method exists
-      let cacheCleanedEntries = 0;
-      try {
-        cacheCleanedEntries = this.cleanExpiredContentCache();
-      } catch (error) {
-        console.warn('Could not clean cache during maintenance:', error);
-      }
-      
-      const result = {
-        message: 'Basic maintenance completed',
-        cacheCleanedEntries
-      };
-      
-      console.log('Services: Maintenance completed', result);
-      return result;
-      
-    } catch (error) {
-      console.error('Service maintenance failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Safe service health check
-   */
-  async getServiceHealth(): Promise<{
-    swarm: boolean;
-    content: boolean;
-    assets: boolean;
-    overall: boolean;
-  }> {
-    try {
-      const swarmStatus = await this._swarmService.getStatus();
-      const swarmHealthy = swarmStatus.nodeRunning || swarmStatus.publicGateway !== '';
-      
-      // Test content service by checking if it has basic methods
-      const contentHealthy = !!(this._contentService && 
-                              typeof this._contentService.getContentAsHtml === 'function');
-      
-      // Test asset service by checking if it has basic methods
-      const assetsHealthy = !!(this._assetService && 
-                              typeof this._assetService.getAssets === 'function');
-      
-      return {
-        swarm: swarmHealthy,
-        content: contentHealthy,
-        assets: assetsHealthy,
-        overall: swarmHealthy && contentHealthy && assetsHealthy
-      };
-      
-    } catch (error) {
-      console.error('Service health check failed:', error);
-      return {
-        swarm: false,
-        content: false,
-        assets: false,
-        overall: false
-      };
+      this._swarmService.updateConfig(
+        config.swarm || {},
+        config.postageBatchId
+      );
+      this._initialized = false;
     }
   }
 }
 
-// Default service container instance (unchanged)
+// Default service configuration
 const defaultConfig: ServiceConfig = {
   swarm: {
     local: 'http://localhost:1633',
@@ -279,50 +186,36 @@ const defaultConfig: ServiceConfig = {
       'https://download.gateway.ethswarm.org'
     ]
   },
-  autoInitialize: true
+  autoInitialize: true,
+  cacheExpiryMinutes: 30
 };
 
+// Create and export default service container
 export const services = new ServiceContainer(defaultConfig);
 
-// Export individual services for direct access (unchanged)
+// Export individual services for direct access
 export const swarmService = services.swarm;
 export const contentService = services.content;
 export const assetService = services.assets;
 
-// Export service classes for custom instantiation (unchanged)
-export { SwarmService, ContentService, AssetService };
+// Export service classes for custom instantiation
+export { SwarmService, ContentService, AssetService, ContentPipeline };
 
-// Export types (safe - only export types that definitely exist)
-export type { SwarmConfig, SwarmUploadResult, SwarmNodeStatus } from './SwarmService';
-export type { BlogContent, ProcessedBlogContent } from './ContentService';
-export type { Asset, AssetMetadata, AssetValidationResult, AssetStorageStats } from './AssetService';
-
-/**
- * Utility function to create a configured service container (unchanged)
- */
+// Export utility function for creating configured containers
 export function createServices(config?: ServiceConfig): ServiceContainer {
   return new ServiceContainer(config);
 }
 
-/**
- * Utility function for service initialization in app setup (unchanged)
- */
-export async function initializeServices(config?: ServiceConfig): Promise<ServiceContainer> {
+// Export initialization helper
+export async function initializeServices(
+  config?: ServiceConfig
+): Promise<ServiceContainer> {
   const container = new ServiceContainer(config);
   await container.initialize();
   return container;
 }
 
-/**
- * React hook for using services in components (unchanged)
- */
+// Export React hook for using services
 export function useServices(): ServiceContainer {
   return services;
-}
-
-/**
- * SAFE service health check utility
- */
-export async function checkServiceHealth() {
-  return await services.getServiceHealth();
 }

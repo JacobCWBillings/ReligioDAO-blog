@@ -1,46 +1,47 @@
-// src/services/SwarmService.ts - UPDATED: Added uploadMarkdownContent method
-import { Bee } from '@ethersphere/bee-js';
-
-export interface SwarmConfig {
-  local: string;
-  public: string;
-  fallbacks: string[];
-}
-
-export interface SwarmUploadResult {
-  reference: string;
-  tagUid?: number;
-}
+// src/services/SwarmService.ts
+import { Bee, Data, FileData, UploadResult } from '@ethersphere/bee-js';
+import {
+  buildSwarmUrl,
+  cleanSwarmReference,
+  isValidSwarmReference,
+  getEndpointForContent,
+  DEFAULT_GATEWAYS,
+  SWARM_LIMITS,
+  processMarkdownUrls
+} from '../utils/swarmUtils';
+import {
+  SwarmConfig,
+  SwarmUploadResult,
+  SwarmDownloadOptions
+} from '../../types/contentTypes';
 
 export interface SwarmNodeStatus {
   nodeRunning: boolean;
   hasStamp: boolean;
   gateway: string;
   publicGateway: string;
-  postageBatchId: string;
+  postageBatchId?: string;
   nodeAddresses?: any;
   error?: string;
 }
 
 /**
- * Pure Swarm/Bee operations service
- * ONLY handles upload/download to/from Swarm network
- * No business logic, no local storage, no draft management
+ * Core Swarm service for all network operations
+ * Handles uploads, downloads, and gateway management
  */
 export class SwarmService {
   private bee: Bee;
-  private postageBatchId: string;
-  private config: SwarmConfig;
-  private initialized: boolean = false;
+  private postageBatchId: string = '';
+  private isInitialized: boolean = false;
+  
+  public config: SwarmConfig;
 
   constructor(config?: Partial<SwarmConfig>, postageBatchId?: string) {
     this.config = {
-      local: config?.local || 'http://localhost:1633',
-      public: config?.public || 'https://api.gateway.ethswarm.org',
-      fallbacks: config?.fallbacks || [
-        'https://gateway.ethswarm.org',
-        'https://download.gateway.ethswarm.org'
-      ]
+      local: config?.local || DEFAULT_GATEWAYS.local,
+      public: config?.public || DEFAULT_GATEWAYS.public,
+      fallbacks: config?.fallbacks || DEFAULT_GATEWAYS.fallbacks,
+      postageBatchId: config?.postageBatchId || postageBatchId
     };
     
     this.bee = new Bee(this.config.local);
@@ -48,206 +49,167 @@ export class SwarmService {
   }
 
   /**
-   * Initialize the service and find a usable postage stamp
+   * Initialize the service and check node connectivity
    */
   async initialize(): Promise<void> {
-    if (this.initialized && this.postageBatchId) return;
-
+    if (this.isInitialized) return;
+    
     try {
-      // Test if node is accessible
-      await this.bee.getNodeInfo();
+      // Check node connectivity
+      const nodeInfo = await this.bee.getNodeInfo();
+      console.log('Connected to Bee node:', nodeInfo);
       
+      // Get or create postage stamp
       if (!this.postageBatchId) {
-        try {
-          const stamps = await this.bee.getAllPostageBatch();
-          const usableStamp = stamps.find(stamp => stamp.usable);
-          
-          if (usableStamp) {
-            this.postageBatchId = usableStamp.batchID;
-            console.log('Found usable postage stamp:', this.postageBatchId.substring(0, 8) + '...');
-          } else {
-            console.warn('No usable postage stamp found - service will be limited');
-            // Don't throw error, let calling code handle this gracefully
-          }
-        } catch (stampError) {
-          console.warn('Failed to get postage stamps:', stampError);
-          // Continue without stamp - some operations may still work
-        }
+        await this.ensurePostageStamp();
       }
       
-      this.initialized = true;
+      this.isInitialized = true;
     } catch (error) {
       console.error('Failed to initialize SwarmService:', error);
-      // Don't throw - allow service to be created in offline mode
-      this.initialized = false;
+      // Continue with public gateway fallback
+      this.isInitialized = true;
     }
   }
 
   /**
-   * Upload a file to Swarm with proper error handling
+   * Ensure we have a usable postage stampbytes
+   */
+  private async ensurePostageStamp(): Promise<void> {
+    try {
+      const stamps = await this.bee.getAllPostageBatch();
+      const usableStamp = stamps.find(stamp => 
+        stamp.usable && stamp.depth >= 20
+      );
+      
+      if (usableStamp) {
+        this.postageBatchId = usableStamp.batchID;
+        console.log('Found usable postage stamp:', this.postageBatchId);
+      } else {
+        console.warn('No usable postage stamp found');
+      }
+    } catch (error) {
+      console.warn('Could not fetch postage stamps:', error);
+    }
+  }
+
+  /**
+   * Upload a file to Swarm
    */
   async uploadFile(file: File): Promise<SwarmUploadResult> {
-    if (!this.initialized) {
+    try {
       await this.initialize();
-    }
-
-    if (!this.postageBatchId) {
-      throw new Error('No postage stamp available. Please check your Bee node setup.');
-    }
-
-    try {
-      // Validate file
-      if (!(file instanceof File)) {
-        throw new Error('Expected File object for upload');
-      }
-
-      if (file.size === 0) {
-        throw new Error('Cannot upload empty file');
-      }
-
-      if (file.size > 100 * 1024 * 1024) { // 100MB limit
-        throw new Error('File too large (max 100MB)');
-      }
-
-      console.log(`Uploading file: ${file.name} (${file.size} bytes)`);
-
-      // Upload using bee-js with proper error handling
-      const uploadResult = await this.bee.uploadFile(
-        this.postageBatchId,
-        file,
-        undefined, // filename (will use file.name)
-        {
-          contentType: file.type,
-          size: file.size
-        }
-      );
-
-      console.log('Upload successful:', uploadResult.reference);
-
-      return {
-        reference: uploadResult.reference,
-        tagUid: uploadResult.tagUid
-      };
-
-    } catch (error) {
-      console.error('Error uploading file:', error);
       
-      // Provide more specific error messages
-      if (error instanceof Error) {
-        if (error.message.includes('postage')) {
-          throw new Error('Postage stamp error: Please check your Bee node postage stamps');
-        } else if (error.message.includes('network') || error.message.includes('connection')) {
-          throw new Error('Network error: Please check your Bee node connection');
-        } else {
-          throw new Error(`Upload failed: ${error.message}`);
-        }
-      } else {
-        throw new Error('Unknown upload error');
+      // Validate file size
+      if (file.size > SWARM_LIMITS.MAX_FILE_SIZE) {
+        throw new Error(`File exceeds maximum size of ${SWARM_LIMITS.MAX_FILE_SIZE} bytes`);
       }
+      
+      // Try local node first
+      if (this.postageBatchId) {
+        try {
+          const result = await this.bee.uploadFile(
+            this.postageBatchId,
+            file,
+            file.name,
+            { contentType: file.type }
+          );
+          
+          const endpoint = getEndpointForContent(file.type);
+          const url = buildSwarmUrl(result.reference, this.config.local, { endpoint });
+          
+          console.log(`File uploaded to local node: ${result.reference}`);
+          
+          return {
+            reference: result.reference,
+            tagUid: result.tagUid,
+            url
+          };
+        } catch (localError) {
+          console.warn('Local upload failed, trying public gateway:', localError);
+        }
+      }
+      
+      // Fallback to public gateway
+      return await this.uploadToPublicGateway(file);
+      
+    } catch (error) {
+      console.error('Upload failed:', error);
+      throw new Error(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   /**
-   * Upload content as HTML file with proper type handling
+   * Upload content as a file
    */
-  async uploadHtmlContent(htmlContent: string, filename: string = 'index.html'): Promise<SwarmUploadResult> {
-    try {
-      // Convert string to bytes and create File object
-      const htmlBytes = new TextEncoder().encode(htmlContent);
-      // FIXED: Create proper File with explicit type for Blob constructor
-      const file = new File([htmlBytes as BlobPart], filename, { 
-        type: 'text/html',
-        lastModified: Date.now()
-      });
-
-      return await this.uploadFile(file);
-
-    } catch (error) {
-      console.error('Error uploading HTML content:', error);
-      throw new Error(`Failed to upload HTML content: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+  async uploadContent(
+    content: string | Uint8Array,
+    filename: string,
+    contentType: string = 'text/plain'
+  ): Promise<SwarmUploadResult> {
+    const bytes = typeof content === 'string' 
+      ? new TextEncoder().encode(content)
+      : content;
+    
+    const file = new File([bytes.buffer as ArrayBuffer], filename, { 
+      type: contentType,
+      lastModified: Date.now()
+    });
+    
+    return this.uploadFile(file);
   }
 
   /**
-   * NEW: Upload content as markdown file
-   * FIXED: This avoids Swarm's website hosting restrictions for index.html
+   * Upload JSON data
    */
-  async uploadMarkdownContent(markdownContent: string, filename: string = 'blog-content.md'): Promise<SwarmUploadResult> {
-    try {
-      // Convert string to bytes and create File object
-      const markdownBytes = new TextEncoder().encode(markdownContent);
-      const file = new File([markdownBytes as BlobPart], filename, { 
-        type: 'text/markdown',
-        lastModified: Date.now()
-      });
-
-      return await this.uploadFile(file);
-
-    } catch (error) {
-      console.error('Error uploading markdown content:', error);
-      throw new Error(`Failed to upload markdown content: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Upload JSON data as a file
-   */
-  async uploadJsonData(data: any, filename: string = 'data.json'): Promise<SwarmUploadResult> {
-    try {
-      const jsonString = JSON.stringify(data, null, 2);
-      const jsonBytes = new TextEncoder().encode(jsonString);
-      // FIXED: Create proper File with explicit type for Blob constructor
-      const file = new File([jsonBytes as BlobPart], filename, { 
-        type: 'application/json',
-        lastModified: Date.now()
-      });
-
-      return await this.uploadFile(file);
-
-    } catch (error) {
-      console.error('Error uploading JSON data:', error);
-      throw new Error(`Failed to upload JSON data: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Upload raw data bytes
-   */
-  async uploadData(data: Uint8Array, filename: string, contentType: string): Promise<SwarmUploadResult> {
-    try {
-      // FIXED: Create proper File with explicit type for Blob constructor
-      const file = new File([data as BlobPart], filename, { 
-        type: contentType,
-        lastModified: Date.now()
-      });
-
-      return await this.uploadFile(file);
-
-    } catch (error) {
-      console.error('Error uploading raw data:', error);
-      throw new Error(`Failed to upload data: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+  async uploadJson(data: any, filename: string = 'data.json'): Promise<SwarmUploadResult> {
+    const jsonString = JSON.stringify(data, null, 2);
+    return this.uploadContent(jsonString, filename, 'application/json');
   }
 
   /**
    * Download data from Swarm with fallback gateways
    */
-  async downloadData(reference: string): Promise<Uint8Array> {
-    if (!reference || reference.length !== 64) {
-      throw new Error('Invalid Swarm reference');
+  async downloadData(
+    reference: string,
+    options: SwarmDownloadOptions = {}
+  ): Promise<Uint8Array> {
+    const cleanRef = cleanSwarmReference(reference);
+    
+    if (!isValidSwarmReference(cleanRef)) {
+      throw new Error(`Invalid Swarm reference: ${reference}`);
     }
-
+    
+    const timeout = options.timeout || SWARM_LIMITS.DEFAULT_TIMEOUT;
     const gateways = [this.config.local, this.config.public, ...this.config.fallbacks];
     const errors: string[] = [];
-
+    
     for (const gateway of gateways) {
       try {
-        console.log(`Attempting download from ${gateway}...`);
-        const bee = new Bee(gateway);
-        const data = await bee.downloadData(reference);
-        console.log(`Successfully downloaded from ${gateway}`);
-        return data;
-
+        // Determine endpoint based on usage
+        const endpoint = options.forWebDisplay !== false ? 'bzz' : 'bytes';
+        
+        // Build URL with optional filename for collection access
+        const url = buildSwarmUrl(cleanRef, gateway, {
+          endpoint,
+          filename: options.filename
+        });
+        
+        console.log(`Attempting download from: ${url}`);
+        
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(timeout)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const buffer = await response.arrayBuffer();
+        console.log(`Successfully downloaded ${buffer.byteLength} bytes from ${gateway}`);
+        
+        return new Uint8Array(buffer);
+        
       } catch (error) {
         const errorMsg = `${gateway}: ${error instanceof Error ? error.message : 'Unknown error'}`;
         errors.push(errorMsg);
@@ -255,23 +217,32 @@ export class SwarmService {
         continue;
       }
     }
-
+    
     throw new Error(`Failed to download from all gateways:\n${errors.join('\n')}`);
   }
 
   /**
-   * Download data as text
+   * Download text content
    */
-  async downloadText(reference: string): Promise<string> {
-    const data = await this.downloadData(reference);
+  async downloadText(
+    reference: string,
+    filename?: string
+  ): Promise<string> {
+    const data = await this.downloadData(reference, { 
+      filename,
+      forWebDisplay: true 
+    });
     return new TextDecoder().decode(data);
   }
 
   /**
-   * Download data as JSON
+   * Download JSON data
    */
-  async downloadJson(reference: string): Promise<any> {
-    const text = await this.downloadText(reference);
+  async downloadJson(
+    reference: string,
+    filename?: string
+  ): Promise<any> {
+    const text = await this.downloadText(reference, filename);
     try {
       return JSON.parse(text);
     } catch (error) {
@@ -280,69 +251,104 @@ export class SwarmService {
   }
 
   /**
-   * Generate URLs for content access
+   * Get URL for content
    */
-  getContentUrl(reference: string, usePublicGateway: boolean = false, endpoint: 'bzz' | 'bytes' = 'bytes'): string {
-    if (!reference || reference.length !== 64) {
-      throw new Error('Invalid Swarm reference');
-    }
-
-    const gateway = usePublicGateway ? this.config.public : this.config.local;
-    return `${gateway}/${endpoint}/${reference}`;
+  getContentUrl(
+    reference: string,
+    options: {
+      usePublicGateway?: boolean;
+      forWebDisplay?: boolean;
+      filename?: string;
+    } = {}
+  ): string {
+    const gateway = options.usePublicGateway 
+      ? this.config.public 
+      : this.config.local;
+    
+    const endpoint = options.forWebDisplay !== false ? 'bzz' : 'bytes';
+    
+    return buildSwarmUrl(reference, gateway, {
+      endpoint,
+      filename: options.filename
+    });
   }
 
   /**
-   * Generate multiple URLs for content with different gateways/endpoints
+   * Get multiple URLs for content with fallbacks
    */
-  getContentUrls(reference: string): {
+  getContentUrls(
+    reference: string,
+    filename?: string
+  ): {
     local: string;
-    localWeb: string;
     public: string;
-    publicWeb: string;
     fallbacks: string[];
   } {
-    if (!reference || reference.length !== 64) {
-      throw new Error('Invalid Swarm reference');
-    }
-
+    const cleanRef = cleanSwarmReference(reference);
+    
     return {
-      local: `${this.config.local}/bytes/${reference}`,
-      localWeb: `${this.config.local}/bzz/${reference}`,
-      public: `${this.config.public}/bytes/${reference}`,
-      publicWeb: `${this.config.public}/bzz/${reference}`,
-      fallbacks: this.config.fallbacks.map(gateway => `${gateway}/bytes/${reference}`)
+      local: buildSwarmUrl(cleanRef, this.config.local, { 
+        endpoint: 'bzz', 
+        filename 
+      }),
+      public: buildSwarmUrl(cleanRef, this.config.public, { 
+        endpoint: 'bzz', 
+        filename 
+      }),
+      fallbacks: this.config.fallbacks.map(gateway =>
+        buildSwarmUrl(cleanRef, gateway, { 
+          endpoint: 'bzz', 
+          filename 
+        })
+      )
     };
   }
 
   /**
-   * Check accessibility of content across gateways
+   * Upload to public gateway (fallback)
    */
-  async validateContentAccess(reference: string): Promise<{
+  private async uploadToPublicGateway(file: File): Promise<SwarmUploadResult> {
+    // Note: This would require a public gateway that accepts uploads
+    // Most public gateways are read-only, so this is a placeholder
+    throw new Error('Public gateway upload not implemented. Please ensure local Bee node is running.');
+  }
+
+  /**
+   * Validate content accessibility
+   */
+  async validateContentAccess(
+    reference: string,
+    filename?: string
+  ): Promise<{
     workingUrls: string[];
     failedUrls: string[];
     isAccessible: boolean;
   }> {
-    const urls = this.getContentUrls(reference);
+    const urls = this.getContentUrls(reference, filename);
     const allUrls = [urls.local, urls.public, ...urls.fallbacks];
     
     const workingUrls: string[] = [];
     const failedUrls: string[] = [];
-
+    
     await Promise.allSettled(
       allUrls.map(async (url) => {
         try {
-          const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+          const response = await fetch(url, { 
+            method: 'HEAD', 
+            signal: AbortSignal.timeout(5000) 
+          });
+          
           if (response.ok) {
             workingUrls.push(url);
           } else {
             failedUrls.push(url);
           }
-        } catch (error) {
+        } catch {
           failedUrls.push(url);
         }
       })
     );
-
+    
     return {
       workingUrls,
       failedUrls,
@@ -351,108 +357,49 @@ export class SwarmService {
   }
 
   /**
-   * Get comprehensive service status
+   * Get service status
    */
   async getStatus(): Promise<SwarmNodeStatus> {
     try {
-      // Test local node connectivity
       const nodeInfo = await this.bee.getNodeInfo();
       
-      // Check postage stamps
       let hasStamp = false;
-      let stamps: any[] = [];
-      
       try {
-        stamps = await this.bee.getAllPostageBatch();
+        const stamps = await this.bee.getAllPostageBatch();
         hasStamp = stamps.some(stamp => stamp.usable);
-      } catch (stampError) {
-        console.warn('Could not fetch postage stamps:', stampError);
+      } catch {
+        // Ignore stamp check errors
       }
-
-      // Get node addresses
-      let nodeAddresses;
-      try {
-        nodeAddresses = await this.bee.getNodeAddresses();
-      } catch (addrError) {
-        console.warn('Could not fetch node addresses:', addrError);
-      }
-
+      
       return {
         nodeRunning: true,
         hasStamp,
         gateway: this.config.local,
         publicGateway: this.config.public,
-        postageBatchId: this.postageBatchId,
-        nodeAddresses
+        postageBatchId: this.postageBatchId
       };
-
     } catch (error) {
       return {
         nodeRunning: false,
         hasStamp: false,
         gateway: this.config.local,
         publicGateway: this.config.public,
-        postageBatchId: this.postageBatchId,
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
 
   /**
-   * Get current configuration
+   * Update configuration
    */
-  getConfig(): SwarmConfig & { postageBatchId: string; initialized: boolean } {
-    return {
-      ...this.config,
-      postageBatchId: this.postageBatchId,
-      initialized: this.initialized
-    };
-  }
-
-  /**
-   * Update configuration (creates new Bee instance)
-   */
-  updateConfig(newConfig: Partial<SwarmConfig>, newPostageBatchId?: string): void {
-    this.config = { ...this.config, ...newConfig };
-    this.bee = new Bee(this.config.local);
+  updateConfig(config: Partial<SwarmConfig>, postageBatchId?: string): void {
+    this.config = { ...this.config, ...config };
     
-    if (newPostageBatchId) {
-      this.postageBatchId = newPostageBatchId;
+    if (postageBatchId) {
+      this.postageBatchId = postageBatchId;
     }
     
-    // Reset initialization flag to force re-init with new config
-    this.initialized = false;
-  }
-
-  /**
-   * Test connectivity to all configured gateways
-   */
-  async testGatewayConnectivity(): Promise<{
-    [gateway: string]: { accessible: boolean; responseTime?: number; error?: string; }
-  }> {
-    const allGateways = [this.config.local, this.config.public, ...this.config.fallbacks];
-    const results: { [gateway: string]: { accessible: boolean; responseTime?: number; error?: string; } } = {};
-
-    await Promise.allSettled(
-      allGateways.map(async (gateway) => {
-        const startTime = Date.now();
-        try {
-          const bee = new Bee(gateway);
-          await bee.getNodeInfo();
-          results[gateway] = {
-            accessible: true,
-            responseTime: Date.now() - startTime
-          };
-        } catch (error) {
-          results[gateway] = {
-            accessible: false,
-            responseTime: Date.now() - startTime,
-            error: error instanceof Error ? error.message : 'Unknown error'
-          };
-        }
-      })
-    );
-
-    return results;
+    this.bee = new Bee(this.config.local);
+    this.isInitialized = false;
   }
 }
