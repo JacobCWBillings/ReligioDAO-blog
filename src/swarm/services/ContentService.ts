@@ -125,6 +125,25 @@ export class ContentService {
   }
 
   /**
+   * Get URLs for blog content access
+   * This method provides convenient access to blog URLs with proper filenames
+   */
+  getBlogUrls(contentReference: string): {
+    local: string;
+    public: string;
+    fallbacks: string[];
+  } {
+    if (!contentReference || !/^[a-fA-F0-9]{64}$/.test(contentReference.trim())) {
+      throw new Error(`Invalid content reference: ${contentReference}`);
+    }
+    
+    return this.swarmService.getContentUrls(
+      contentReference.trim().toLowerCase(),
+      STANDARD_MARKDOWN_FILENAME
+    );
+  }
+
+  /**
    * Get content as HTML (main method used by UI)
    */
   async getContentAsHtml(

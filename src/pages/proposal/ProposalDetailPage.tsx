@@ -151,13 +151,13 @@ export const ProposalDetailPage: React.FC = () => {
    * Fetch content when proposal loads
    */
   useEffect(() => {
-    if (proposal?.contentReference) {
+    if (proposal?.contentReference && !proposalContent) {  // Only fetch if not already fetched
       console.log('Proposal has content reference, fetching content...');
       fetchProposalContent(proposal.contentReference);
     } else if (proposal) {
       console.log('Proposal loaded but no content reference found');
     }
-  }, [proposal]);
+  }, [proposal?.contentReference]); // Only depend on contentReference changing
   
   /**
    * Check if the user has already voted
@@ -357,7 +357,7 @@ export const ProposalDetailPage: React.FC = () => {
             )}
             <button 
               onClick={() => setShowExecutionSuccess(false)}
-              className="close-banner-btn"
+              className="close-notification"
             >
               ×
             </button>
@@ -365,205 +365,251 @@ export const ProposalDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="proposal-content">
-        {/* Header Section */}
-        <div className="proposal-header">
-          <div className="breadcrumb">
-            <Link to="/proposals">Proposals</Link> / Proposal #{proposal.id}
+      {/* Navigation Bar */}
+      <div className="proposal-nav-bar">
+        <Link to="/proposals" className="back-to-proposals">← Back to Proposals</Link>
+        <div className="proposal-id-display">Proposal #{proposal.id}</div>
+      </div>
+
+      {/* Header Section */}
+      <div className="proposal-header">
+        <div className="proposal-status-banner">
+          <div 
+            className={`proposal-status-indicator status-indicator-${statusInfo.color === '#2196f3' ? 'blue' : 
+              statusInfo.color === '#4caf50' ? 'green' : 
+              statusInfo.color === '#f44336' ? 'red' : 
+              statusInfo.color === '#9c27b0' ? 'purple' : 'gray'}`}
+          />
+          <h1>{proposal.title}</h1>
+          <div 
+            className={`proposal-status status-${statusInfo.color === '#2196f3' ? 'blue' : 
+              statusInfo.color === '#4caf50' ? 'green' : 
+              statusInfo.color === '#f44336' ? 'red' : 
+              statusInfo.color === '#9c27b0' ? 'purple' : 'gray'}`}
+          >
+            {statusInfo.label}
           </div>
-          
-          <div className="proposal-title-section">
-            <h1 className="proposal-title">{proposal.title}</h1>
-            <div className="proposal-meta">
-              <span 
-                className="status-badge" 
-                style={{ backgroundColor: statusInfo.color }}
-              >
-                {statusInfo.label}
-              </span>
-              <span className="proposal-id">#{proposal.id}</span>
+        </div>
+        
+        <div className="proposal-meta">
+          <div className="meta-item">
+            <div className="meta-label">Author</div>
+            <div className="meta-value address">{formatAddress(blogInfo.authorAddress || proposal.proposer, 6, 4)}</div>
+          </div>
+          {blogInfo.category && (
+            <div className="meta-item">
+              <div className="meta-label">Category</div>
+              <div className="meta-value">{blogInfo.category}</div>
+            </div>
+          )}
+          <div className="meta-item">
+            <div className="meta-label">Voting Ends</div>
+            <div className="meta-value">
+              {isActive ? formatRelativeTime(proposal.votingEnds) : 'Ended'}
             </div>
           </div>
         </div>
-
-        {/* Content Preview Section */}
-        {proposal.contentReference && (
-          <div className="content-preview-section">
-            <h3>Blog Content Preview</h3>
-            {contentLoading ? (
-              <div className="content-loading">
-                <div className="loading-spinner"></div>
-                <p>Loading blog content...</p>
-              </div>
-            ) : contentError ? (
-              <div className="content-error">
-                <h4>Content Loading Error</h4>
-                <p>{contentError}</p>
-                <div className="error-actions">
-                  <button onClick={handleRefreshContent} className="retry-button">
-                    Retry Loading
-                  </button>
-                  {proposal.contentReference && (
-                    <div className="content-reference-info">
-                      <p>Content Reference: <code>{proposal.contentReference}</code></p>
-                      <p>
-                        View on Swarm:
-                        <a 
-                          href={services.swarm.getContentUrl(proposal.contentReference, {
-                            usePublicGateway: true,
-                            forWebDisplay: true
-                          })}
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          style={{ marginLeft: '5px' }}
-                        >
-                          Open in Browser
-                        </a>
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : proposalContent ? (
-              <div className="content-preview">
-                <div 
-                  className={`blog-content-preview ${showFullContent ? 'expanded' : 'collapsed'}`}
-                  dangerouslySetInnerHTML={{ __html: proposalContent }}
-                />
-                <button 
-                  onClick={() => setShowFullContent(!showFullContent)}
-                  className="toggle-content-btn"
-                >
-                  {showFullContent ? 'Show Less' : 'Show More'}
-                </button>
-              </div>
-            ) : (
-              <div className="no-content">
-                <p>No content preview available.</p>
-              </div>
-            )}
+        
+        {blogInfo.tags.length > 0 && (
+          <div className="blog-meta-section">
+            <div className="blog-tags-container">
+              {blogInfo.tags.map((tag, index) => (
+                <span key={index} className="blog-tag">{tag}</span>
+              ))}
+            </div>
           </div>
         )}
+      </div>
 
-        {/* Voting Section */}
-        <div className="voting-section">
-          <div className="voting-stats">
-            <div className="vote-counts">
-              <div className="vote-count for">
-                <span className="count">{proposal.votesFor}</span>
-                <span className="label">For</span>
-              </div>
-              <div className="vote-count against">
-                <span className="count">{proposal.votesAgainst}</span>
-                <span className="label">Against</span>
-              </div>
-            </div>
-            
-            <div className="progress-bar">
-              <div 
-                className="progress-fill" 
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-            
-            <div className="progress-text">
-              {progress.toFixed(1)}% in favor
+      {/* Main Content Grid */}
+      <div className="proposal-content-grid">
+        {/* Left Column - Content */}
+        <div className="proposal-main-content">
+          {/* Description Section */}
+          <div className="proposal-section">
+            <h2>Proposal Description</h2>
+            <div className="proposal-description-content">
+              <p>{proposal.description}</p>
             </div>
           </div>
 
-          {/* Voting Actions */}
-          {isActive && isConnected && !userHasVoted && (
-            <div className="voting-actions">
-              <h4>Cast Your Vote</h4>
-              <div className="vote-buttons">
-                <button 
-                  onClick={() => handleVote(true)}
-                  disabled={isVoting}
-                  className="vote-btn vote-for"
-                >
-                  {isVoting ? 'Voting...' : 'Vote For'}
-                </button>
-                <button 
-                  onClick={() => handleVote(false)}
-                  disabled={isVoting}
-                  className="vote-btn vote-against"
-                >
-                  {isVoting ? 'Voting...' : 'Vote Against'}
-                </button>
-              </div>
-              {voteError && (
-                <div className="vote-error">{voteError}</div>
+          {/* Blog Content Preview */}
+          {proposal.contentReference && (
+            <div className="proposal-section">
+              <h2>Blog Content</h2>
+              {contentLoading ? (
+                <div className="content-loading">
+                  <div className="loading-spinner"></div>
+                  <p>Loading blog content...</p>
+                </div>
+              ) : contentError ? (
+                <div className="content-error">
+                  <p>{contentError}</p>
+                  <button onClick={handleRefreshContent} className="retry-button">
+                    Retry
+                  </button>
+                </div>
+              ) : proposalContent ? (
+                <div className={`proposal-preview-container ${showFullContent ? 'expanded' : ''}`}>
+                  <div 
+                    className="proposal-content-preview"
+                    dangerouslySetInnerHTML={{ __html: proposalContent }}
+                  />
+                  {!showFullContent && <div className="preview-fade" />}
+                  <button 
+                    className="content-toggle-button"
+                    onClick={() => setShowFullContent(!showFullContent)}
+                  >
+                    {showFullContent ? 'Show Less' : 'Show More'}
+                  </button>
+                </div>
+              ) : (
+                <p>No content available</p>
               )}
             </div>
           )}
 
-          {userHasVoted && (
-            <div className="voted-notice">
-              <span className="voted-icon">✓</span>
-              You have already voted on this proposal.
+          {/* Execution Section for Approved Proposals */}
+          {canExecute && (
+            <div className="proposal-section execution-section">
+              <BlogProposalMinting 
+                proposalId={proposal.id}
+                proposal={proposal}
+                onExecuteSuccess={(tokenId: string | null) => {
+                  setNftTokenId(tokenId);
+                  setShowExecutionSuccess(true);
+                  // Refresh proposal to update status
+                  getProposalById(contractProposalId).then(updated => {
+                    if (updated) setProposal(updated);
+                  });
+                }}
+              />
             </div>
           )}
 
-          {!isConnected && (
-            <div className="connect-wallet-notice">
-              <p>Connect your wallet to vote on this proposal.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Proposal Details */}
-        <div className="proposal-details">
-          <h3>Proposal Details</h3>
-          <div className="details-grid">
-            <div className="detail-item">
-              <div className="detail-label">Status</div>
-              <div className="detail-value">
-                <span 
-                  className="status-indicator" 
-                  style={{ backgroundColor: statusInfo.color }}
-                ></span>
-                {statusInfo.description}
-              </div>
-            </div>
-            <div className="detail-item">
-              <div className="detail-label">Voting Ends</div>
-              <div className="detail-value">
-                {isActive ? formatRelativeTime(proposal.votingEnds) : 'Ended'}
-              </div>
-            </div>
-            <div className="detail-item">
-              <div className="detail-label">Proposer</div>
-              <div className="detail-value address">{formatAddress(proposal.proposer, 6, 4)}</div>
-            </div>
-            {proposal.contentReference && (
-              <div className="detail-item">
-                <div className="detail-label">Content Ref</div>
-                <div className="detail-value content-ref">
-                  {proposal.contentReference.substring(0, 10)}...
+          {/* Executed Status */}
+          {proposal.status === ProposalStatus.Executed && (
+            <div className="proposal-section executed-section">
+              <div className="execution-success-message">
+                <div className="success-icon">✓</div>
+                <div className="success-text">
+                  <p>This proposal has been executed and the blog NFT has been minted.</p>
+                  {nftTokenId && (
+                    <div className="token-id-info">
+                      <strong>NFT Token ID:</strong>
+                      <span className="token-id">{nftTokenId}</span>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
-          </div>
+              {nftTokenId && (
+                <div className="view-blog-container">
+                  <Link to={`/blog/${nftTokenId}`} className="view-blog-button">
+                    View Blog NFT
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Execution Section */}
-        {canExecute && (
-          <div className="execution-section">
-            <BlogProposalMinting 
-              proposalId={proposal.id}
-              proposal={proposal}
-              onExecuteSuccess={(tokenId: string | null) => {
-                setNftTokenId(tokenId);
-                setShowExecutionSuccess(true);
-                // Refresh proposal to update status
-                getProposalById(contractProposalId).then(updated => {
-                  if (updated) setProposal(updated);
-                });
-              }}
-            />
+        {/* Right Column - Voting */}
+        <div className="voting-section">
+          <div className="proposal-section">
+            <h2>Voting</h2>
+            
+            {/* Voting Stats */}
+            <div className="voting-stats">
+              <div className="quorum-info">
+                <span>Progress</span>
+                <span>{progress.toFixed(1)}% For</span>
+              </div>
+              <div className="vote-progress-container">
+                <div className="vote-progress-bar" style={{ width: `${progress}%` }} />
+              </div>
+              <div className="vote-counts">
+                <div className="vote-for">
+                  <span className="vote-label">For:</span>
+                  <span className="vote-value">{proposal.votesFor}</span>
+                </div>
+                <div className="vote-against">
+                  <span className="vote-label">Against:</span>
+                  <span className="vote-value">{proposal.votesAgainst}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Voting Actions */}
+            <div className="voting-actions">
+              {isActive && isConnected && !userHasVoted && (
+                <>
+                  <button 
+                    className="vote-button vote-for-button"
+                    onClick={() => handleVote(true)}
+                    disabled={isVoting}
+                  >
+                    {isVoting ? 'Voting...' : 'Vote For'}
+                  </button>
+                  <button 
+                    className="vote-button vote-against-button"
+                    onClick={() => handleVote(false)}
+                    disabled={isVoting}
+                  >
+                    {isVoting ? 'Voting...' : 'Vote Against'}
+                  </button>
+                  {voteError && <div className="vote-error">{voteError}</div>}
+                </>
+              )}
+              
+              {userHasVoted && (
+                <div className="already-voted">
+                  ✓ You have voted on this proposal
+                </div>
+              )}
+              
+              {voteSuccess && (
+                <div className="vote-success">
+                  ✓ Vote submitted successfully!
+                </div>
+              )}
+              
+              {!isActive && proposal.status === ProposalStatus.Pending && (
+                <div className="voting-ended-message">
+                  Voting period has ended
+                </div>
+              )}
+              
+              {!isConnected && isActive && (
+                <div className="voting-pending-message">
+                  Connect wallet to vote
+                </div>
+              )}
+            </div>
           </div>
-        )}
+
+          {/* Proposal Details */}
+          <div className="proposal-section">
+            <h2>Details</h2>
+            <div className="proposal-details-list">
+              <div className="detail-item">
+                <span className="detail-label">Status</span>
+                <span className="detail-value">{statusInfo.description}</span>
+              </div>
+              <div className="detail-item">
+                <span className="detail-label">Proposer</span>
+                <span className="detail-value address">{formatAddress(proposal.proposer, 6, 4)}</span>
+              </div>
+              {proposal.contentReference && (
+                <div className="detail-item">
+                  <span className="detail-label">Content</span>
+                  <span className="detail-value content-ref">
+                    {proposal.contentReference.substring(0, 10)}...
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

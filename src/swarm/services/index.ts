@@ -1,4 +1,4 @@
-// src/services/index.ts
+// src/swarm/services/index.ts - FIXED VERSION
 import { SwarmService } from './SwarmService';
 import { ContentService } from './ContentService';
 import { AssetService } from './AssetService';
@@ -86,23 +86,57 @@ export class ServiceContainer {
   }
 
   /**
-   * Get or create ContentPipeline
+   * FIXED: Check if blockchain services are available without throwing error
    */
-  get pipeline(): ContentPipeline {
+  get hasBlockchainServices(): boolean {
+    return Boolean(this._nftMintingService && this._proposalService);
+  }
+
+  /**
+   * FIXED: Safe way to check if pipeline is available
+   */
+  get hasPipeline(): boolean {
+    return this.hasBlockchainServices;
+  }
+
+  /**
+   * FIXED: Get or create ContentPipeline - now returns null instead of throwing
+   */
+  get pipeline(): ContentPipeline | null {
+    if (!this.hasBlockchainServices) {
+      return null; // Return null instead of throwing error
+    }
+    
     if (!this._contentPipeline) {
-      if (!this._nftMintingService || !this._proposalService) {
-        throw new Error('Blockchain services must be initialized before accessing pipeline');
-      }
-      
       this._contentPipeline = new ContentPipeline(
         this._contentService,
         this._assetService,
-        this._nftMintingService,
-        this._proposalService
+        this._nftMintingService!,
+        this._proposalService!
       );
     }
     
     return this._contentPipeline;
+  }
+
+  /**
+   * FIXED: Safe method to get pipeline with error handling
+   */
+  tryGetPipeline(): { pipeline: ContentPipeline | null; error: string | null } {
+    try {
+      if (!this.hasBlockchainServices) {
+        return { 
+          pipeline: null, 
+          error: 'Blockchain services are not initialized. Pipeline functionality is limited.' 
+        };
+      }
+      return { pipeline: this.pipeline, error: null };
+    } catch (error) {
+      return { 
+        pipeline: null, 
+        error: error instanceof Error ? error.message : 'Unknown pipeline error' 
+      };
+    }
   }
 
   /**

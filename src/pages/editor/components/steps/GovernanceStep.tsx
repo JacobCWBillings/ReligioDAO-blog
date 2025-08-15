@@ -1,10 +1,9 @@
-// src/pages/editor/components/steps/GovernanceStep.tsx - FIXED VERSION
-import React, { useState } from 'react';
+// src/pages/editor/components/steps/GovernanceStep.tsx
+import React, { useState, useEffect } from 'react';
 import { useWallet } from '../../../../contexts/WalletContext';
-import { useProposal } from '../../../../blockchain/hooks/useProposal';
+import { useProposal } from '../../../../blockchain/hooks/useProposal'; 
 import { enhancedDraftStorage } from '../../../../utils/draftStorage';
-import { contentService } from '../../../../swarm/services';
-// Import the existing BlogProposal type from blockchain types
+import { services } from '../../../../swarm/services';
 import { BlogProposal } from '../../../../types/blockchainTypes';
 
 interface GovernanceStepProps {
@@ -17,17 +16,29 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
   workflowState
 }) => {
   const { isConnected, account } = useWallet();
-  const { createBlogProposal, loading: proposalLoading, error: proposalError } = useProposal();
+  
+  // SIMPLIFIED: Use only the existing useProposal hook (now enhanced with centralized services)
+  const { 
+    createBlogProposal, 
+    loading: proposalLoading, 
+    error: proposalError,
+    serviceStatus 
+  } = useProposal();
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [proposalId, setProposalId] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
+  // Get blockchain readiness from the enhanced useProposal hook
+  const isBlockchainReady = serviceStatus.blockchainReady;
+  const blockchainError = serviceStatus.contextError;
+
   // Validate governance requirements
-  React.useEffect(() => {
+  useEffect(() => {
     const errors: string[] = [];
 
+    // Basic validation
     if (!isConnected) {
       errors.push('Wallet must be connected to submit governance proposals');
     }
@@ -56,6 +67,11 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
       errors.push('Proposal description is required for governance submissions');
     }
 
+    // Blockchain service validation
+    if (!isBlockchainReady) {
+      errors.push('Blockchain services are not available - governance proposals require blockchain connectivity');
+    }
+
     setValidationErrors(errors);
   }, [
     isConnected, 
@@ -64,7 +80,8 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
     editorState.formData.title,
     editorState.formData.content,
     editorState.formData.category,
-    editorState.formData.description
+    editorState.formData.description,
+    isBlockchainReady
   ]);
 
   const handleSubmitToGovernance = async () => {
@@ -73,12 +90,17 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
       return;
     }
 
+    if (!isBlockchainReady) {
+      setSubmitError('Blockchain services are not available. Please ensure your blockchain connection is working.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError(null);
     workflowState.setLoading(true);
 
     try {
-      // FIXED: Save the draft with current form data first to ensure it includes the description
+      // Save the draft with current form data first
       console.log('Saving draft with current form data before governance submission...');
       const savedDraft = await editorState.saveDraft('Pre-governance save');
       
@@ -86,12 +108,23 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
         throw new Error('Failed to save draft before governance submission');
       }
 
-      // FIXED: Now use the freshly saved draft that includes all current form data
+      // Create proposal from draft
       const blogProposal: BlogProposal = enhancedDraftStorage.draftToProposal(savedDraft);
-
       console.log('Submitting governance proposal:', blogProposal.title);
 
-      // Submit to blockchain
+      // Enhanced pipeline usage if available (using centralized services)
+      try {
+        const pipelineResult = services.tryGetPipeline();
+        if (pipelineResult.pipeline) {
+          console.log('Using enhanced pipeline for proposal preparation...');
+          const preparedContent = await pipelineResult.pipeline.prepareForPublication(savedDraft);
+          console.log('Enhanced proposal preparation completed:', preparedContent);
+        }
+      } catch (pipelineError) {
+        console.warn('Pipeline enhancement failed, continuing with standard proposal:', pipelineError);
+      }
+
+      // Submit to blockchain using the existing hook
       const result = await createBlogProposal(blogProposal);
 
       if (result.status === 'confirmed') {
@@ -100,23 +133,33 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
         // Update workflow status
         workflowState.updateStepStatus('governance', true);
         
-        // FIXED: Extract proposal ID correctly from transaction receipt
+        // Extract proposal ID from transaction receipt
         if (result.receipt) {
-          // The TransactionReceipt has a 'hash' property, not 'transactionHash'
-          setProposalId(result.receipt.hash); // Use the transaction hash as proposal ID
+          setProposalId(result.receipt.hash);
         }
 
-        // Mark draft as published in governance
-        enhancedDraftStorage.saveDraft({
+        // Mark draft as published in governance - ensure all steps are marked complete
+        const updatedDraft = enhancedDraftStorage.saveDraft({
           ...savedDraft,
           isPublished: true,
           stepProgress: {
-            ...savedDraft.stepProgress,
+            draft: true,  // Ensure all previous steps are marked complete
+            swarm: true,  // This should already be true from publish step
             governance: true
           },
           lastModified: Date.now()
         }, 'Submitted to governance');
 
+        // Update workflow status with all steps complete
+        workflowState.updateStepStatus('draft', true);
+        workflowState.updateStepStatus('publish', true);  // Use 'publish' not 'swarm'
+        workflowState.updateStepStatus('governance', true);
+
+        // Force update the current draft in editor state to ensure sync
+        if (editorState.updateCurrentDraft) {
+          editorState.updateCurrentDraft(updatedDraft);
+        }
+        
         // Auto-advance to success step
         setTimeout(() => {
           workflowState.goToStep('success');
@@ -140,7 +183,12 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
   const getBlogUrls = () => {
     if (!editorState.formData.contentReference) return null;
     
-    return contentService.getBlogUrls(editorState.formData.contentReference);
+    try {
+      return services.content.getBlogUrls(editorState.formData.contentReference);
+    } catch (error) {
+      console.error('Failed to get blog URLs:', error);
+      return null;
+    }
   };
 
   const blogUrls = getBlogUrls();
@@ -153,6 +201,58 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
       </div>
 
       <div className="governance-container">
+        {/* Service Status Display */}
+        <div className="service-status-info">
+          <h4>🔧 Service Status</h4>
+          <div className="status-grid">
+            <div className="status-item">
+              <span className="status-label">Wallet:</span>
+              <span className={`status-value ${isConnected ? 'connected' : 'disconnected'}`}>
+                {isConnected ? '🟢 Connected' : '🔴 Not Connected'}
+              </span>
+            </div>
+            <div className="status-item">
+              <span className="status-label">Blockchain Services:</span>
+              <span className={`status-value ${isBlockchainReady ? 'available' : 'unavailable'}`}>
+                {isBlockchainReady ? '🟢 Ready' : '🔴 Not Available'}
+              </span>
+            </div>
+            <div className="status-item">
+              <span className="status-label">Content:</span>
+              <span className={`status-value ${editorState.formData.contentReference ? 'published' : 'unpublished'}`}>
+                {editorState.formData.contentReference ? '🟢 Published' : '🔴 Not Published'}
+              </span>
+            </div>
+            <div className="status-item">
+              <span className="status-label">Enhanced Pipeline:</span>
+              <span className={`status-value ${services.hasPipeline ? 'available' : 'unavailable'}`}>
+                {services.hasPipeline ? '🟢 Available' : '🟡 Basic Mode'}
+              </span>
+            </div>
+          </div>
+          
+          {/* Error display */}
+          {blockchainError && (
+            <div className="service-error-message">
+              <span>⚠️ {blockchainError}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Service warnings */}
+        {!isBlockchainReady && (
+          <div className="service-warning">
+            <h4>⚠️ Blockchain Services Required</h4>
+            <p>
+              Governance proposals require blockchain connectivity.
+              {blockchainError && ` Error: ${blockchainError}`}
+            </p>
+            <p>
+              <strong>Note:</strong> Please connect your wallet and ensure blockchain services are initialized.
+            </p>
+          </div>
+        )}
+
         {/* Validation Errors */}
         {validationErrors.length > 0 && (
           <div className="validation-errors">
@@ -176,6 +276,7 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
               placeholder="Why should the DAO approve this blog? What value does it bring to the community? What makes this content unique or important?"
               rows={6}
               className={editorState.formErrors.description ? 'error' : ''}
+              disabled={!isBlockchainReady}
             />
             {editorState.formErrors.description && (
               <span className="field-error">{editorState.formErrors.description}</span>
@@ -271,6 +372,9 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
             <li>Approved proposals become part of the official ReligioDAO blog collection</li>
             <li>The voting period and approval requirements are set by DAO governance</li>
             <li>Proposal submission requires blockchain transaction fees (gas)</li>
+            {services.hasPipeline && (
+              <li>✨ Enhanced pipeline features are available for this proposal</li>
+            )}
           </ul>
         </div>
 
@@ -292,7 +396,7 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
           <div className="error-message">
             <strong>Submission Failed:</strong> 
             <p>{submitError || proposalError?.message}</p>
-            {submitError && (
+            {submitError && isBlockchainReady && (
               <div className="error-actions">
                 <button 
                   className="retry-btn"
@@ -329,6 +433,7 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
               validationErrors.length > 0 ||
               !editorState.formData.description?.trim() ||
               !editorState.formData.contentReference ||
+              !isBlockchainReady ||
               !!proposalId // Disable if already submitted
             }
           >
@@ -336,7 +441,9 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
               '⏳ Submitting to Blockchain...' : 
               proposalId ? 
                 '✅ Proposal Submitted' :
-                '🗳️ Submit Governance Proposal'
+                !isBlockchainReady ?
+                  '🔴 Blockchain Required' :
+                  '🗳️ Submit Governance Proposal'
             }
           </button>
         </div>
@@ -346,25 +453,18 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
       {process.env.NODE_ENV === 'development' && (
         <div className="dev-info">
           <details>
-            <summary>🔧 Development Info</summary>
+            <summary>🔧 Development Info - Streamlined</summary>
             <div className="dev-content">
+              <h5>Service Status (from useProposal):</h5>
+              <pre>{JSON.stringify(serviceStatus, null, 2)}</pre>
               <h5>Validation Errors:</h5>
               <pre>{JSON.stringify(validationErrors, null, 2)}</pre>
-              <h5>Form Data Description:</h5>
-              <pre>{JSON.stringify({
-                description: editorState.formData.description,
-                hasDescription: !!editorState.formData.description?.trim()
-              }, null, 2)}</pre>
-              <h5>Current Draft Description:</h5>
-              <pre>{JSON.stringify({
-                draftDescription: editorState.currentDraft?.description,
-                hasDraftDescription: !!editorState.currentDraft?.description?.trim()
-              }, null, 2)}</pre>
-              <h5>Proposal Data:</h5>
+              <h5>Form Data:</h5>
               <pre>{JSON.stringify({
                 title: editorState.formData.title,
                 category: editorState.formData.category,
-                contentReference: editorState.formData.contentReference
+                contentReference: editorState.formData.contentReference,
+                hasDescription: !!editorState.formData.description?.trim()
               }, null, 2)}</pre>
             </div>
           </details>

@@ -1,4 +1,4 @@
-// src/pages/editor/components/steps/PublishStep.tsx
+// src/pages/editor/components/steps/PublishStep.tsx - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import { services } from '../../../../swarm/services';
 import { UnifiedBlogData } from '../../../../types/editorTypes';
@@ -17,6 +17,10 @@ export const PublishStep: React.FC<PublishStepProps> = ({
   const [publishError, setPublishError] = useState<string | null>(null);
   const [preparedContent, setPreparedContent] = useState<PreparedContent | null>(null);
   const [serviceStatus, setServiceStatus] = useState<any>(null);
+  const [pipelineStatus, setPipelineStatus] = useState<{
+    available: boolean;
+    error: string | null;
+  }>({ available: false, error: null });
 
   // Load service status when component mounts
   useEffect(() => {
@@ -33,21 +37,35 @@ export const PublishStep: React.FC<PublishStepProps> = ({
     loadServiceStatus();
   }, []);
 
-  // Initialize blockchain services if not already done
+  // FIXED: Check pipeline availability safely
   useEffect(() => {
-    const initBlockchainServices = async () => {
+    const checkPipelineStatus = () => {
       try {
-        // Check if pipeline is available
-        if (!services.pipeline && window.ethereum) {
-          // This would need to be implemented based on your blockchain initialization
-          console.log('Blockchain services need to be initialized');
-        }
+        // Use new safe method to check pipeline availability
+        const hasPipeline = services.hasPipeline;
+        const pipelineResult = services.tryGetPipeline();
+        
+        setPipelineStatus({
+          available: hasPipeline && pipelineResult.pipeline !== null,
+          error: pipelineResult.error
+        });
+        
+        console.log('Pipeline status:', {
+          hasBlockchainServices: services.hasBlockchainServices,
+          hasPipeline: hasPipeline,
+          available: hasPipeline && pipelineResult.pipeline !== null,
+          error: pipelineResult.error
+        });
       } catch (error) {
-        console.warn('Blockchain services not available:', error);
+        console.error('Failed to check pipeline status:', error);
+        setPipelineStatus({
+          available: false,
+          error: error instanceof Error ? error.message : 'Unknown pipeline error'
+        });
       }
     };
 
-    initBlockchainServices();
+    checkPipelineStatus();
   }, []);
 
   /**
@@ -115,16 +133,24 @@ export const PublishStep: React.FC<PublishStepProps> = ({
       // Update form data with content reference
       editorState.updateContentReference(contentReference);
       
-      // If ContentPipeline is available, prepare full content
-      if (services.pipeline) {
+      // FIXED: Safe pipeline usage - only try if available
+      if (pipelineStatus.available) {
         try {
-          const prepared = await services.pipeline.prepareForPublication(currentFormData);
-          setPreparedContent(prepared);
-          console.log('Content prepared for NFT/Proposal:', prepared);
+          const pipelineResult = services.tryGetPipeline();
+          if (pipelineResult.pipeline) {
+            console.log('Preparing content for NFT/Proposal with pipeline...');
+            const prepared = await pipelineResult.pipeline.prepareForPublication(currentFormData);
+            setPreparedContent(prepared);
+            console.log('Content prepared for NFT/Proposal:', prepared);
+          } else {
+            console.log('Pipeline not available:', pipelineResult.error);
+          }
         } catch (pipelineError) {
-          console.warn('Pipeline preparation not available:', pipelineError);
+          console.warn('Pipeline preparation failed:', pipelineError);
           // This is non-critical, continue without it
         }
+      } else {
+        console.log('Pipeline not available - blockchain services not initialized');
       }
       
       // Save to draft storage
@@ -286,10 +312,16 @@ export const PublishStep: React.FC<PublishStepProps> = ({
                   </div>
                   <div className="status-item">
                     <span className="status-label">Content Pipeline:</span>
-                    <span className={`status-value ${services.pipeline ? 'available' : 'unavailable'}`}>
-                      {services.pipeline ? '🟢 Ready' : '🟡 Limited'}
+                    <span className={`status-value ${pipelineStatus.available ? 'available' : 'unavailable'}`}>
+                      {pipelineStatus.available ? '🟢 Ready' : '🟡 Limited'}
                     </span>
                   </div>
+                  {!pipelineStatus.available && pipelineStatus.error && (
+                    <div className="status-item">
+                      <span className="status-label">Pipeline Issue:</span>
+                      <span className="status-value">{pipelineStatus.error}</span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="status-loading">⏳ Checking service status...</div>
@@ -301,7 +333,11 @@ export const PublishStep: React.FC<PublishStepProps> = ({
               <ul>
                 <li>Content will be stored permanently on Swarm</li>
                 <li>Images will automatically use the correct endpoints for web display</li>
-                <li>NFT metadata will be generated for governance proposals</li>
+                {pipelineStatus.available ? (
+                  <li>NFT metadata will be generated for governance proposals</li>
+                ) : (
+                  <li className="info">ℹ️ NFT/Governance features require blockchain services (optional)</li>
+                )}
                 {serviceStatus?.nodeRunning ? (
                   <li>Publishing through your local Bee node for faster uploads</li>
                 ) : (

@@ -1,112 +1,166 @@
-// src/contexts/SimpleAppContext.tsx - REFACTORED for new service architecture
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { services } from '../swarm/services/index';
+// src/contexts/SimpleAppContext.tsx - ENHANCED VERSION
+// Unified management of both Swarm and Blockchain services
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { services } from '../swarm/services';
+import { NFTMintingService } from '../blockchain/services/NFTMintingService';
+import { ProposalService } from '../blockchain/services/ProposalService';
+import { useWallet } from './WalletContext';
 
 /**
- * Simple app configuration interface
+ * Enhanced configuration interface for the simple app
+ * Maintains backward compatibility with Header.tsx and other components
  */
 export interface SimpleAppConfig {
+  // App branding (used by Header component)
   title: string;
   description: string;
-  swarmGateway: string;
-  postageBatchId?: string;
   defaultCategory: string;
   supportedNetworks: number[];
+  
+  // Swarm configuration
+  swarmGateway: string;
+  publicGateway: string;
+  postageBatchId: string;
+  
+  // Enhanced features
+  autoRefreshInterval: number;
 }
 
 /**
- * Platform status for diagnostics
+ * Enhanced status interface including blockchain services
  */
-export interface PlatformStatus {
+export interface SimpleAppStatus {
+  // Swarm services status
   beeNodeRunning: boolean;
   hasPostageStamp: boolean;
   swarmGateway: string;
   publicGateway: string;
-  lastChecked: number;
   initialized: boolean;
+  lastChecked: number;
+  
+  // Blockchain services status
+  blockchainInitialized: boolean;
+  blockchainError: string | null;
+  pipelineAvailable: boolean;
+  walletConnected: boolean;
+  chainId: number | null;
 }
 
 /**
- * Simple app state interface
+ * Enhanced state interface
  */
-interface SimpleAppState {
+export interface SimpleAppState {
   config: SimpleAppConfig;
-  status: PlatformStatus;
+  status: SimpleAppStatus;
   isInitialized: boolean;
   error: string | null;
+  
+  // Blockchain service instances (when available)
+  nftMintingService: NFTMintingService | null;
+  proposalService: ProposalService | null;
 }
 
 /**
- * Context interface
+ * Enhanced context interface
  */
-interface SimpleAppContextType {
+export interface SimpleAppContextType {
   state: SimpleAppState;
   updateConfig: (updates: Partial<SimpleAppConfig>) => void;
   refreshStatus: () => Promise<void>;
+  refreshBlockchainServices: () => Promise<void>;
   clearError: () => void;
   setError: (error: string) => void;
 }
 
-// Default configuration
-const defaultConfig: SimpleAppConfig = {
-  title: 'ReligioDAO Blog',
-  description: 'Decentralized and self-governed',
-  swarmGateway: 'http://localhost:1633',
-  defaultCategory: 'General',
-  supportedNetworks: [35441, 35442, 35443, 100, 31337] // Q networks, Gnosis, Local
-};
-
-// Default platform status
-const defaultStatus: PlatformStatus = {
-  beeNodeRunning: false,
-  hasPostageStamp: false,
-  swarmGateway: 'http://localhost:1633',
-  publicGateway: 'https://api.gateway.ethswarm.org',
-  lastChecked: 0,
-  initialized: false
-};
-
-// Create context
 const SimpleAppContext = createContext<SimpleAppContextType | null>(null);
 
-// Custom hook to use the context
 export const useSimpleApp = (): SimpleAppContextType => {
   const context = useContext(SimpleAppContext);
   if (!context) {
-    throw new Error('useSimpleApp must be used within a SimpleAppProvider');
+    throw new Error('useSimpleApp must be used within SimpleAppProvider');
   }
   return context;
 };
 
-// Provider component
+// Default configuration - includes all backward compatibility properties
+const defaultConfig: SimpleAppConfig = {
+  // App branding
+  title: 'ReligioDAO Blog',
+  description: 'Decentralized and self-governed',
+  defaultCategory: 'General',
+  supportedNetworks: [35441, 35442, 35443, 100, 31337], // Q networks, Gnosis, Local
+  
+  // Swarm configuration
+  swarmGateway: 'http://localhost:1633',
+  publicGateway: 'https://api.gateway.ethswarm.org',
+  postageBatchId: '',
+  
+  // Enhanced features
+  autoRefreshInterval: 30000
+};
+
+// Default status
+const defaultStatus: SimpleAppStatus = {
+  beeNodeRunning: false,
+  hasPostageStamp: false,
+  swarmGateway: defaultConfig.swarmGateway,
+  publicGateway: defaultConfig.publicGateway,
+  initialized: false,
+  lastChecked: 0,
+  blockchainInitialized: false,
+  blockchainError: null,
+  pipelineAvailable: false,
+  walletConnected: false,
+  chainId: null
+};
+
 interface SimpleAppProviderProps {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }) => {
+  // Get wallet state for blockchain service coordination
+  const { provider, signer, chainId, isConnected } = useWallet();
+  
   const [state, setState] = useState<SimpleAppState>(() => {
-    // Try to load saved config from localStorage
+    // Load saved configuration with backward compatibility
     const savedConfig = localStorage.getItem('religiodao-simple-config');
-    const config = savedConfig ? { ...defaultConfig, ...JSON.parse(savedConfig) } : defaultConfig;
+    let config = defaultConfig;
+    
+    if (savedConfig) {
+      try {
+        const parsed = JSON.parse(savedConfig);
+        // Merge with defaults to ensure all properties exist
+        config = { ...defaultConfig, ...parsed };
+      } catch (error) {
+        console.warn('Failed to parse saved config, using defaults:', error);
+      }
+    }
     
     return {
       config,
-      status: defaultStatus,
+      status: {
+        ...defaultStatus,
+        walletConnected: false,
+        chainId: null
+      },
       isInitialized: false,
-      error: null
+      error: null,
+      nftMintingService: null,
+      proposalService: null
     };
   });
 
-  // Initialize the app and check platform status
+  // Initialize Swarm services on mount
   useEffect(() => {
-    const initializeApp = async () => {
+    const initializeSwarmServices = async () => {
       try {
-        console.log('Initializing ReligioDAO services...');
+        console.log('Initializing ReligioDAO Swarm services...');
         
-        // Initialize the new service architecture
+        // Initialize the unified service architecture
         await services.initialize();
         
-        // Check platform status
+        // Check Swarm status
         await refreshStatus();
         
         setState(prev => ({
@@ -115,30 +169,115 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
           error: null
         }));
 
-        console.log('ReligioDAO services initialized successfully');
+        console.log('ReligioDAO Swarm services initialized successfully');
       } catch (error) {
-        console.error('Failed to initialize app:', error);
+        console.error('Failed to initialize Swarm services:', error);
         setState(prev => ({
           ...prev,
           isInitialized: true,
-          error: error instanceof Error ? error.message : 'Failed to initialize application'
+          error: error instanceof Error ? error.message : 'Failed to initialize Swarm services'
         }));
       }
     };
 
-    initializeApp();
+    initializeSwarmServices();
   }, []);
+
+  // Initialize blockchain services when wallet connects/changes
+  useEffect(() => {
+    const initializeBlockchainServices = async () => {
+      if (!isConnected || !provider || !chainId) {
+        // Clear blockchain services when wallet disconnects
+        setState(prev => ({
+          ...prev,
+          status: {
+            ...prev.status,
+            blockchainInitialized: false,
+            blockchainError: null,
+            pipelineAvailable: false,
+            walletConnected: false,
+            chainId: null
+          },
+          nftMintingService: null,
+          proposalService: null
+        }));
+        return;
+      }
+
+      setState(prev => ({
+        ...prev,
+        status: {
+          ...prev.status,
+          walletConnected: true,
+          chainId: chainId,
+          blockchainError: 'Initializing blockchain services...'
+        }
+      }));
+
+      try {
+        console.log('Initializing blockchain services for chain:', chainId);
+
+        // Create service instances with wallet provider
+        const signerOrUndefined = signer || undefined;
+        const nftMintingService = new NFTMintingService(provider, signerOrUndefined);
+        const proposalService = new ProposalService(provider, signerOrUndefined);
+
+        // Initialize services with network configuration
+        await nftMintingService.init(chainId);
+        await proposalService.init(chainId);
+
+        // Register with the unified service container
+        services.initializeBlockchainServices(nftMintingService, proposalService);
+
+        // Check if pipeline is now available
+        const pipelineAvailable = services.hasPipeline;
+
+        setState(prev => ({
+          ...prev,
+          status: {
+            ...prev.status,
+            blockchainInitialized: true,
+            blockchainError: null,
+            pipelineAvailable
+          },
+          nftMintingService,
+          proposalService
+        }));
+
+        console.log('Blockchain services initialized successfully', {
+          pipelineAvailable,
+          chainId
+        });
+
+      } catch (error) {
+        console.error('Failed to initialize blockchain services:', error);
+        setState(prev => ({
+          ...prev,
+          status: {
+            ...prev.status,
+            blockchainInitialized: false,
+            blockchainError: error instanceof Error ? error.message : 'Failed to initialize blockchain services',
+            pipelineAvailable: false
+          },
+          nftMintingService: null,
+          proposalService: null
+        }));
+      }
+    };
+
+    initializeBlockchainServices();
+  }, [isConnected, provider, signer, chainId]);
 
   // Periodically check platform status
   useEffect(() => {
     const interval = setInterval(() => {
       refreshStatus();
-    }, 30000); // Check every 30 seconds
+    }, state.config.autoRefreshInterval);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [state.config.autoRefreshInterval]);
 
-  // Function to refresh platform status
+  // Function to refresh Swarm status
   const refreshStatus = async (): Promise<void> => {
     try {
       const serviceStatus = await services.getStatus();
@@ -146,6 +285,7 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
       setState(prev => ({
         ...prev,
         status: {
+          ...prev.status,
           beeNodeRunning: serviceStatus.nodeRunning,
           hasPostageStamp: serviceStatus.hasStamp,
           swarmGateway: serviceStatus.gateway,
@@ -155,7 +295,7 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
         }
       }));
     } catch (error) {
-      console.error('Failed to refresh status:', error);
+      console.error('Failed to refresh Swarm status:', error);
       
       setState(prev => ({
         ...prev,
@@ -165,6 +305,54 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
           hasPostageStamp: false,
           initialized: services.isInitialized,
           lastChecked: Date.now()
+        }
+      }));
+    }
+  };
+
+  // Function to refresh blockchain services
+  const refreshBlockchainServices = async (): Promise<void> => {
+    if (!isConnected || !provider || !chainId) {
+      return;
+    }
+
+    try {
+      console.log('Refreshing blockchain services...');
+      
+      // Re-initialize blockchain services
+      const signerOrUndefined = signer || undefined;
+      const nftMintingService = new NFTMintingService(provider, signerOrUndefined);
+      const proposalService = new ProposalService(provider, signerOrUndefined);
+
+      await nftMintingService.init(chainId);
+      await proposalService.init(chainId);
+
+      services.initializeBlockchainServices(nftMintingService, proposalService);
+
+      const pipelineAvailable = services.hasPipeline;
+
+      setState(prev => ({
+        ...prev,
+        status: {
+          ...prev.status,
+          blockchainInitialized: true,
+          blockchainError: null,
+          pipelineAvailable
+        },
+        nftMintingService,
+        proposalService
+      }));
+
+      console.log('Blockchain services refreshed successfully');
+    } catch (error) {
+      console.error('Failed to refresh blockchain services:', error);
+      setState(prev => ({
+        ...prev,
+        status: {
+          ...prev.status,
+          blockchainInitialized: false,
+          blockchainError: error instanceof Error ? error.message : 'Failed to refresh blockchain services',
+          pipelineAvailable: false
         }
       }));
     }
@@ -215,6 +403,7 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
     state,
     updateConfig,
     refreshStatus,
+    refreshBlockchainServices,
     clearError,
     setError
   };
@@ -226,7 +415,7 @@ export const SimpleAppProvider: React.FC<SimpleAppProviderProps> = ({ children }
   );
 };
 
-// Helper hook for checking if platform is ready
+// Enhanced helper hooks
 export const usePlatformReady = (): boolean => {
   const { state } = useSimpleApp();
   return (
@@ -236,15 +425,27 @@ export const usePlatformReady = (): boolean => {
   );
 };
 
-// Helper hook for platform diagnostics
+export const useBlockchainReady = (): boolean => {
+  const { state } = useSimpleApp();
+  return (
+    state.status.blockchainInitialized &&
+    state.status.pipelineAvailable &&
+    state.nftMintingService !== null &&
+    state.proposalService !== null
+  );
+};
+
 export const usePlatformDiagnostics = () => {
-  const { state, refreshStatus } = useSimpleApp();
+  const { state, refreshStatus, refreshBlockchainServices } = useSimpleApp();
   
   const getDiagnosticInfo = () => {
     const { status, config, isInitialized, error } = state;
     
     return {
-      overall: isInitialized && !error && status.initialized && (status.beeNodeRunning || status.publicGateway !== ''),
+      overall: isInitialized && !error && status.initialized && 
+               (status.beeNodeRunning || status.publicGateway !== ''),
+      swarmReady: status.beeNodeRunning || Boolean(status.publicGateway),
+      blockchainReady: status.blockchainInitialized && status.pipelineAvailable,
       details: [
         {
           name: 'App Initialized',
@@ -252,9 +453,9 @@ export const usePlatformDiagnostics = () => {
           message: isInitialized ? 'Application initialized successfully' : (error || 'Initialization pending')
         },
         {
-          name: 'Services Initialized',
+          name: 'Swarm Services',
           status: status.initialized ? 'OK' : 'ERROR',
-          message: status.initialized ? 'Service architecture initialized' : 'Services not initialized'
+          message: status.initialized ? 'Swarm service architecture initialized' : 'Swarm services not initialized'
         },
         {
           name: 'Bee Node',
@@ -272,6 +473,22 @@ export const usePlatformDiagnostics = () => {
           message: status.hasPostageStamp ? 'Usable postage stamp found' : 'No usable postage stamp (limited functionality)'
         },
         {
+          name: 'Wallet Connection',
+          status: status.walletConnected ? 'OK' : 'WARNING',
+          message: status.walletConnected ? `Connected to chain ${status.chainId}` : 'No wallet connected (governance unavailable)'
+        },
+        {
+          name: 'Blockchain Services',
+          status: status.blockchainInitialized ? 'OK' : (status.walletConnected ? 'ERROR' : 'WARNING'),
+          message: status.blockchainInitialized ? 'Blockchain services ready' : 
+                   (status.blockchainError || (status.walletConnected ? 'Failed to initialize' : 'Wallet required'))
+        },
+        {
+          name: 'Content Pipeline',
+          status: status.pipelineAvailable ? 'OK' : 'WARNING',
+          message: status.pipelineAvailable ? 'Full pipeline available' : 'Limited to Swarm publishing only'
+        },
+        {
           name: 'Last Check',
           status: 'INFO',
           message: status.lastChecked ? new Date(status.lastChecked).toLocaleTimeString() : 'Never'
@@ -282,17 +499,44 @@ export const usePlatformDiagnostics = () => {
   
   return {
     diagnostics: getDiagnosticInfo(),
-    refresh: refreshStatus
+    refreshSwarm: refreshStatus,
+    refreshBlockchain: refreshBlockchainServices
   };
 };
 
 // Component for displaying platform status
 export const PlatformStatusBanner: React.FC = () => {
-  // We now handle status display in the hamburger menu instead
+  const { state } = useSimpleApp();
+  
+  // Only show critical errors that prevent core functionality
+  if (state.error) {
+    return (
+      <div className="platform-banner error">
+        <div className="banner-content">
+          <span className="banner-icon">⚠️</span>
+          <span>Platform Error: {state.error}</span>
+        </div>
+      </div>
+    );
+  }
+  
+  // Show initialization status
+  if (!state.isInitialized) {
+    return (
+      <div className="platform-banner initializing">
+        <div className="banner-content">
+          <span className="banner-icon">⏳</span>
+          <span>Initializing ReligioDAO Platform...</span>
+        </div>
+      </div>
+    );
+  }
+  
+  // No banner for normal operation
   return null;
 };
 
-// CSS for the status banner (add to your main CSS file)
+// CSS styles remain the same as before
 export const platformStatusStyles = `
 .platform-banner {
   width: 100%;

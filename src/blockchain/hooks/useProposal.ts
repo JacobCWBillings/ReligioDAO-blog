@@ -1,6 +1,8 @@
-// src/blockchain/hooks/useProposal.ts - Fixed with better initialization control
+// src/blockchain/hooks/useProposal.ts - STREAMLINED VERSION
+// Modified to use centralized services from SimpleAppContext while maintaining existing interface
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
+import { useSimpleApp } from '../../contexts/SimpleAppContext'; // NEW: Use centralized services
 import { useChainConstraint } from './useChainConstraint';
 import { 
   BlogProposal, 
@@ -9,17 +11,17 @@ import {
   BlockchainErrorType, 
   TransactionStatus 
 } from '../../types/blockchainTypes';
-import { ProposalService } from '../services/ProposalService';
 
 /**
- * Enhanced React hook for interacting with the DAO's proposal system
- * Fixed to prevent multiple initializations
+ * STREAMLINED React hook for interacting with the DAO's proposal system
+ * Now uses centralized services from SimpleAppContext instead of managing its own
+ * Maintains exact same interface for backward compatibility
  */
 export const useProposal = () => {
-  const { provider, readOnlyProvider, signer, readOnlySigner, account, isConnected } = useWallet();
+  const { account, isConnected } = useWallet();
+  const { state: appState } = useSimpleApp(); // NEW: Get services from context
   const { getConstrainedChainId } = useChainConstraint();
   
-  const [proposalService, setProposalService] = useState<ProposalService | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(0);
@@ -36,102 +38,34 @@ export const useProposal = () => {
     cacheStats?: any;
   }>({ initialized: false, networkId: 0 });
   
-  // Use refs to track initialization state more reliably
   const mountedRef = useRef(true);
-  const initializationRef = useRef<Promise<void> | null>(null);
-  const currentServiceRef = useRef<ProposalService | null>(null);
-  const currentNetworkRef = useRef<number>(0);
-
-  // Get the constrained chain ID in a stable way
   const constrainedChainId = getConstrainedChainId();
 
-  // Stable initialization effect - only depends on core provider changes
+  // NEW: Get proposal service from centralized context
+  const proposalService = appState.proposalService;
+  const isServiceReady = appState.status.blockchainInitialized && proposalService !== null;
+
+  // Update service status when centralized services change
   useEffect(() => {
-    mountedRef.current = true;
-    
-    const activeProvider = provider || readOnlyProvider;
-    
-    // Don't reinitialize if we already have a service for this network
-    if (currentServiceRef.current && currentNetworkRef.current === constrainedChainId && activeProvider) {
-      console.log(`ProposalService already initialized for network ${constrainedChainId}`);
-      return;
+    if (proposalService && isServiceReady) {
+      const status = proposalService.getServiceStatus();
+      setServiceStatus(status);
+      setError(null);
+    } else if (appState.status.blockchainError) {
+      setError(new BlockchainError(
+        appState.status.blockchainError,
+        BlockchainErrorType.ContractError
+      ));
     }
-    
-    if (!activeProvider) {
-      console.log('No provider available for ProposalService initialization');
-      return;
-    }
-
-    const initializeService = async () => {
-      // Prevent multiple simultaneous initializations
-      if (initializationRef.current) {
-        console.log('ProposalService initialization already in progress, waiting...');
-        await initializationRef.current;
-        return;
-      }
-
-      console.log(`Initializing ProposalService for network ${constrainedChainId}`);
-      
-      // Create initialization promise and store it to prevent duplicate calls
-      const initPromise = (async () => {
-        try {
-          const activeSigner = isConnected && signer ? signer : (readOnlySigner || undefined);
-          const service = new ProposalService(activeProvider, activeSigner);
-          
-          // Initialize the service
-          await service.init(constrainedChainId);
-          
-          if (mountedRef.current) {
-            setProposalService(service);
-            currentServiceRef.current = service;
-            currentNetworkRef.current = constrainedChainId;
-            
-            // Get service status for diagnostics
-            const status = service.getServiceStatus();
-            setServiceStatus(status);
-            
-            setError(null);
-            console.log('ProposalService initialized successfully');
-          }
-        } catch (err) {
-          console.error('Error initializing ProposalService:', err);
-          if (mountedRef.current) {
-            setError(new BlockchainError(
-              'Failed to initialize ProposalService',
-              BlockchainErrorType.ContractError,
-              err instanceof Error ? err : new Error(String(err))
-            ));
-          }
-        }
-      })();
-      
-      initializationRef.current = initPromise;
-      await initPromise;
-      initializationRef.current = null;
-    };
-    
-    initializeService();
-
-    return () => {
-      mountedRef.current = false;
-    };
-  }, [
-    // Only depend on essential provider and network changes
-    provider, // Provider instance reference
-    readOnlyProvider, // Provider instance reference
-    signer, // Signer instance reference
-    constrainedChainId, // Use constrained chain ID instead of wallet chain ID
-    isConnected, // Track connection state changes
-    readOnlySigner // Track read-only signer changes
-  ]);
+  }, [proposalService, isServiceReady, appState.status.blockchainError]);
 
   /**
    * Load initial proposals with improved error handling
    * Always loads newest proposals first
    */
   const loadInitialProposals = useCallback(async (forceRefresh: boolean = false): Promise<void> => {
-    if (!proposalService || !currentServiceRef.current) {
-      console.log("Proposal service not yet initialized, skipping initial load");
+    if (!proposalService || !isServiceReady) {
+      console.log("Proposal service not yet ready, skipping initial load");
       return;
     }
 
@@ -175,7 +109,7 @@ export const useProposal = () => {
         setLoading(false);
       }
     }
-  }, [proposalService, loading]);
+  }, [proposalService, isServiceReady, loading]);
 
   /**
    * Load more (older) proposals for pagination
@@ -194,10 +128,8 @@ export const useProposal = () => {
       
       if (mountedRef.current) {
         // Append new proposals to existing ones, keeping newest-first order
-        // The service should already return them in correct order but we sort them again to be sure
         const sortedNewProposals = [...result.proposals].sort((a, b) => b.createdAt - a.createdAt);
         setProposals(prev => {
-          // Combine previous and new proposals, then sort to guarantee newest first
           const combined = [...prev, ...sortedNewProposals];
           return combined.sort((a, b) => b.createdAt - a.createdAt);
         });
@@ -449,11 +381,19 @@ export const useProposal = () => {
 
   // Auto-load initial proposals when service is ready
   useEffect(() => {
-    if (proposalService && !initialLoaded && !loading) {
-      console.log('ProposalService ready, loading initial proposals');
+    if (proposalService && isServiceReady && !initialLoaded && !loading) {
+      console.log('ProposalService ready from centralized context, loading initial proposals');
       loadInitialProposals();
     }
-  }, [proposalService, initialLoaded, loading, loadInitialProposals]);
+  }, [proposalService, isServiceReady, initialLoaded, loading, loadInitialProposals]);
+
+  // Cleanup
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   return {
     // Data
@@ -468,15 +408,20 @@ export const useProposal = () => {
     error,
     initialLoaded,
     
-    // Service status
-    serviceStatus,
+    // Service status (enhanced with centralized info)
+    serviceStatus: {
+      ...serviceStatus,
+      centralized: true, // Indicate this is using centralized services
+      blockchainReady: isServiceReady,
+      contextError: appState.status.blockchainError
+    },
     
     // Pagination methods
     loadInitialProposals,
     loadMoreProposals,
     refreshProposals,
     
-    // Core methods
+    // Core methods (same interface as before)
     getAllProposals,
     getProposalById,
     createBlogProposal,
