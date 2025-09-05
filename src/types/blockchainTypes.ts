@@ -1,4 +1,4 @@
-// src/types/blockchain.ts
+// src/types/blockchainTypes.ts
 import { ethers } from 'ethers';
 
 /**
@@ -36,6 +36,14 @@ export interface Proposal {
   status: ProposalStatus;        // Current status of the proposal
   executed: boolean;             // Whether the proposal has been executed
   contentReference?: string;     // Reference to the blog content on Swarm
+
+  // Simple metadata for UI display (parsed from remark)
+  metadata?: {
+    author?: string;
+    category?: string;
+    tags?: string[];
+    rawRemark?: string; // Store original remark if needed
+  };
 }
 
 /**
@@ -79,10 +87,11 @@ export interface BlogProposal {
 }
 
 /**
- * Interface for a blog proposal with metadata
+ * Interface for a blog proposal with NFT metadata
+ * Used when dealing with NFT minting operations
  */
-export interface BlogProposalWithMetadata extends Proposal {
-  metadata: BlogNFTMetadata;    // Metadata for the NFT if minted
+export interface BlogProposalWithNFTMetadata extends Proposal {
+  nftMetadata: BlogNFTMetadata;    // NFT metadata for minting (different from UI metadata)
 }
 
 /**

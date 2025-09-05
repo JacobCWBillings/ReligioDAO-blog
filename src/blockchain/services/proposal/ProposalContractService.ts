@@ -355,8 +355,9 @@ export class ProposalContractService extends BaseContractService {
         `Category: ${proposal.category}`,
         `Tags: ${proposal.tags.join(', ')}`,
         `Content Reference: ${proposal.contentReference}`,
+        '', // Empty line for spacing
         proposal.description || `A blog post about ${proposal.category} by ${proposal.authorAddress.substring(0, 6)}...${proposal.authorAddress.substring(38)}`
-      ].join(' ');
+      ].join('\n'); // Use actual newlines for Q governance display
 
       console.log('Created remark:', remark.substring(0, 200) + '...');
 

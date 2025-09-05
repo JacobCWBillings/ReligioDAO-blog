@@ -405,7 +405,7 @@ export const BlogListPage: React.FC = () => {
             : "Connect your wallet to submit blog posts for community review."}
         </p>
         {isConnected ? (
-          <Link to="/submit-proposal" className="submit-blog-button">
+          <Link to="/editor" className="submit-blog-button">
             Submit New Blog
           </Link>
         ) : (

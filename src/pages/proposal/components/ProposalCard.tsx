@@ -189,10 +189,15 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
       <div className="proposal-card-header">
         <div className="proposal-card-title-container">
           <h3 className="proposal-card-title">
-            {blogInfo.blogTitle || proposal.title || 'Untitled Blog Proposal'}
+            {proposal.title || 'Untitled Blog Proposal'}
           </h3>
-          {!compact && proposal.title && blogInfo.blogTitle !== proposal.title && (
-            <div className="proposal-card-subtitle">{proposal.title}</div>
+          {/* Show description preview if not in compact mode */}
+          {!compact && proposal.description && (
+            <div className="proposal-card-subtitle">
+              {proposal.description.length > 100 
+                ? `${proposal.description.substring(0, 100)}...` 
+                : proposal.description}
+            </div>
           )}
         </div>
         <div className={`proposal-card-status status-${statusInfo.color}`}>
@@ -212,19 +217,34 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
             </span>
           </div>
           
-          {blogInfo.category && (
+          {/* Use metadata if available, otherwise fall back to parsed blog info for backwards compatibility */}
+          {(proposal.metadata?.category || blogInfo.category) && (
             <div className="proposal-card-category">
-              {blogInfo.category}
-              {blogInfo.tags.length > 0 && (
+              <span className="category-label">
+                {proposal.metadata?.category || blogInfo.category}
+              </span>
+              {((proposal.metadata?.tags || blogInfo.tags) && (proposal.metadata?.tags || blogInfo.tags).length > 0) && (
                 <div className="proposal-card-tags">
-                  {blogInfo.tags.slice(0, 3).map((tag, index) => (
+                  {(proposal.metadata?.tags || blogInfo.tags).slice(0, 3).map((tag, index) => (
                     <span key={index} className="proposal-card-tag">{tag}</span>
                   ))}
-                  {blogInfo.tags.length > 3 && (
-                    <span className="proposal-card-tag">+{blogInfo.tags.length - 3} more</span>
+                  {(proposal.metadata?.tags || blogInfo.tags).length > 3 && (
+                    <span className="proposal-card-tag">
+                      +{(proposal.metadata?.tags || blogInfo.tags).length - 3} more
+                    </span>
                   )}
                 </div>
               )}
+            </div>
+          )}
+          
+          {/* Show content reference if available */}
+          {proposal.contentReference && (
+            <div className="proposal-card-content-ref">
+              <span className="proposal-card-label">Content: </span>
+              <span className="content-ref-value" title={proposal.contentReference}>
+                {proposal.contentReference.substring(0, 8)}...
+              </span>
             </div>
           )}
         </div>
@@ -262,17 +282,18 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
 
       <div className="proposal-card-footer">
         <div className="proposal-card-proposer">
-          By: {formatAddress(proposal.proposer, 6, 4)}
+          {/* Use metadata author if available, otherwise use proposer */}
+          By: {formatAddress(proposal.metadata?.author || proposal.proposer, 6, 4)}
         </div>
         <div className="proposal-card-date">
           {formatDate(proposal.createdAt)}
         </div>
         
-        {/* CORRECTED: Call-to-action hints based on Q contract status */}
+        {/* Call-to-action hints based on Q contract status */}
         {isActive && (
           <div className="proposal-card-action-hint">Click to vote</div>
         )}
-        {displayStatus === ProposalStatus.Accepted && (
+        {displayStatus === ProposalStatus.Accepted && !proposal.executed && (
           <div className="proposal-card-action-hint">Ready to execute</div>
         )}
         {displayStatus === ProposalStatus.Executed && (

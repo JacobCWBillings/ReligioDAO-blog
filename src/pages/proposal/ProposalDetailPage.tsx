@@ -394,26 +394,36 @@ export const ProposalDetailPage: React.FC = () => {
         <div className="proposal-meta">
           <div className="meta-item">
             <div className="meta-label">Author</div>
-            <div className="meta-value address">{formatAddress(blogInfo.authorAddress || proposal.proposer, 6, 4)}</div>
+            <div className="meta-value address">
+              {formatAddress(proposal.metadata?.author || blogInfo.authorAddress || proposal.proposer, 6, 4)}
+            </div>
           </div>
-          {blogInfo.category && (
+          
+          {(proposal.metadata?.category || blogInfo.category) && (
             <div className="meta-item">
               <div className="meta-label">Category</div>
-              <div className="meta-value">{blogInfo.category}</div>
+              <div className="meta-value">{proposal.metadata?.category || blogInfo.category}</div>
             </div>
           )}
+          
           <div className="meta-item">
             <div className="meta-label">Voting Ends</div>
             <div className="meta-value">
               {isActive ? formatRelativeTime(proposal.votingEnds) : 'Ended'}
             </div>
           </div>
+          
+          <div className="meta-item">
+            <div className="meta-label">Created</div>
+            <div className="meta-value">{new Date(proposal.createdAt).toLocaleDateString()}</div>
+          </div>
         </div>
         
-        {blogInfo.tags.length > 0 && (
+        {/* Tags Section */}
+        {((proposal.metadata?.tags && proposal.metadata.tags.length > 0) || blogInfo.tags.length > 0) && (
           <div className="blog-meta-section">
             <div className="blog-tags-container">
-              {blogInfo.tags.map((tag, index) => (
+              {(proposal.metadata?.tags || blogInfo.tags).map((tag, index) => (
                 <span key={index} className="blog-tag">{tag}</span>
               ))}
             </div>
@@ -595,17 +605,34 @@ export const ProposalDetailPage: React.FC = () => {
                 <span className="detail-label">Status</span>
                 <span className="detail-value">{statusInfo.description}</span>
               </div>
+              
               <div className="detail-item">
                 <span className="detail-label">Proposer</span>
                 <span className="detail-value address">{formatAddress(proposal.proposer, 6, 4)}</span>
               </div>
+              
+              <div className="detail-item">
+                <span className="detail-label">Total Votes</span>
+                <span className="detail-value">{proposal.votesFor + proposal.votesAgainst}</span>
+              </div>
+              
               {proposal.contentReference && (
                 <div className="detail-item">
-                  <span className="detail-label">Content</span>
-                  <span className="detail-value content-ref">
+                  <span className="detail-label">Content Hash</span>
+                  <span className="detail-value content-ref" title={proposal.contentReference}>
                     {proposal.contentReference.substring(0, 10)}...
                   </span>
                 </div>
+              )}
+              
+              {/* Add raw metadata display for debugging/transparency */}
+              {proposal.metadata?.rawRemark && (
+                <details className="raw-metadata-details">
+                  <summary className="detail-label">Raw Metadata</summary>
+                  <pre className="raw-metadata-content">
+                    {proposal.metadata.rawRemark}
+                  </pre>
+                </details>
               )}
             </div>
           </div>
