@@ -1,6 +1,7 @@
 {
     "name": "religiodao-blogger",
-    "version": "0.1.1",
+    "version": "0.2.0",
+    "author": "Jacob Billings",
     "private": true,
     "homepage": ".",
     "dependencies": {
