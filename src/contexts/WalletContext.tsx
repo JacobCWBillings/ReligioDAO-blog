@@ -228,7 +228,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({
         }
       };
     }
-  }, [account, provider, supportedChainIds]);
+  }, [account, provider, supportedChainIds, chainId]);
 
   // Connect wallet function
   const connect = async () => {
