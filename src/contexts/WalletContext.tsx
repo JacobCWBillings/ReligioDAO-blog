@@ -91,9 +91,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({
         // Get the default network from config
         const defaultNetworkId = config.defaultNetworkId;
         const networkConfig = config.networks[defaultNetworkId];
-
-        
-        
+       
         // Create a read-only provider with the default RPC URL
         const readOnly = new ethers.JsonRpcProvider(networkConfig.rpcUrl);
         

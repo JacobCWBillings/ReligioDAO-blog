@@ -86,7 +86,7 @@ export const useSimpleApp = (): SimpleAppContextType => {
 const defaultConfig: SimpleAppConfig = {
   // App branding
   title: 'ReligioDAO Blog',
-  description: 'Decentralized and self-governed',
+  description: 'A Religion DAO of the people',
   defaultCategory: 'General',
   supportedNetworks: [35441, 35442, 35443, 100, 31337], // Q networks, Gnosis, Local
   
