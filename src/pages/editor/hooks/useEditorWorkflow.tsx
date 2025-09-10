@@ -1,5 +1,5 @@
 // src/pages/editor/hooks/useEditorWorkflow.tsx - FIXED VERSION
-// Enhanced with automatic save before step transitions
+// Better synchronization with draft state changes and initial state
 import { useState, useCallback, useEffect } from 'react';
 import { useSimpleApp } from '../../../contexts/SimpleAppContext';
 import { EditorStep, EditorWorkflowState, EnhancedBlogDraft } from '../../../types/editorTypes';
@@ -9,12 +9,9 @@ interface UseEditorWorkflowProps {
   initialStep?: EditorStep;
   draft?: EnhancedBlogDraft | null;
   onStepChange?: (step: EditorStep, state: EditorWorkflowState) => void;
-  ensureSavedForTransition?: (targetStep: EditorStep) => Promise<boolean>; // NEW: Save before transition
+  ensureSavedForTransition?: (targetStep: EditorStep) => Promise<boolean>;
 }
 
-/**
- * FIXED: Enhanced workflow management with automatic save before step transitions
- */
 export const useEditorWorkflow = ({
   initialStep = 'draft',
   draft,
@@ -23,57 +20,110 @@ export const useEditorWorkflow = ({
 }: UseEditorWorkflowProps = {}) => {
   const { state: appState } = useSimpleApp();
   
-  const [workflowState, setWorkflowState] = useState<EditorWorkflowState>({
-    currentStep: initialStep,
-    stepStatus: {
-      draft: false,
-      swarm: false,
-      governance: false
-    },
-    canProgress: false,
-    isLoading: false,
-    error: null
-  });
-
-  // Update workflow state based on draft changes
-  useEffect(() => {
+  // Initialize with a more reasonable default state
+  const [workflowState, setWorkflowState] = useState<EditorWorkflowState>(() => {
+    // If we have a draft on initialization, use its state
     if (draft) {
       const stepStatus = draft.stepProgress || {
-        draft: Boolean(draft.title && draft.content),
+        draft: Boolean(draft.title && draft.content && draft.category),
         swarm: Boolean(draft.contentReference),
         governance: Boolean(draft.isPublished)
       };
       
-      setWorkflowState(prev => ({
-        ...prev,
+      return {
+        currentStep: initialStep,
         stepStatus,
-        canProgress: canProgressFromStep(prev.currentStep, stepStatus)
-      }));
+        canProgress: false, // Will be calculated in effect
+        isLoading: false,
+        error: null
+      };
     }
-  }, [draft]);
+    
+    // Default state for new drafts
+    return {
+      currentStep: initialStep,
+      stepStatus: {
+        draft: false,
+        swarm: false,
+        governance: false
+      },
+      canProgress: false,
+      isLoading: false,
+      error: null
+    };
+  });
+
+  // ENHANCED: More robust draft synchronization
+  useEffect(() => {
+    if (draft) {
+      console.log('Syncing workflow with draft:', {
+        draftId: draft.id,
+        hasContentReference: Boolean(draft.contentReference),
+        stepProgress: draft.stepProgress
+      });
+      
+      // Use the stepProgress from draft if available, otherwise calculate
+      const stepStatus = draft.stepProgress || {
+        draft: Boolean(draft.title && draft.content && draft.category),
+        swarm: Boolean(draft.contentReference),
+        governance: Boolean(draft.isPublished)
+      };
+      
+      // ENHANCED: Force update even if the values appear the same
+      setWorkflowState(prev => {
+        const newState = {
+          ...prev,
+          stepStatus,
+          canProgress: canProgressFromStep(prev.currentStep, stepStatus)
+        };
+        
+        console.log('Workflow state updated:', {
+          from: prev.stepStatus,
+          to: stepStatus,
+          canProgress: newState.canProgress,
+          currentStep: prev.currentStep
+        });
+        
+        return newState;
+      });
+    }
+  }, [draft?.id, draft?.contentReference, draft?.stepProgress?.draft, draft?.stepProgress?.swarm, draft?.stepProgress?.governance]); // More specific dependencies
 
   const canProgressFromStep = useCallback((step: EditorStep, status: typeof workflowState.stepStatus): boolean => {
-    switch (step) {
-      case 'draft':
-        return status.draft;
-      case 'review':
-        return status.draft;
-      case 'publish':
-        return status.draft && appState.status?.beeNodeRunning;
-      case 'governance':
-        return status.swarm && appState.isInitialized;
-      case 'success':
-        return false;
-      default:
-        return false;
-    }
+    const result = (() => {
+      switch (step) {
+        case 'draft':
+          return status.draft;
+        case 'review':
+          return status.draft;
+        case 'publish':
+          return status.draft && appState.status?.beeNodeRunning;
+        case 'governance':
+          return status.swarm && appState.isInitialized;
+        case 'success':
+          return false;
+        default:
+          return false;
+      }
+    })();
+    
+    console.log('canProgressFromStep:', { step, status, result });
+    return result;
   }, [appState]);
 
-  // FIXED: Enhanced goToStep with automatic save before transition
+  // ENHANCED: More robust step transition with better error handling
   const goToStep = useCallback(async (targetStep: EditorStep, force: boolean = false) => {
     const stepOrder: EditorStep[] = ['draft', 'review', 'publish', 'governance', 'success'];
     const currentIndex = stepOrder.indexOf(workflowState.currentStep);
     const targetIndex = stepOrder.indexOf(targetStep);
+    
+    console.log('goToStep requested:', { 
+      from: workflowState.currentStep, 
+      to: targetStep, 
+      force,
+      currentIndex,
+      targetIndex 
+    });
     
     // Allow going back freely, or enforce progression rules for forward movement
     const canNavigate = force || 
@@ -81,14 +131,13 @@ export const useEditorWorkflow = ({
                        canProgressFromStep(targetStep, workflowState.stepStatus);
     
     if (!canNavigate) {
-      setWorkflowState(prev => ({
-        ...prev,
-        error: `Cannot progress to ${targetStep} step. Please complete previous steps.`
-      }));
+      const error = `Cannot progress to ${targetStep} step. Current status: ${JSON.stringify(workflowState.stepStatus)}`;
+      console.error(error);
+      setWorkflowState(prev => ({ ...prev, error }));
       return false;
     }
 
-    // FIXED: Ensure save before transition if handler is provided
+    // ENHANCED: Ensure save before transition
     if (ensureSavedForTransition && targetIndex > currentIndex) {
       console.log(`Ensuring save before transitioning from ${workflowState.currentStep} to ${targetStep}`);
       setWorkflowState(prev => ({ ...prev, isLoading: true }));
@@ -103,6 +152,10 @@ export const useEditorWorkflow = ({
           }));
           return false;
         }
+        
+        // ENHANCED: Wait for save to propagate before continuing
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
       } catch (error) {
         console.error('Error saving before step transition:', error);
         setWorkflowState(prev => ({
@@ -124,6 +177,12 @@ export const useEditorWorkflow = ({
         canProgress: canProgressFromStep(targetStep, prev.stepStatus)
       };
       
+      console.log('Step transition completed:', {
+        newStep: targetStep,
+        stepStatus: prev.stepStatus,
+        canProgress: newState.canProgress
+      });
+      
       if (onStepChange) {
         setTimeout(() => onStepChange(targetStep, newState), 0);
       }
@@ -134,14 +193,27 @@ export const useEditorWorkflow = ({
     return true;
   }, [workflowState.stepStatus, workflowState.currentStep, canProgressFromStep, onStepChange, ensureSavedForTransition]);
 
+  // ENHANCED: More robust status update with verification
   const updateStepStatus = useCallback((step: 'draft' | 'swarm' | 'governance', completed: boolean) => {
+    console.log('updateStepStatus called:', { step, completed });
+    
     setWorkflowState(prev => {
       const newStatus = { ...prev.stepStatus, [step]: completed };
-      return {
+      const newState = {
         ...prev,
         stepStatus: newStatus,
         canProgress: canProgressFromStep(prev.currentStep, newStatus)
       };
+      
+      console.log('Step status updated:', {
+        step,
+        completed,
+        oldStatus: prev.stepStatus,
+        newStatus,
+        canProgress: newState.canProgress
+      });
+      
+      return newState;
     });
     
     // Update draft storage if we have a draft
@@ -161,6 +233,45 @@ export const useEditorWorkflow = ({
       }, 0);
     }
   }, [draft, canProgressFromStep]);
+
+  // ENHANCED: Force refresh from draft (useful for debugging)
+  const refreshFromDraft = useCallback(() => {
+    if (draft) {
+      console.log('Force refreshing workflow from draft...');
+      const stepStatus = draft.stepProgress || {
+        draft: Boolean(draft.title && draft.content && draft.category),
+        swarm: Boolean(draft.contentReference),
+        governance: Boolean(draft.isPublished)
+      };
+      
+      setWorkflowState(prev => ({
+        ...prev,
+        stepStatus,
+        canProgress: canProgressFromStep(prev.currentStep, stepStatus),
+        error: null
+      }));
+    }
+  }, [draft, canProgressFromStep]);
+
+  // ENHANCED: Sync with draft function (for external calls)
+  const syncWithDraft = useCallback((draftToSync: EnhancedBlogDraft) => {
+    console.log('External sync with draft requested:', {
+      draftId: draftToSync.id,
+      hasContentReference: Boolean(draftToSync.contentReference)
+    });
+    
+    const stepStatus = draftToSync.stepProgress || {
+      draft: Boolean(draftToSync.title && draftToSync.content && draftToSync.category),
+      swarm: Boolean(draftToSync.contentReference),
+      governance: Boolean(draftToSync.isPublished)
+    };
+    
+    setWorkflowState(prev => ({
+      ...prev,
+      stepStatus,
+      canProgress: canProgressFromStep(prev.currentStep, stepStatus)
+    }));
+  }, [canProgressFromStep]);
 
   const setLoading = useCallback((loading: boolean) => {
     setWorkflowState(prev => ({ ...prev, isLoading: loading }));
@@ -188,6 +299,14 @@ export const useEditorWorkflow = ({
     };
   }, [workflowState.stepStatus, appState]);
 
+  // Initialize canProgress after mount
+  useEffect(() => {
+    setWorkflowState(prev => ({
+      ...prev,
+      canProgress: canProgressFromStep(prev.currentStep, prev.stepStatus)
+    }));
+  }, [canProgressFromStep]);
+
   return {
     workflowState,
     goToStep,
@@ -195,6 +314,10 @@ export const useEditorWorkflow = ({
     setLoading,
     setError,
     getStepAccessibility,
+    
+    // ENHANCED: Additional helper methods
+    refreshFromDraft,
+    syncWithDraft,
     
     // Convenience getters
     currentStep: workflowState.currentStep,

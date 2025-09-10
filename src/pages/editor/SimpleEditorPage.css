@@ -1429,3 +1429,143 @@
     padding: 30px 20px;
   }
 }
+
+/* Tags preview and display styles */
+.tags-preview {
+  margin-top: 6px;
+  min-height: 24px;
+}
+
+.preview-tags, 
+.current-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.preview-label,
+.current-label {
+  font-size: 0.8rem;
+  color: #666;
+  font-weight: 500;
+  margin-right: 6px;
+}
+
+.preview-tag {
+  display: inline-block;
+  background-color: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #90caf9;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0.8;
+  animation: fadeIn 0.2s ease-in;
+}
+
+.current-tag {
+  display: inline-block;
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+}
+
+/* Enhanced field hints for decoupled tags */
+.field-hint {
+  font-size: 0.75rem;
+  color: #666;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* Improved debug styles */
+.dev-debug-tags {
+  margin-top: 20px;
+  padding: 12px;
+  background-color: #f5f5f5;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+}
+
+.dev-debug-tags summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.debug-content {
+  margin-top: 8px;
+}
+
+.debug-content h5 {
+  margin: 8px 0 4px 0;
+  color: #333;
+  font-size: 0.85rem;
+}
+
+.debug-content pre {
+  background-color: #fff;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  margin: 4px 0 12px 0;
+}
+
+.debug-content ul {
+  margin: 0;
+  padding-left: 16px;
+  list-style-type: disc;
+}
+
+.debug-content li {
+  margin-bottom: 2px;
+  font-size: 0.8rem;
+  color: #555;
+}
+
+/* Focus states for better accessibility */
+#tags:focus + .tags-preview .preview-tags {
+  border-left: 2px solid #ff8a00;
+  padding-left: 8px;
+  transition: all 0.2s ease;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .preview-tags,
+  .current-tags {
+    gap: 2px;
+  }
+  
+  .preview-tag,
+  .current-tag {
+    font-size: 0.75rem;
+    padding: 1px 6px;
+  }
+  
+  .preview-label,
+  .current-label {
+    font-size: 0.75rem;
+  }
+}

@@ -1,9 +1,7 @@
-// src/pages/editor/utils/draftStorage.ts - CORRECTED VERSION with proper imports
-// FIXED: Properly import types from editorTypes.ts instead of duplicating them
+// src/utils/draftStorage.ts - FIXED VERSION
+// Fixed to properly preserve stepProgress when explicitly provided
 
 import { BlogProposal } from '../types/blockchainTypes';
-
-// FIXED: Import and re-export the types from the existing editorTypes file
 import { 
   EnhancedBlogDraft, 
   UnifiedBlogData, 
@@ -11,7 +9,7 @@ import {
   EditorStep 
 } from '../types/editorTypes';
 
-// Re-export the types so other files can import them from here
+// Re-export the types
 export type { EnhancedBlogDraft, UnifiedBlogData, AssetReference, EditorStep };
 
 /**
@@ -66,6 +64,20 @@ export class EnhancedDraftStorage {
     // Load existing draft data if updating
     const existingDraft = this.loadDraft(draftId);
     
+    // CRITICAL FIX: Properly handle stepProgress
+    let stepProgress;
+    if (draftData.stepProgress) {
+      // If stepProgress is explicitly provided, use it as-is
+      stepProgress = draftData.stepProgress;
+    } else {
+      // Only calculate if not provided
+      stepProgress = {
+        draft: Boolean(draftData.title && draftData.content && draftData.category),
+        swarm: Boolean(draftData.contentReference),
+        governance: Boolean(draftData.isPublished)
+      };
+    }
+    
     // Create enhanced draft, preserving creation time from existing draft
     const enhancedDraft: EnhancedBlogDraft = {
       id: draftId,
@@ -81,11 +93,7 @@ export class EnhancedDraftStorage {
       isPublished: draftData.isPublished || false,
       usedAssets: usedAssets.map(ref => ref.assetId),
       assetSnapshot,
-      stepProgress: draftData.stepProgress || {
-        draft: true,
-        swarm: Boolean(draftData.contentReference),
-        governance: Boolean(draftData.isPublished)
-      },
+      stepProgress, // Use the properly determined stepProgress
       createdAt: existingDraft?.createdAt || draftData.createdAt || now,
       lastModified: now,
       workflowHistory: [
@@ -264,6 +272,7 @@ export class EnhancedDraftStorage {
 
   /**
    * Update draft workflow progress
+   * FIXED: Properly updates stepProgress in the draft
    */
   updateWorkflowProgress(
     draftId: string,
@@ -403,61 +412,52 @@ export class EnhancedDraftStorage {
       authorAddress: legacyDraft.authorAddress || '',
       preview: legacyDraft.preview || this.generatePreview(legacyDraft.content || ''),
       banner: legacyDraft.banner || null,
-      description: '', // Legacy drafts don't have description
+      description: legacyDraft.description || '',
       contentReference: legacyDraft.contentReference,
       isPublished: legacyDraft.isPublished || false,
-      usedAssets: [], // Will be populated on next save
+      usedAssets: [],
       assetSnapshot: {},
       stepProgress: {
-        draft: true, // Always true if we're migrating an existing draft
+        draft: Boolean(legacyDraft.title && legacyDraft.content && legacyDraft.category),
         swarm: Boolean(legacyDraft.contentReference),
         governance: Boolean(legacyDraft.isPublished)
       },
       createdAt: legacyDraft.createdAt || now,
       lastModified: legacyDraft.lastModified || now,
-      workflowHistory: [{
-        step: 'draft',
-        timestamp: now,
-        action: 'Migrated from legacy format'
-      }]
+      workflowHistory: []
     };
   }
 
   private getUserAssets(authorAddress: string): any[] {
-    try {
-      const assetsJson = localStorage.getItem(`${this.ASSETS_PREFIX}${authorAddress}`);
-      return assetsJson ? JSON.parse(assetsJson) : [];
-    } catch (error) {
-      console.error('Error loading user assets:', error);
-      return [];
-    }
+    const assetsKey = `${this.ASSETS_PREFIX}${authorAddress.toLowerCase()}`;
+    const assetsData = localStorage.getItem(assetsKey);
+    return assetsData ? JSON.parse(assetsData) : [];
   }
 
   private getAssetUrls(reference: string): string[] {
-    // Return possible URLs for an asset reference
     return [
       `http://localhost:1633/bytes/${reference}`,
-      `https://gateway.ethswarm.org/bytes/${reference}`,
+      `http://localhost:1633/bzz/${reference}`,
       `https://api.gateway.ethswarm.org/bytes/${reference}`,
-      `https://download.gateway.ethswarm.org/bytes/${reference}`
+      `https://api.gateway.ethswarm.org/bzz/${reference}`
     ];
   }
 
   private calculateStorageSize(authorAddress: string): number {
     let totalSize = 0;
     
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (
-        key.startsWith(`${this.DRAFT_PREFIX}`) ||
-        key.startsWith(`${this.LEGACY_PREFIX}`) ||
-        key.startsWith(`${this.ASSETS_PREFIX}${authorAddress}`)
-      )) {
-        const data = localStorage.getItem(key);
-        if (data) {
-          totalSize += new Blob([data]).size;
-        }
-      }
+    // Calculate draft sizes
+    const drafts = this.getDrafts(authorAddress);
+    drafts.forEach(draft => {
+      const draftString = JSON.stringify(draft);
+      totalSize += new Blob([draftString]).size;
+    });
+    
+    // Calculate asset sizes
+    const assetsKey = `${this.ASSETS_PREFIX}${authorAddress.toLowerCase()}`;
+    const assetsData = localStorage.getItem(assetsKey);
+    if (assetsData) {
+      totalSize += new Blob([assetsData]).size;
     }
     
     return totalSize;

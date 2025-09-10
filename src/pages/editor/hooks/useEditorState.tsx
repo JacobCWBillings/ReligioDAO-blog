@@ -1,5 +1,5 @@
 // src/pages/editor/hooks/useEditorState.tsx - FIXED VERSION
-// Comprehensive fix for state synchronization issues
+// Fixed to support passing complete data to saveDraft
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useWallet } from '../../../contexts/WalletContext';
 import { 
@@ -17,13 +17,6 @@ interface UseEditorStateProps {
   onWorkflowChange?: (step: EditorStep, state: EditorWorkflowState) => void;
 }
 
-/**
- * FIXED: Centralized state management for the editor with improved synchronization
- * Key fixes:
- * 1. Simplified and more reliable auto-save
- * 2. Automatic save before step transitions
- * 3. Better state tracking and error handling
- */
 export const useEditorState = ({
   initialDraftId,
   onDraftSaved,
@@ -57,77 +50,86 @@ export const useEditorState = ({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
-  // FIXED: Simplified auto-save tracking
+  // Auto-save tracking
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
   const isInitializedRef = useRef(false);
   const lastSaveContentHash = useRef<string>('');
 
-  // Load initial draft if provided
+  // Initialize with account
   useEffect(() => {
-    if (initialDraftId && account && !isInitializedRef.current) {
-      const draft = enhancedDraftStorage.loadDraft(initialDraftId);
-      if (draft && draft.authorAddress.toLowerCase() === account.toLowerCase()) {
-        loadDraftIntoForm(draft);
-      }
-      isInitializedRef.current = true;
-    }
-  }, [initialDraftId, account]);
-
-  // Update author address when wallet changes
-  useEffect(() => {
-    if (account) {
+    if (account && formData.authorAddress !== account) {
       setFormData(prev => ({ ...prev, authorAddress: account }));
     }
   }, [account]);
 
-  // FIXED: Simplified auto-save mechanism - more reliable and predictable
+  // Load initial draft if provided
   useEffect(() => {
-    if (!isInitializedRef.current || !isConnected || !account) return;
+    if (initialDraftId && !isInitializedRef.current) {
+      const draft = enhancedDraftStorage.loadDraft(initialDraftId);
+      if (draft) {
+        loadDraftIntoForm(draft);
+      }
+      isInitializedRef.current = true;
+    }
+  }, [initialDraftId]);
 
-    // Create a simple hash of the important content
+  // FIXED: More aggressive change detection for hasUnsavedChanges
+  useEffect(() => {
+    if (!isInitializedRef.current) {
+      // Don't trigger on initial render
+      return;
+    }
+
+    // Create hash of meaningful content
     const contentHash = JSON.stringify({
       title: formData.title.trim(),
       content: formData.content.trim(),
       category: formData.category.trim(),
       tags: formData.tags,
       description: formData.description?.trim(),
-      banner: formData.banner
+      banner: formData.banner,
+      contentReference: formData.contentReference
     });
 
-    // Check if content has actually changed
+    // Check if content has actually changed from last save
     const hasChanged = contentHash !== lastSaveContentHash.current;
     
     if (hasChanged) {
+      console.log('Content changed detected:', {
+        title: formData.title.trim(),
+        contentLength: formData.content.trim().length,
+        category: formData.category.trim(),
+        hasContentReference: Boolean(formData.contentReference),
+        hasChanged
+      });
       setHasUnsavedChanges(true);
-      
-      // Only auto-save if we have minimum required content
-      if (formData.title.trim() && formData.content.trim()) {
-        // Clear existing timer
-        if (autoSaveTimer.current) {
-          clearTimeout(autoSaveTimer.current);
-        }
-        
-        // Set new timer - simpler logic, just wait and save
-        autoSaveTimer.current = setTimeout(async () => {
-          try {
-            await handleAutoSave();
-            lastSaveContentHash.current = contentHash;
-          } catch (error) {
-            console.warn('Auto-save failed:', error);
-            // Don't throw - auto-save failures shouldn't break the app
-          }
-        }, 2000); // Reduced to 2 seconds for better UX
-      }
     }
+  }, [formData.title, formData.content, formData.category, formData.tags, formData.description, formData.banner, formData.contentReference]);
+
+  // Auto-save effect
+  useEffect(() => {
+    if (!hasUnsavedChanges || !isConnected || !account || !formData.title.trim()) {
+      return;
+    }
+
+    // Clear existing timer
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+    }
+
+    // Set new auto-save timer (30 seconds)
+    autoSaveTimer.current = setTimeout(() => {
+      handleAutoSave();
+    }, 30000);
 
     return () => {
       if (autoSaveTimer.current) {
         clearTimeout(autoSaveTimer.current);
       }
     };
-  }, [formData, isConnected, account]);
+  }, [hasUnsavedChanges, formData, isConnected, account]);
 
-  // FIXED: Form field update functions with immediate state sync
+  // Field update methods
   const updateTitle = useCallback((title: string) => {
     setFormData(prev => ({ ...prev, title, lastModified: Date.now() }));
     clearFieldError('title');
@@ -176,19 +178,7 @@ export const useEditorState = ({
     }));
   }, []);
 
-  // FIXED: Create a validation function that only checks validity without setting state
-  const checkFormValidity = useCallback((step: EditorStep = 'draft'): boolean => {
-    if (!formData.title.trim()) return false;
-    if (!formData.content.trim()) return false;
-    if (!formData.category.trim()) return false;
-    
-    // Additional validation for governance step
-    if (step === 'governance' && !formData.description?.trim()) return false;
-    
-    return true;
-  }, [formData]);
-
-  // FIXED: Memoized validation result to prevent unnecessary recalculation
+  // FIXED: Real-time form validation that doesn't cause re-renders
   const formValidation = useMemo(() => {
     const errors: EditorFormErrors = {};
     
@@ -204,19 +194,55 @@ export const useEditorState = ({
       errors.category = 'Category is required';
     }
     
+    const isValid = Object.keys(errors).length === 0;
+    
+    // FIXED: Call workflow change notification when validity changes
+    const isValidForStep = (step: EditorStep): boolean => {
+      if (!formData.title.trim() || !formData.content.trim() || !formData.category.trim()) {
+        return false;
+      }
+      if (step === 'governance' && !formData.description?.trim()) {
+        return false;
+      }
+      return true;
+    };
+
+    // FIXED: Notify workflow of draft step completion status
+    if (onWorkflowChange) {
+      const isDraftComplete = isValidForStep('draft');
+      // Use a timeout to prevent setState during render
+      setTimeout(() => {
+        onWorkflowChange('draft', {
+          currentStep: 'draft',
+          stepStatus: {
+            draft: isDraftComplete,
+            swarm: Boolean(formData.contentReference),
+            governance: false
+          },
+          canProgress: isDraftComplete,
+          isLoading: false,
+          error: null
+        });
+      }, 0);
+    }
+    
     return {
       errors: errors as EditorFormErrors,
-      isValid: Object.keys(errors).length === 0,
-      isValidForStep: (step: EditorStep): boolean => {
-        if (!formData.title.trim() || !formData.content.trim() || !formData.category.trim()) {
-          return false;
-        }
-        if (step === 'governance' && !formData.description?.trim()) {
-          return false;
-        }
-        return true;
-      }
+      isValid,
+      isValidForStep
     };
+  }, [formData.title, formData.content, formData.category, formData.description, formData.contentReference, onWorkflowChange]);
+
+  // Check form validity without setting state
+  const checkFormValidity = useCallback((step: EditorStep = 'draft'): boolean => {
+    if (!formData.title.trim()) return false;
+    if (!formData.content.trim()) return false;
+    if (!formData.category.trim()) return false;
+    
+    // Additional validation for governance step
+    if (step === 'governance' && !formData.description?.trim()) return false;
+    
+    return true;
   }, [formData]);
 
   // Validate and set form errors (for explicit validation like form submission)
@@ -252,36 +278,51 @@ export const useEditorState = ({
     });
   }, []);
 
-  // FIXED: Enhanced saveDraft with better state management
-  const saveDraft = useCallback(async (action?: string): Promise<EnhancedBlogDraft | null> => {
+  // CRITICAL FIX: Enhanced saveDraft with optional data override
+  const saveDraft = useCallback(async (
+    action?: string,
+    dataOverride?: Partial<UnifiedBlogData>
+  ): Promise<EnhancedBlogDraft | null> => {
     if (!isConnected || !account) {
       throw new Error('Please connect your wallet to save drafts');
     }
     
-    if (!formData.title.trim()) {
+    // Use override data if provided, otherwise use current formData
+    const dataToSave = dataOverride ? { ...formData, ...dataOverride } : formData;
+    
+    if (!dataToSave.title.trim()) {
       throw new Error('Please enter a title for your blog');
     }
 
     try {
-      // Always use current formData - this is the critical fix!
+      setIsAutoSaving(true);
+      
+      // Build the draft to save with proper stepProgress
       const draftToSave = {
-        ...formData,
+        ...dataToSave,
         id: currentDraft?.id, // Preserve existing ID if available
-        stepProgress: currentDraft?.stepProgress || {
-          draft: true,
-          swarm: Boolean(formData.contentReference),
-          governance: false
+        stepProgress: dataToSave.stepProgress || {
+          draft: checkFormValidity('draft'),
+          swarm: Boolean(dataToSave.contentReference),
+          governance: Boolean(currentDraft?.isPublished)
         }
       };
       
-      console.log('Saving draft with current form data:', {
+      console.log('Saving draft with data:', {
         title: draftToSave.title.substring(0, 50) + '...',
         contentLength: draftToSave.content.length,
         category: draftToSave.category,
-        hasDescription: Boolean(draftToSave.description?.trim())
+        hasDescription: Boolean(draftToSave.description?.trim()),
+        hasContentReference: Boolean(draftToSave.contentReference),
+        stepProgress: draftToSave.stepProgress
       });
       
       const savedDraft = enhancedDraftStorage.saveDraft(draftToSave, action || 'Manual save');
+      
+      // Update our state to match what was saved
+      if (dataOverride) {
+        setFormData(dataToSave);
+      }
       
       setCurrentDraft(savedDraft);
       setHasUnsavedChanges(false);
@@ -289,12 +330,13 @@ export const useEditorState = ({
       
       // Update the hash to match what we just saved
       lastSaveContentHash.current = JSON.stringify({
-        title: formData.title.trim(),
-        content: formData.content.trim(),
-        category: formData.category.trim(),
-        tags: formData.tags,
-        description: formData.description?.trim(),
-        banner: formData.banner
+        title: dataToSave.title.trim(),
+        content: dataToSave.content.trim(),
+        category: dataToSave.category.trim(),
+        tags: dataToSave.tags,
+        description: dataToSave.description?.trim(),
+        banner: dataToSave.banner,
+        contentReference: dataToSave.contentReference
       });
       
       if (onDraftSaved) {
@@ -305,37 +347,69 @@ export const useEditorState = ({
     } catch (error) {
       console.error('Failed to save draft:', error);
       throw error;
+    } finally {
+      setIsAutoSaving(false);
     }
-  }, [formData, currentDraft, isConnected, account, onDraftSaved]);
+  }, [formData, currentDraft, isConnected, account, onDraftSaved, checkFormValidity]);
 
-  // FIXED: Simplified auto-save handler
+  // Auto-save handler
   const handleAutoSave = useCallback(async () => {
     if (!isConnected || !account || !formData.title.trim()) return;
     
-    setIsAutoSaving(true);
     try {
       await saveDraft('Auto-save');
     } catch (error) {
       console.error('Auto-save failed:', error);
       // Don't throw on auto-save failure
-    } finally {
-      setIsAutoSaving(false);
     }
   }, [saveDraft, isConnected, account, formData.title]);
 
-  // FIXED: New function to ensure save before step transition
+  // FIXED: Enhanced ensure save for transition with validation
   const ensureSavedForTransition = useCallback(async (targetStep: EditorStep): Promise<boolean> => {
+    console.log('ensureSavedForTransition called:', {
+      targetStep,
+      hasUnsavedChanges,
+      formValid: checkFormValidity(targetStep),
+      title: formData.title.trim(),
+      isConnected,
+      account: Boolean(account)
+    });
+
     try {
-      if (hasUnsavedChanges && formData.title.trim() && isConnected && account) {
+      // FIXED: Always save if we have valid content, regardless of unsaved changes flag
+      if (formData.title.trim() && checkFormValidity(targetStep) && isConnected && account) {
         console.log(`Saving before transition to ${targetStep}`);
-        await saveDraft(`Pre-${targetStep} save`);
+        const savedDraft = await saveDraft(`Pre-${targetStep} save`);
+        
+        // FIXED: Verify the save was successful
+        if (!savedDraft) {
+          console.error('Save failed - no draft returned');
+          return false;
+        }
+        
+        console.log('Save successful for transition:', savedDraft.id);
+        return true;
       }
-      return true;
+      
+      // If we don't need to save, but form is valid, that's still success
+      if (checkFormValidity(targetStep)) {
+        console.log('Form valid, no save needed');
+        return true;
+      }
+      
+      console.log('Form not valid for transition:', {
+        hasTitle: Boolean(formData.title.trim()),
+        hasContent: Boolean(formData.content.trim()),
+        hasCategory: Boolean(formData.category.trim()),
+        needsDescription: targetStep === 'governance' && !formData.description?.trim()
+      });
+      return false;
+      
     } catch (error) {
       console.error('Failed to save before step transition:', error);
       return false;
     }
-  }, [hasUnsavedChanges, formData.title, isConnected, account, saveDraft]);
+  }, [hasUnsavedChanges, formData, isConnected, account, saveDraft, checkFormValidity]);
 
   const loadDraftIntoForm = useCallback((draft: EnhancedBlogDraft) => {
     console.log('Loading draft into form:', draft.title, 'Content length:', draft.content.length);
@@ -368,7 +442,8 @@ export const useEditorState = ({
       category: draft.category.trim(),
       tags: draft.tags,
       description: draft.description?.trim(),
-      banner: draft.banner
+      banner: draft.banner,
+      contentReference: draft.contentReference
     });
   }, []);
 
@@ -432,7 +507,7 @@ export const useEditorState = ({
     saveDraft,
     loadDraftIntoForm,
     createNewDraft,
-    ensureSavedForTransition, // NEW: Ensure save before step transition
+    ensureSavedForTransition,
     
     // UI state
     isAutoSaving,

@@ -1,12 +1,37 @@
-// src/pages/editor/components/steps/DraftStep.tsx
-import React, { useRef, useCallback } from 'react';
+// src/pages/editor/components/steps/DraftStep.tsx - FULLY DECOUPLED VERSION
+// Complete separation of text input and tag processing
+import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { useWallet } from '../../../../contexts/WalletContext';
-import { assetService } from '../../../../swarm/services';
+import { services } from '../../../../swarm/services';
 import { SimpleMarkdownEditor } from '../SimpleMarkdownEditor';
+import { EditorStep, UnifiedBlogData } from '../../../../types/editorTypes';
+
+interface EditorState {
+  formData: UnifiedBlogData;
+  formErrors: {
+    title?: string;
+    content?: string;
+    category?: string;
+    tags?: string;
+    description?: string;
+  };
+  isAutoSaving: boolean;
+  updateTitle: (title: string) => void;
+  updateContent: (content: string) => void;
+  updateCategory: (category: string) => void;
+  updateTags: (tags: string[]) => void;
+  updateBanner: (banner: string | null) => void;
+  saveDraft: (action?: string) => Promise<any>;
+}
+
+interface WorkflowState {
+  updateStepStatus: (step: "draft" | "swarm" | "governance", completed: boolean) => void;
+  goToStep: (targetStep: EditorStep, force?: boolean) => Promise<boolean>;
+}
 
 interface DraftStepProps {
-  editorState: any; // Type from useEditorState
-  workflowState: any; // Type from useEditorWorkflow
+  editorState: EditorState;
+  workflowState: WorkflowState;
   onShowAssetBrowser: () => void;
 }
 
@@ -17,9 +42,40 @@ export const DraftStep: React.FC<DraftStepProps> = ({
 }) => {
   const { account, isConnected } = useWallet();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadError, setUploadError] = React.useState<string | null>(null);
-  const [uploadSuccess, setUploadSuccess] = React.useState<string | null>(null);
-  const [isUploading, setIsUploading] = React.useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // COMPLETELY SEPARATE tags text input - never syncs automatically
+  const [rawTagsInput, setRawTagsInput] = useState('');
+  const [isTagsInputFocused, setIsTagsInputFocused] = useState(false);
+
+  // Only initialize rawTagsInput once when component mounts, never sync again
+  useEffect(() => {
+    if (editorState.formData.tags.length > 0 && !rawTagsInput) {
+      setRawTagsInput(editorState.formData.tags.join(', '));
+    }
+  }, []); // Empty dependency array - only run once
+
+  // Process tags from raw input (only called when explicitly needed)
+  const processTagsFromInput = useCallback(() => {
+    const tags = rawTagsInput
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0);
+    
+    editorState.updateTags(tags);
+    return tags;
+  }, [rawTagsInput, editorState]);
+
+  // Preview what tags will be created (for UI feedback)
+  const previewTags = useCallback(() => {
+    if (!rawTagsInput.trim()) return [];
+    return rawTagsInput
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0);
+  }, [rawTagsInput]);
 
   // Quick image upload handler
   const handleQuickImageUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -45,8 +101,8 @@ export const DraftStep: React.FC<DraftStepProps> = ({
     setUploadError(null);
     
     try {
-      const asset = await assetService.uploadAsset(file, account);
-      const imageMarkdown = assetService.generateAssetMarkdown(asset, undefined, false);
+      const asset = await services.assets.uploadAsset(file, account);
+      const imageMarkdown = services.assets.generateAssetMarkdown(asset, undefined, false);
       
       // Insert image markdown into content
       const currentContent = editorState.formData.content;
@@ -76,12 +132,27 @@ export const DraftStep: React.FC<DraftStepProps> = ({
 
   const handleSaveDraft = async () => {
     try {
+      // Process tags before saving if they've been modified
+      if (rawTagsInput !== editorState.formData.tags.join(', ')) {
+        processTagsFromInput();
+      }
+      
       await editorState.saveDraft('Manual save');
       workflowState.updateStepStatus('draft', true);
     } catch (error) {
       console.error('Failed to save draft:', error);
     }
   };
+
+  const handleContinueToReview = useCallback(async () => {
+    // Process tags before moving to review
+    processTagsFromInput();
+    
+    // Small delay to ensure tags are processed
+    setTimeout(() => {
+      workflowState.goToStep('review');
+    }, 50);
+  }, [processTagsFromInput, workflowState]);
 
   const canContinue = editorState.formData.title.trim() && 
                      editorState.formData.content.trim() && 
@@ -130,15 +201,52 @@ export const DraftStep: React.FC<DraftStepProps> = ({
           </div>
 
           <div className="metadata-row">
+            {/* COMPLETELY DECOUPLED TAGS INPUT */}
             <div className="field">
               <label htmlFor="tags">Tags</label>
               <input
                 id="tags"
                 type="text"
-                value={editorState.formData.tags.join(', ')}
-                onChange={(e) => editorState.updateTags(e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
+                value={rawTagsInput}
+                onChange={(e) => setRawTagsInput(e.target.value)}
+                onFocus={() => setIsTagsInputFocused(true)}
+                onBlur={() => setIsTagsInputFocused(false)}
                 placeholder="tag1, tag2, tag3"
+                className={editorState.formErrors.tags ? 'error' : ''}
               />
+              {editorState.formErrors.tags && (
+                <span className="field-error">{editorState.formErrors.tags}</span>
+              )}
+              
+              {/* Show live preview of tags while typing */}
+              <div className="tags-preview">
+                {isTagsInputFocused && rawTagsInput.trim() && (
+                  <div className="preview-tags">
+                    <span className="preview-label">Preview: </span>
+                    {previewTags().map((tag, index) => (
+                      <span key={index} className="preview-tag">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Show current processed tags */}
+                {!isTagsInputFocused && editorState.formData.tags.length > 0 && (
+                  <div className="current-tags">
+                    <span className="current-label">Current: </span>
+                    {editorState.formData.tags.map((tag, index) => (
+                      <span key={index} className="current-tag">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <span className="field-hint">
+                Type tags separated by commas. Tags will be processed when you save or continue to review.
+              </span>
             </div>
 
             <div className="field">
@@ -150,6 +258,9 @@ export const DraftStep: React.FC<DraftStepProps> = ({
                 onChange={(e) => editorState.updateBanner(e.target.value || null)}
                 placeholder="https://example.com/banner.jpg"
               />
+              <span className="field-hint">
+                Optional image URL to display as a banner for your post.
+              </span>
             </div>
           </div>
         </div>
@@ -217,13 +328,53 @@ export const DraftStep: React.FC<DraftStepProps> = ({
         <div className="action-group">
           <button
             className="continue-btn"
-            onClick={() => workflowState.goToStep('review')}
+            onClick={handleContinueToReview}
             disabled={!canContinue}
+            title={!canContinue ? 'Please fill in Title, Category, and Content to continue' : 'Continue to review your post'}
           >
             Continue to Review →
           </button>
         </div>
       </div>
+
+      {/* Form validation feedback */}
+      {!canContinue && (
+        <div className="validation-info">
+          <h4>Required fields:</h4>
+          <ul>
+            {!editorState.formData.title.trim() && <li>Title is required</li>}
+            {!editorState.formData.content.trim() && <li>Content is required</li>}
+            {!editorState.formData.category.trim() && <li>Category is required</li>}
+          </ul>
+        </div>
+      )}
+
+      {/* Development debug info */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="dev-debug-tags">
+          <details>
+            <summary>🔧 Debug: Fully Decoupled Tags</summary>
+            <div className="debug-content">
+              <h5>Tag States:</h5>
+              <pre>{JSON.stringify({
+                rawInput: rawTagsInput,
+                savedTags: editorState.formData.tags,
+                previewTags: previewTags(),
+                inputFocused: isTagsInputFocused,
+                inputChanged: rawTagsInput !== editorState.formData.tags.join(', ')
+              }, null, 2)}</pre>
+              <h5>Processing Info:</h5>
+              <ul>
+                <li><strong>Raw Input:</strong> "{rawTagsInput}"</li>
+                <li><strong>Saved Tags:</strong> {JSON.stringify(editorState.formData.tags)}</li>
+                <li><strong>Will Create:</strong> {JSON.stringify(previewTags())}</li>
+                <li><strong>Processing Triggers:</strong> Save Draft, Continue to Review</li>
+                <li><strong>NO auto-sync:</strong> Input is completely independent</li>
+              </ul>
+            </div>
+          </details>
+        </div>
+      )}
     </div>
   );
 };

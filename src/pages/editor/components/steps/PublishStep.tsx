@@ -1,4 +1,5 @@
-// src/pages/editor/components/steps/PublishStep.tsx - FIXED VERSION
+// src/pages/editor/components/steps/PublishStep.tsx - COMPLETE FIXED VERSION
+// Fixed synchronization between draft updates and workflow state
 import React, { useState, useEffect } from 'react';
 import { services } from '../../../../swarm/services';
 import { UnifiedBlogData } from '../../../../types/editorTypes';
@@ -37,22 +38,14 @@ export const PublishStep: React.FC<PublishStepProps> = ({
     loadServiceStatus();
   }, []);
 
-  // FIXED: Check pipeline availability safely
+  // Check pipeline availability safely
   useEffect(() => {
     const checkPipelineStatus = () => {
       try {
-        // Use new safe method to check pipeline availability
         const hasPipeline = services.hasPipeline;
         const pipelineResult = services.tryGetPipeline();
         
         setPipelineStatus({
-          available: hasPipeline && pipelineResult.pipeline !== null,
-          error: pipelineResult.error
-        });
-        
-        console.log('Pipeline status:', {
-          hasBlockchainServices: services.hasBlockchainServices,
-          hasPipeline: hasPipeline,
           available: hasPipeline && pipelineResult.pipeline !== null,
           error: pipelineResult.error
         });
@@ -69,7 +62,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
   }, []);
 
   /**
-   * Handle publishing using ContentPipeline
+   * FIXED: Enhanced publishing with proper state synchronization
    */
   const handlePublishToSwarm = async () => {
     setIsPublishing(true);
@@ -119,7 +112,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
           tags: currentFormData.tags || [],
           createdAt: currentFormData.createdAt || Date.now(),
           banner: currentFormData.banner || null,
-          description: currentFormData.description || undefined
+          description: currentFormData.description || ''
         }
       };
 
@@ -130,43 +123,90 @@ export const PublishStep: React.FC<PublishStepProps> = ({
       
       console.log('Content published successfully:', contentReference);
       
-      // Update form data with content reference
-      editorState.updateContentReference(contentReference);
+      // CRITICAL FIX: Create the complete updated form data BEFORE any state updates
+      const updatedFormData = {
+        ...currentFormData,
+        contentReference,
+        stepProgress: {
+          draft: true,
+          swarm: true,  // Mark swarm as complete
+          governance: false
+        },
+        lastModified: Date.now()
+      };
       
-      // FIXED: Safe pipeline usage - only try if available
+      // CRITICAL FIX: Update the form data with ALL changes at once
+      editorState.updateFormData(updatedFormData);
+      
+      // Pipeline preparation if available (use updated data)
       if (pipelineStatus.available) {
         try {
           const pipelineResult = services.tryGetPipeline();
           if (pipelineResult.pipeline) {
             console.log('Preparing content for NFT/Proposal with pipeline...');
-            const prepared = await pipelineResult.pipeline.prepareForPublication(currentFormData);
+            // Pass the UPDATED form data with contentReference
+            const prepared = await pipelineResult.pipeline.prepareForPublication(updatedFormData);
             setPreparedContent(prepared);
             console.log('Content prepared for NFT/Proposal:', prepared);
-          } else {
-            console.log('Pipeline not available:', pipelineResult.error);
           }
         } catch (pipelineError) {
           console.warn('Pipeline preparation failed:', pipelineError);
-          // This is non-critical, continue without it
         }
+      }
+      
+      // CRITICAL FIX: Save the draft with the complete updated data
+      // Pass the updated data directly to ensure it's saved correctly
+      const savedDraft = await editorState.saveDraft('Published to Swarm', updatedFormData);
+      
+      if (!savedDraft) {
+        throw new Error('Failed to save draft after publishing');
+      }
+      
+      // Verify the saved draft has the contentReference
+      if (!savedDraft.contentReference) {
+        console.error('Critical: Draft saved without contentReference, attempting recovery...');
+        
+        // Recovery attempt: Force save with explicit data
+        const recoveryData = {
+          ...updatedFormData,
+          id: savedDraft.id,
+          contentReference,
+          stepProgress: {
+            draft: true,
+            swarm: true,
+            governance: false
+          }
+        };
+        
+        // Direct call to draft storage to ensure save
+        const { enhancedDraftStorage } = await import('../../../../utils/draftStorage');
+        const recoveredDraft = enhancedDraftStorage.saveDraft(recoveryData, 'Recovery save with content reference');
+        
+        if (!recoveredDraft.contentReference) {
+          throw new Error('Failed to save content reference even after recovery attempt');
+        }
+        
+        console.log('Recovery successful, content reference saved:', recoveredDraft.contentReference);
       } else {
-        console.log('Pipeline not available - blockchain services not initialized');
+        console.log('Draft saved with content reference:', savedDraft.contentReference);
       }
       
-      // Save to draft storage
-      if (editorState.saveDraft) {
-        await editorState.saveDraft('Published to Swarm');
-      }
-      
-      // Update workflow status
+      // CRITICAL FIX: Update workflow status AFTER confirming save
       workflowState.updateStepStatus('swarm', true);
+      
+      // Force refresh the workflow from the saved draft
+      if (workflowState.refreshFromDraft) {
+        workflowState.refreshFromDraft();
+      }
+      
+      // Also sync with the saved draft if available
+      if (workflowState.syncWithDraft && savedDraft) {
+        workflowState.syncWithDraft(savedDraft);
+      }
       
       console.log('Publish step completed successfully');
       
-      // Auto-advance to governance step
-      setTimeout(() => {
-        workflowState.goToStep('governance');
-      }, 1500);
+      // Don't auto-advance anymore - let user add description first
       
     } catch (error) {
       console.error('Publishing failed:', error);
@@ -186,6 +226,12 @@ export const PublishStep: React.FC<PublishStepProps> = ({
                      editorState.formData.title?.trim() &&
                      editorState.formData.content?.trim() &&
                      editorState.formData.category?.trim();
+  
+  // Simple function to proceed to governance
+  // We'll check for description requirement in the governance step itself
+  const handleContinueToGovernance = () => {
+    workflowState.goToStep('governance');
+  };
 
   return (
     <div className="publish-step">
@@ -250,53 +296,28 @@ export const PublishStep: React.FC<PublishStepProps> = ({
             <p className="reference-notice">
               Your content is now permanently stored on the decentralized web and accessible worldwide.
             </p>
+            
+            {/* Note about description requirement */}
+            <div className="governance-note">
+              <h4>📝 Next Step: Governance Proposal</h4>
+              <p>Click continue to proceed to the governance step where you'll provide a description for your proposal.</p>
+            </div>
           </div>
         ) : (
-          <div className="publish-info">
-            <h3>Ready to Publish</h3>
-            
-            {/* Current content summary */}
-            <div className="current-content-summary">
-              <h4>📄 Content to Publish:</h4>
-              <div className="publish-details">
-                <div className="detail-item">
-                  <strong>Title:</strong> {editorState.formData.title || 'No title'}
-                </div>
-                <div className="detail-item">
-                  <strong>Category:</strong> {editorState.formData.category || 'No category'}
-                </div>
-                <div className="detail-item">
-                  <strong>Tags:</strong> {editorState.formData.tags?.join(', ') || 'None'}
-                </div>
-                <div className="detail-item">
-                  <strong>Content Length:</strong> {editorState.formData.content?.length || 0} characters
-                </div>
-                {editorState.formData.description && (
-                  <div className="detail-item">
-                    <strong>Description:</strong> {editorState.formData.description.substring(0, 100)}...
-                  </div>
-                )}
-                {editorState.formData.usedAssets && editorState.formData.usedAssets.length > 0 && (
-                  <div className="detail-item">
-                    <strong>Assets:</strong> {editorState.formData.usedAssets.length} image(s)
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Service Status Information */}
-            <div className="service-status-info">
-              <h4>🔧 Service Status</h4>
+          <div className="publish-form">
+            {/* Service status display */}
+            <div className="service-status">
+              <h4>Service Status</h4>
               {serviceStatus ? (
                 <div className="status-grid">
                   <div className="status-item">
-                    <span className="status-label">Local Bee Node:</span>
-                    <span className={`status-value ${serviceStatus.nodeRunning ? 'online' : 'offline'}`}>
-                      {serviceStatus.nodeRunning ? '🟢 Online' : '🔴 Offline'}
+                    <span className="status-label">Bee Node:</span>
+                    <span className={`status-value ${serviceStatus.nodeRunning ? 'available' : 'unavailable'}`}>
+                      {serviceStatus.nodeRunning ? '🟢 Running' : '🔴 Offline'}
                     </span>
                   </div>
                   <div className="status-item">
-                    <span className="status-label">Postage Stamp:</span>
+                    <span className="status-label">Postage Batch:</span>
                     <span className={`status-value ${serviceStatus.hasStamp ? 'available' : 'unavailable'}`}>
                       {serviceStatus.hasStamp ? '🟢 Available' : '🔴 Not Available'}
                     </span>
@@ -401,7 +422,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
           ) : (
             <button
               className="continue-btn"
-              onClick={() => workflowState.goToStep('governance')}
+              onClick={handleContinueToGovernance}
               disabled={isPublishing}
             >
               Continue to Governance →
