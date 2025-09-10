@@ -1,5 +1,5 @@
-// src/pages/editor/components/steps/DraftStep.tsx - FULLY DECOUPLED VERSION
-// Complete separation of text input and tag processing
+// src/pages/editor/components/steps/DraftStep.tsx - MINIMAL COMPATIBILITY UPDATE
+// Preserves all existing functionality, only adds single source of truth compatibility
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { useWallet } from '../../../../contexts/WalletContext';
 import { services } from '../../../../swarm/services';
@@ -26,6 +26,7 @@ interface EditorState {
 
 interface WorkflowState {
   updateStepStatus: (step: "draft" | "swarm" | "governance", completed: boolean) => void;
+  updateDraftStepProgress?: (updates: Partial<{ draft: boolean; swarm: boolean; governance: boolean }>) => Promise<any>;
   goToStep: (targetStep: EditorStep, force?: boolean) => Promise<boolean>;
 }
 
@@ -56,6 +57,28 @@ export const DraftStep: React.FC<DraftStepProps> = ({
       setRawTagsInput(editorState.formData.tags.join(', '));
     }
   }, []); // Empty dependency array - only run once
+
+  // MINIMAL COMPATIBILITY ADDITION: Update step status when draft requirements are met
+  useEffect(() => {
+    const isDraftComplete = Boolean(
+      editorState.formData.title?.trim() &&
+      editorState.formData.content?.trim() &&
+      editorState.formData.category?.trim()
+    );
+
+    // Use the new single-source-of-truth update method if available
+    if (workflowState.updateDraftStepProgress) {
+      workflowState.updateDraftStepProgress({ draft: isDraftComplete });
+    } else if (workflowState.updateStepStatus) {
+      // Fallback to existing method
+      workflowState.updateStepStatus('draft', isDraftComplete);
+    }
+  }, [
+    editorState.formData.title,
+    editorState.formData.content,
+    editorState.formData.category,
+    workflowState
+  ]);
 
   // Process tags from raw input (only called when explicitly needed)
   const processTagsFromInput = useCallback(() => {
@@ -138,7 +161,13 @@ export const DraftStep: React.FC<DraftStepProps> = ({
       }
       
       await editorState.saveDraft('Manual save');
-      workflowState.updateStepStatus('draft', true);
+      
+      // MINIMAL COMPATIBILITY ADDITION: Use new method if available
+      if (workflowState.updateDraftStepProgress) {
+        workflowState.updateDraftStepProgress({ draft: true });
+      } else {
+        workflowState.updateStepStatus('draft', true);
+      }
     } catch (error) {
       console.error('Failed to save draft:', error);
     }
@@ -308,7 +337,9 @@ export const DraftStep: React.FC<DraftStepProps> = ({
             value={editorState.formData.content}
             onChange={editorState.updateContent}
             height="calc(100vh - 400px)"
-            placeholder="# Your Blog Title\n\nStart writing your blog post here..."
+            placeholder="# Your Blog Title
+
+Start writing your blog post here..."
           />
         </div>
       </div>

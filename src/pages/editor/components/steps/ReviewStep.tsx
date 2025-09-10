@@ -1,5 +1,6 @@
-// src/pages/editor/components/steps/ReviewStep.tsx - FIXED VERSION
-import React, { useState, useCallback } from 'react';
+// src/pages/editor/components/steps/ReviewStep.tsx - MINIMAL COMPATIBILITY UPDATE
+// Preserves all existing functionality, only adds single source of truth compatibility
+import React, { useState, useCallback, useEffect } from 'react';
 import { marked } from 'marked';
 import { SimpleMarkdownEditor } from '../SimpleMarkdownEditor';
 
@@ -13,6 +14,30 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   workflowState
 }) => {
   const [showPreview, setShowPreview] = useState(true);
+
+  // MINIMAL COMPATIBILITY ADDITION: Ensure draft status is marked complete when entering review
+  useEffect(() => {
+    const isDraftComplete = Boolean(
+      editorState.formData.title?.trim() &&
+      editorState.formData.content?.trim() &&
+      editorState.formData.category?.trim()
+    );
+
+    if (isDraftComplete) {
+      // Use the new single-source-of-truth update method if available
+      if (workflowState.updateDraftStepProgress) {
+        workflowState.updateDraftStepProgress({ draft: true });
+      } else if (workflowState.updateStepStatus) {
+        // Fallback to existing method
+        workflowState.updateStepStatus('draft', true);
+      }
+    }
+  }, [
+    editorState.formData.title,
+    editorState.formData.content,
+    editorState.formData.category,
+    workflowState
+  ]);
 
   const renderMarkdown = (content: string): string => {
     try {

@@ -1,5 +1,5 @@
-// src/pages/editor/hooks/useEditorState.tsx - FIXED VERSION
-// Fixed to support passing complete data to saveDraft
+// src/pages/editor/hooks/useEditorState.tsx - WORKFLOW INTERFERENCE FIX
+// Fixed to prevent form validation from overriding workflow state
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useWallet } from '../../../contexts/WalletContext';
 import { 
@@ -55,6 +55,9 @@ export const useEditorState = ({
   const isInitializedRef = useRef(false);
   const lastSaveContentHash = useRef<string>('');
 
+  // CRITICAL FIX: Track when we're loading a draft to prevent workflow interference
+  const isLoadingDraftRef = useRef(false);
+
   // Initialize with account
   useEffect(() => {
     if (account && formData.authorAddress !== account) {
@@ -75,8 +78,8 @@ export const useEditorState = ({
 
   // FIXED: More aggressive change detection for hasUnsavedChanges
   useEffect(() => {
-    if (!isInitializedRef.current) {
-      // Don't trigger on initial render
+    if (!isInitializedRef.current || isLoadingDraftRef.current) {
+      // Don't trigger on initial render or when loading a draft
       return;
     }
 
@@ -178,7 +181,8 @@ export const useEditorState = ({
     }));
   }, []);
 
-  // FIXED: Real-time form validation that doesn't cause re-renders
+  // CRITICAL FIX: Removed workflow interference from formValidation
+  // This was causing governance state to be reset when form data changed
   const formValidation = useMemo(() => {
     const errors: EditorFormErrors = {};
     
@@ -196,7 +200,7 @@ export const useEditorState = ({
     
     const isValid = Object.keys(errors).length === 0;
     
-    // FIXED: Call workflow change notification when validity changes
+    // Helper function for step validation
     const isValidForStep = (step: EditorStep): boolean => {
       if (!formData.title.trim() || !formData.content.trim() || !formData.category.trim()) {
         return false;
@@ -207,31 +211,15 @@ export const useEditorState = ({
       return true;
     };
 
-    // FIXED: Notify workflow of draft step completion status
-    if (onWorkflowChange) {
-      const isDraftComplete = isValidForStep('draft');
-      // Use a timeout to prevent setState during render
-      setTimeout(() => {
-        onWorkflowChange('draft', {
-          currentStep: 'draft',
-          stepStatus: {
-            draft: isDraftComplete,
-            swarm: Boolean(formData.contentReference),
-            governance: false
-          },
-          canProgress: isDraftComplete,
-          isLoading: false,
-          error: null
-        });
-      }, 0);
-    }
+    // REMOVED: The onWorkflowChange callback that was interfering with workflow state
+    // This was causing governance: false to override manual updates
     
     return {
       errors: errors as EditorFormErrors,
       isValid,
       isValidForStep
     };
-  }, [formData.title, formData.content, formData.category, formData.description, formData.contentReference, onWorkflowChange]);
+  }, [formData.title, formData.content, formData.category, formData.description]);
 
   // Check form validity without setting state
   const checkFormValidity = useCallback((step: EditorStep = 'draft'): boolean => {
@@ -239,7 +227,15 @@ export const useEditorState = ({
     if (!formData.content.trim()) return false;
     if (!formData.category.trim()) return false;
     
-    // Additional validation for governance step
+    return true;
+  }, [formData]);
+
+  const validateForGovernanceSubmission = useCallback((step: EditorStep = 'draft'): boolean => {
+    if (!formData.title.trim()) return false;
+    if (!formData.content.trim()) return false;
+    if (!formData.category.trim()) return false;
+    
+    // Additional validation for governance step 
     if (step === 'governance' && !formData.description?.trim()) return false;
     
     return true;
@@ -411,8 +407,12 @@ export const useEditorState = ({
     }
   }, [hasUnsavedChanges, formData, isConnected, account, saveDraft, checkFormValidity]);
 
+  // CRITICAL FIX: Enhanced loadDraftIntoForm with workflow protection
   const loadDraftIntoForm = useCallback((draft: EnhancedBlogDraft) => {
     console.log('Loading draft into form:', draft.title, 'Content length:', draft.content.length);
+    
+    // Set the flag to prevent workflow interference
+    isLoadingDraftRef.current = true;
     
     setFormData({
       title: draft.title,
@@ -445,6 +445,13 @@ export const useEditorState = ({
       banner: draft.banner,
       contentReference: draft.contentReference
     });
+    
+    // Clear the flag after a brief delay to allow React state updates to complete
+    setTimeout(() => {
+      isLoadingDraftRef.current = false;
+      console.log('Draft loading completed, workflow interference protection disabled');
+    }, 100);
+    
   }, []);
 
   const createNewDraft = useCallback(() => {
@@ -501,6 +508,7 @@ export const useEditorState = ({
     formValidation,
     checkFormValidity,
     validateForm,
+    validateForGovernanceSubmission,
     clearFieldError,
     
     // Draft operations

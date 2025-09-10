@@ -1,5 +1,5 @@
-// src/pages/editor/components/steps/PublishStep.tsx - COMPLETE FIXED VERSION
-// Fixed synchronization between draft updates and workflow state
+// src/pages/editor/components/steps/PublishStep.tsx - MINIMAL COMPATIBILITY UPDATE
+// Preserves all existing functionality, only adds single source of truth compatibility
 import React, { useState, useEffect } from 'react';
 import { services } from '../../../../swarm/services';
 import { UnifiedBlogData } from '../../../../types/editorTypes';
@@ -61,8 +61,32 @@ export const PublishStep: React.FC<PublishStepProps> = ({
     checkPipelineStatus();
   }, []);
 
+  // MINIMAL COMPATIBILITY ADDITION: Ensure previous steps are marked complete when entering publish
+  useEffect(() => {
+    const isDraftComplete = Boolean(
+      editorState.formData.title?.trim() &&
+      editorState.formData.content?.trim() &&
+      editorState.formData.category?.trim()
+    );
+
+    if (isDraftComplete) {
+      // Use the new single-source-of-truth update method if available
+      if (workflowState.updateDraftStepProgress) {
+        workflowState.updateDraftStepProgress({ draft: true });
+      } else if (workflowState.updateStepStatus) {
+        // Fallback to existing method
+        workflowState.updateStepStatus('draft', true);
+      }
+    }
+  }, [
+    editorState.formData.title,
+    editorState.formData.content,
+    editorState.formData.category,
+    workflowState
+  ]);
+
   /**
-   * FIXED: Enhanced publishing with proper state synchronization
+   * Enhanced publishing with proper state synchronization
    */
   const handlePublishToSwarm = async () => {
     setIsPublishing(true);
@@ -123,7 +147,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
       
       console.log('Content published successfully:', contentReference);
       
-      // CRITICAL FIX: Create the complete updated form data BEFORE any state updates
+      // Create the complete updated form data BEFORE any state updates
       const updatedFormData = {
         ...currentFormData,
         contentReference,
@@ -135,7 +159,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
         lastModified: Date.now()
       };
       
-      // CRITICAL FIX: Update the form data with ALL changes at once
+      // Update the form data with ALL changes at once
       editorState.updateFormData(updatedFormData);
       
       // Pipeline preparation if available (use updated data)
@@ -154,7 +178,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
         }
       }
       
-      // CRITICAL FIX: Save the draft with the complete updated data
+      // Save the draft with the complete updated data
       // Pass the updated data directly to ensure it's saved correctly
       const savedDraft = await editorState.saveDraft('Published to Swarm', updatedFormData);
       
@@ -191,10 +215,16 @@ export const PublishStep: React.FC<PublishStepProps> = ({
         console.log('Draft saved with content reference:', savedDraft.contentReference);
       }
       
-      // CRITICAL FIX: Update workflow status AFTER confirming save
-      workflowState.updateStepStatus('swarm', true);
+      // MINIMAL COMPATIBILITY ADDITION: Update workflow status AFTER confirming save
+      if (workflowState.updateDraftStepProgress) {
+        // Use new single-source-of-truth method
+        workflowState.updateDraftStepProgress({ draft: true, swarm: true });
+      } else if (workflowState.updateStepStatus) {
+        // Fallback to existing method
+        workflowState.updateStepStatus('swarm', true);
+      }
       
-      // Force refresh the workflow from the saved draft
+      // Force refresh the workflow from the saved draft if available
       if (workflowState.refreshFromDraft) {
         workflowState.refreshFromDraft();
       }
@@ -205,8 +235,6 @@ export const PublishStep: React.FC<PublishStepProps> = ({
       }
       
       console.log('Publish step completed successfully');
-      
-      // Don't auto-advance anymore - let user add description first
       
     } catch (error) {
       console.error('Publishing failed:', error);

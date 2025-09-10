@@ -1,4 +1,5 @@
-// src/pages/editor/components/steps/GovernanceStep.tsx
+// src/pages/editor/components/steps/GovernanceStep.tsx - SINGLE SOURCE OF TRUTH FIX
+// Updated to use draft.stepProgress as the authoritative source via updateDraftStepProgress
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../../../../contexts/WalletContext';
 import { useProposal } from '../../../../blockchain/hooks/useProposal'; 
@@ -17,7 +18,6 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
 }) => {
   const { isConnected, account } = useWallet();
   
-  // SIMPLIFIED: Use only the existing useProposal hook (now enhanced with centralized services)
   const { 
     createBlogProposal, 
     loading: proposalLoading, 
@@ -38,7 +38,6 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
   useEffect(() => {
     const errors: string[] = [];
 
-    // Basic validation
     if (!isConnected) {
       errors.push('Wallet must be connected to submit governance proposals');
     }
@@ -67,7 +66,6 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
       errors.push('Proposal description is required for governance submissions');
     }
 
-    // Blockchain service validation
     if (!isBlockchainReady) {
       errors.push('Blockchain services are not available - governance proposals require blockchain connectivity');
     }
@@ -100,7 +98,7 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
     workflowState.setLoading(true);
 
     try {
-      // Save the draft with current form data first
+      // STEP 1: Save the draft with current form data first
       console.log('Saving draft with current form data before governance submission...');
       const savedDraft = await editorState.saveDraft('Pre-governance save');
       
@@ -108,11 +106,11 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
         throw new Error('Failed to save draft before governance submission');
       }
 
-      // Create proposal from draft
+      // STEP 2: Create proposal from draft
       const blogProposal: BlogProposal = enhancedDraftStorage.draftToProposal(savedDraft);
       console.log('Submitting governance proposal:', blogProposal.title);
 
-      // Enhanced pipeline usage if available (using centralized services)
+      // STEP 3: Enhanced pipeline usage if available
       try {
         const pipelineResult = services.tryGetPipeline();
         if (pipelineResult.pipeline) {
@@ -124,46 +122,70 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
         console.warn('Pipeline enhancement failed, continuing with standard proposal:', pipelineError);
       }
 
-      // Submit to blockchain using the existing hook
+      // STEP 4: Submit to blockchain
       const result = await createBlogProposal(blogProposal);
 
       if (result.status === 'confirmed') {
         console.log('Governance proposal submitted successfully');
 
-        // Update workflow status
-        workflowState.updateStepStatus('governance', true);
-        
-        // Extract proposal ID from transaction receipt
+        // STEP 5: Extract proposal ID from transaction receipt
         if (result.receipt) {
           setProposalId(result.receipt.hash);
         }
 
-        // Mark draft as published in governance - ensure all steps are marked complete
-        const updatedDraft = enhancedDraftStorage.saveDraft({
-          ...savedDraft,
-          isPublished: true,
-          stepProgress: {
-            draft: true,  // Ensure all previous steps are marked complete
-            swarm: true,  // This should already be true from publish step
+        // STEP 6: CRITICAL FIX - Update step progress via single source of truth
+        console.log('Updating step progress via draft (single source of truth)...');
+        
+        if (workflowState.updateDraftStepProgress) {
+          // Use the new single-source-of-truth method
+          const updatedDraft = await workflowState.updateDraftStepProgress({
+            draft: true,
+            swarm: true,
             governance: true
-          },
-          lastModified: Date.now()
-        }, 'Submitted to governance');
+          });
 
-        // Update workflow status with all steps complete
-        workflowState.updateStepStatus('draft', true);
-        workflowState.updateStepStatus('publish', true);  // Use 'publish' not 'swarm'
-        workflowState.updateStepStatus('governance', true);
+          if (updatedDraft) {
+            console.log('Step progress updated successfully in draft:', {
+              draftId: updatedDraft.id,
+              stepProgress: updatedDraft.stepProgress,
+              isPublished: updatedDraft.isPublished
+            });
 
-        // Force update the current draft in editor state to ensure sync
-        if (editorState.updateCurrentDraft) {
-          editorState.updateCurrentDraft(updatedDraft);
+            // STEP 7: Load the updated draft into form to ensure sync
+            console.log('Loading updated draft into form to ensure sync...');
+            editorState.loadDraftIntoForm(updatedDraft);
+          } else {
+            console.error('Failed to update draft step progress');
+            throw new Error('Failed to update step progress after successful proposal submission');
+          }
+        } else {
+          // Fallback: Update draft storage directly (for backward compatibility)
+          console.log('Using fallback method to update draft...');
+          const updatedDraft = enhancedDraftStorage.saveDraft({
+            ...savedDraft,
+            isPublished: true,
+            stepProgress: {
+              draft: true,
+              swarm: true,
+              governance: true
+            },
+            lastModified: Date.now()
+          }, 'Submitted to governance');
+
+          console.log('Draft updated via fallback method:', {
+            draftId: updatedDraft.id,
+            stepProgress: updatedDraft.stepProgress
+          });
+
+          editorState.loadDraftIntoForm(updatedDraft);
         }
         
-        // Auto-advance to success step
+        // STEP 8: Auto-advance to success step with proper delay
+        console.log('Scheduling transition to success step...');
         setTimeout(() => {
+          console.log('Attempting transition to success step...');
           workflowState.goToStep('success');
-        }, 1500);
+        }, 500); // Reduced delay since we now have proper state management
 
       } else {
         throw new Error(`Proposal submission failed: ${result.status}`);
@@ -231,7 +253,6 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
             </div>
           </div>
           
-          {/* Error display */}
           {blockchainError && (
             <div className="service-error-message">
               <span>⚠️ {blockchainError}</span>
@@ -453,12 +474,16 @@ export const GovernanceStep: React.FC<GovernanceStepProps> = ({
       {process.env.NODE_ENV === 'development' && (
         <div className="dev-info">
           <details>
-            <summary>🔧 Development Info - Streamlined</summary>
+            <summary>🔧 Development Info - Single Source of Truth</summary>
             <div className="dev-content">
               <h5>Service Status (from useProposal):</h5>
               <pre>{JSON.stringify(serviceStatus, null, 2)}</pre>
               <h5>Validation Errors:</h5>
               <pre>{JSON.stringify(validationErrors, null, 2)}</pre>
+              <h5>Current Workflow State (derived from draft):</h5>
+              <pre>{JSON.stringify(workflowState.workflowState.stepStatus, null, 2)}</pre>
+              <h5>Current Draft Step Progress:</h5>
+              <pre>{JSON.stringify(editorState.currentDraft?.stepProgress, null, 2)}</pre>
               <h5>Form Data:</h5>
               <pre>{JSON.stringify({
                 title: editorState.formData.title,
