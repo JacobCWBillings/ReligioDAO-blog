@@ -1,5 +1,5 @@
-// src/pages/editor/components/steps/PublishStep.tsx - MINIMAL COMPATIBILITY UPDATE
-// Preserves all existing functionality, only adds single source of truth compatibility
+// src/pages/editor/components/steps/PublishStep.tsx - REFACTORED VERSION
+// Updated to work with unified state management
 import React, { useState, useEffect } from 'react';
 import { services } from '../../../../swarm/services';
 import { UnifiedBlogData } from '../../../../types/editorTypes';
@@ -61,37 +61,13 @@ export const PublishStep: React.FC<PublishStepProps> = ({
     checkPipelineStatus();
   }, []);
 
-  // MINIMAL COMPATIBILITY ADDITION: Ensure previous steps are marked complete when entering publish
-  useEffect(() => {
-    const isDraftComplete = Boolean(
-      editorState.formData.title?.trim() &&
-      editorState.formData.content?.trim() &&
-      editorState.formData.category?.trim()
-    );
-
-    if (isDraftComplete) {
-      // Use the new single-source-of-truth update method if available
-      if (workflowState.updateDraftStepProgress) {
-        workflowState.updateDraftStepProgress({ draft: true });
-      } else if (workflowState.updateStepStatus) {
-        // Fallback to existing method
-        workflowState.updateStepStatus('draft', true);
-      }
-    }
-  }, [
-    editorState.formData.title,
-    editorState.formData.content,
-    editorState.formData.category,
-    workflowState
-  ]);
-
   /**
-   * Enhanced publishing with proper state synchronization
+   * Enhanced publishing with unified state synchronization
    */
   const handlePublishToSwarm = async () => {
     setIsPublishing(true);
     setPublishError(null);
-    workflowState.setLoading(true);
+    workflowState.setIsLoading(true);
 
     try {
       // Use current form data
@@ -147,20 +123,11 @@ export const PublishStep: React.FC<PublishStepProps> = ({
       
       console.log('Content published successfully:', contentReference);
       
-      // Create the complete updated form data BEFORE any state updates
-      const updatedFormData = {
-        ...currentFormData,
-        contentReference,
-        stepProgress: {
-          draft: true,
-          swarm: true,  // Mark swarm as complete
-          governance: false
-        },
-        lastModified: Date.now()
-      };
+      // Update form data with content reference
+      editorState.updateContentReference(contentReference);
       
-      // Update the form data with ALL changes at once
-      editorState.updateFormData(updatedFormData);
+      // Mark publish step as complete using unified state
+      workflowState.updateStepStatus('publish', true);
       
       // Pipeline preparation if available (use updated data)
       if (pipelineStatus.available) {
@@ -168,7 +135,10 @@ export const PublishStep: React.FC<PublishStepProps> = ({
           const pipelineResult = services.tryGetPipeline();
           if (pipelineResult.pipeline) {
             console.log('Preparing content for NFT/Proposal with pipeline...');
-            // Pass the UPDATED form data with contentReference
+            const updatedFormData = {
+              ...currentFormData,
+              contentReference
+            };
             const prepared = await pipelineResult.pipeline.prepareForPublication(updatedFormData);
             setPreparedContent(prepared);
             console.log('Content prepared for NFT/Proposal:', prepared);
@@ -178,61 +148,10 @@ export const PublishStep: React.FC<PublishStepProps> = ({
         }
       }
       
-      // Save the draft with the complete updated data
-      // Pass the updated data directly to ensure it's saved correctly
-      const savedDraft = await editorState.saveDraft('Published to Swarm', updatedFormData);
-      
-      if (!savedDraft) {
-        throw new Error('Failed to save draft after publishing');
-      }
-      
-      // Verify the saved draft has the contentReference
-      if (!savedDraft.contentReference) {
-        console.error('Critical: Draft saved without contentReference, attempting recovery...');
-        
-        // Recovery attempt: Force save with explicit data
-        const recoveryData = {
-          ...updatedFormData,
-          id: savedDraft.id,
-          contentReference,
-          stepProgress: {
-            draft: true,
-            swarm: true,
-            governance: false
-          }
-        };
-        
-        // Direct call to draft storage to ensure save
-        const { enhancedDraftStorage } = await import('../../../../utils/draftStorage');
-        const recoveredDraft = enhancedDraftStorage.saveDraft(recoveryData, 'Recovery save with content reference');
-        
-        if (!recoveredDraft.contentReference) {
-          throw new Error('Failed to save content reference even after recovery attempt');
-        }
-        
-        console.log('Recovery successful, content reference saved:', recoveredDraft.contentReference);
-      } else {
-        console.log('Draft saved with content reference:', savedDraft.contentReference);
-      }
-      
-      // MINIMAL COMPATIBILITY ADDITION: Update workflow status AFTER confirming save
-      if (workflowState.updateDraftStepProgress) {
-        // Use new single-source-of-truth method
-        workflowState.updateDraftStepProgress({ draft: true, swarm: true });
-      } else if (workflowState.updateStepStatus) {
-        // Fallback to existing method
-        workflowState.updateStepStatus('swarm', true);
-      }
-      
-      // Force refresh the workflow from the saved draft if available
-      if (workflowState.refreshFromDraft) {
-        workflowState.refreshFromDraft();
-      }
-      
-      // Also sync with the saved draft if available
-      if (workflowState.syncWithDraft && savedDraft) {
-        workflowState.syncWithDraft(savedDraft);
-      }
+      // Save the draft with content reference
+      await editorState.saveDraft('Published to Swarm', {
+        contentReference
+      });
       
       console.log('Publish step completed successfully');
       
@@ -243,7 +162,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
       workflowState.setError(errorMessage);
     } finally {
       setIsPublishing(false);
-      workflowState.setLoading(false);
+      workflowState.setIsLoading(false);
     }
   };
 
@@ -256,7 +175,6 @@ export const PublishStep: React.FC<PublishStepProps> = ({
                      editorState.formData.category?.trim();
   
   // Simple function to proceed to governance
-  // We'll check for description requirement in the governance step itself
   const handleContinueToGovernance = () => {
     workflowState.goToStep('governance');
   };
@@ -355,7 +273,7 @@ export const PublishStep: React.FC<PublishStepProps> = ({
                     <span className="status-value">
                       {serviceStatus.nodeRunning && serviceStatus.hasStamp 
                         ? '🏠 Local Node' 
-                        : '🌐 Public Gateway'
+                        : '🌍 Public Gateway'
                       }
                     </span>
                   </div>

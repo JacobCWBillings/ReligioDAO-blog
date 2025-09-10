@@ -1,16 +1,17 @@
 // src/pages/editor/SimpleEditorPage.tsx - FIXED VERSION
-// Updated to use enhanced state management with proper synchronization
+// Properly integrated with unified state management
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useWallet } from '../../contexts/WalletContext';
 import { PlatformStatusBanner, useSimpleApp } from '../../contexts/SimpleAppContext';
 
 // Services
-import { services, contentService, assetService } from '../../swarm/services';
+import { services } from '../../swarm/services';
 
-// Import our enhanced components and hooks
-import { useEditorState } from './hooks/useEditorState';
-import { useEditorWorkflow } from './hooks/useEditorWorkflow';
+// Import our NEW unified state hook
+import { useUnifiedEditorState } from './hooks/useUnifiedEditorState';
+
+// Import components
 import { EditorWorkflow } from './components/EditorWorkflow';
 import { DraftManager } from './components/DraftManager';
 import { DraftStep } from './components/steps/DraftStep';
@@ -18,8 +19,6 @@ import { ReviewStep } from './components/steps/ReviewStep';
 import { PublishStep } from './components/steps/PublishStep';
 import { GovernanceStep } from './components/steps/GovernanceStep';
 import { SuccessStep } from './components/steps/SuccessStep';
-
-// Import existing components
 import { EnhancedAssetBrowser } from './components/EnhancedAssetBrowser';
 
 // Types
@@ -28,13 +27,6 @@ import { EditorStep, EnhancedBlogDraft } from '../../types/editorTypes';
 // Styles
 import './SimpleEditorPage.css';
 
-/**
- * FIXED: SimpleEditorPage with enhanced state synchronization
- * Key improvements:
- * 1. Automatic save before step transitions
- * 2. Guaranteed current data publishing
- * 3. Better error handling and state tracking
- */
 export const SimpleEditorPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -112,27 +104,80 @@ export const SimpleEditorPage: React.FC = () => {
     console.log('Draft saved:', draft.title, 'Content length:', draft.content.length);
   }, [draftId]);
 
-  const handleWorkflowChange = useCallback((step: EditorStep, workflowState: any) => {
-    console.log('Workflow changed:', step, workflowState);
+  const handleStepChange = useCallback((step: EditorStep) => {
+    console.log('Step changed to:', step);
   }, []);
 
-  const handleStepChange = useCallback((step: EditorStep, workflowState: any) => {
-    console.log('Step changed:', step, workflowState);
-  }, []);
-
-  // FIXED: Initialize enhanced state management with synchronization
-  const editorState = useEditorState({
+  // ==========================================
+  // USE UNIFIED STATE MANAGEMENT
+  // ==========================================
+  const editorState = useUnifiedEditorState({
     initialDraftId: draftId || undefined,
     onDraftSaved: handleDraftSaved,
-    onWorkflowChange: handleWorkflowChange
+    onStepChange: handleStepChange
   });
 
-  // FIXED: Initialize workflow with save-before-transition capability
-  const workflowState = useEditorWorkflow({
-    draft: editorState.currentDraft,
-    onStepChange: handleStepChange,
-    ensureSavedForTransition: editorState.ensureSavedForTransition // NEW: Pass the save function
-  });
+  // Create compatibility wrappers for existing components
+  // This maps the unified state to the interface expected by step components
+  const editorStateCompat = {
+    formData: editorState.formData,
+    formErrors: editorState.formErrors,
+    formValidation: editorState.formValidation,
+    isAutoSaving: editorState.isAutoSaving,
+    updateTitle: editorState.updateTitle,
+    updateContent: editorState.updateContent,
+    updateCategory: editorState.updateCategory,
+    updateTags: editorState.updateTags,
+    updateBanner: editorState.updateBanner,
+    updateDescription: editorState.updateDescription,
+    updateContentReference: editorState.updateContentReference,
+    updateFormData: editorState.updateFormData,
+    saveDraft: editorState.saveDraft,
+    loadDraftIntoForm: editorState.loadDraftIntoForm,
+    createNewDraft: editorState.createNewDraft,
+    currentDraft: editorState.currentDraft,
+    proposalId: editorState.proposalId,
+    governanceComplete: editorState.governanceComplete,
+    setGovernanceProposalId: editorState.setGovernanceProposalId,
+    markGovernanceComplete: editorState.markGovernanceComplete
+  };
+
+  const workflowStateCompat = {
+    currentStep: editorState.currentStep,
+    stepStatus: editorState.stepStatus, // Use stepStatus, not stepCompletion
+    workflowState: editorState.workflowState,
+    goToStep: editorState.goToStep,
+    
+    // Map the step names correctly: "publish" step uses "swarm" status internally
+    updateStepStatus: (step: 'draft' | 'swarm' | 'governance', completed: boolean) => {
+      editorState.updateStepStatus(step, completed);
+    },
+    
+    // Compatibility wrapper for components that might use updateDraftStepProgress
+    updateDraftStepProgress: async (updates: any) => {
+      // Map updates to the unified state
+      if (updates.draft !== undefined) {
+        editorState.updateStepStatus('draft', updates.draft);
+      }
+      if (updates.swarm !== undefined) {
+        editorState.updateStepStatus('swarm', updates.swarm);
+      }
+      if (updates.governance !== undefined) {
+        editorState.updateStepStatus('governance', updates.governance);
+        if (updates.governance === true) {
+          editorState.markGovernanceComplete();
+        }
+      }
+      // Return current draft for compatibility
+      return editorState.currentDraft;
+    },
+    
+    setIsLoading: editorState.setIsLoading,
+    setError: editorState.setError,
+    isLoading: editorState.isLoading,
+    error: editorState.error,
+    canProgress: editorState.workflowState.canProgress
+  };
 
   // Asset browser integration
   const handleAssetInsertion = useCallback((markdownCode: string) => {
@@ -212,45 +257,16 @@ export const SimpleEditorPage: React.FC = () => {
     );
   }
 
-  // Early return for service initialization issues (non-blocking)
-  if (!serviceStatus.initialized && serviceStatus.error) {
-    return (
-      <div className="simple-editor-page service-error">
-        <div className="service-error-content">
-          <h2>Service Initialization Error</h2>
-          <p>{serviceStatus.error}</p>
-          <div className="error-actions">
-            <button 
-              className="retry-button"
-              onClick={() => window.location.reload()}
-            >
-              Retry
-            </button>
-            <button 
-              className="continue-button"
-              onClick={() => setServiceStatus(prev => ({ ...prev, error: null, initialized: true }))}
-            >
-              Continue Anyway
-            </button>
-          </div>
-          <p className="error-note">
-            You can continue in offline mode, but publishing features will be limited.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   // Render step content based on current workflow step
   const renderStepContent = () => {
-    const { currentStep } = workflowState;
+    const { currentStep } = editorState;
     
     switch (currentStep) {
       case 'draft':
         return (
           <DraftStep
-            editorState={editorState}
-            workflowState={workflowState}
+            editorState={editorStateCompat}
+            workflowState={workflowStateCompat}
             onShowAssetBrowser={() => setShowAssetBrowser(true)}
           />
         );
@@ -258,31 +274,31 @@ export const SimpleEditorPage: React.FC = () => {
       case 'review':
         return (
           <ReviewStep
-            editorState={editorState}
-            workflowState={workflowState}
+            editorState={editorStateCompat}
+            workflowState={workflowStateCompat}
           />
         );
         
       case 'publish':
         return (
           <PublishStep
-            editorState={editorState}
-            workflowState={workflowState}
+            editorState={editorStateCompat}
+            workflowState={workflowStateCompat}
           />
         );
         
       case 'governance':
         return (
           <GovernanceStep
-            editorState={editorState}
-            workflowState={workflowState}
+            editorState={editorStateCompat}
+            workflowState={workflowStateCompat}
           />
         );
         
       case 'success':
         return (
           <SuccessStep
-            editorState={editorState}
+            editorState={editorStateCompat}
             onNewPost={editorState.createNewDraft}
             onViewProposals={() => navigate('/proposals')}
             onViewBlogs={() => navigate('/blogs')}
@@ -300,35 +316,35 @@ export const SimpleEditorPage: React.FC = () => {
   };
 
   return (
-    <div className="simple-editor-page" data-step={workflowState.currentStep}>
+    <div className="simple-editor-page" data-step={editorState.currentStep}>
       {/* Platform status banner */}
       <PlatformStatusBanner />
       
       {/* Service status indicator */}
       <ServiceStatusIndicator />
       
-      {/* FIXED: Enhanced state synchronization indicators */}
-      {editorState.hasUnsavedChanges && workflowState.currentStep !== 'draft' && (
+      {/* State sync status indicators */}
+      {editorState.hasUnsavedChanges && editorState.currentStep !== 'draft' && (
         <div className="sync-warning">
           <div className="warning-content">
             <span className="warning-icon">💾</span>
-            <span>Unsaved changes detected - they will be automatically saved before publishing</span>
+            <span>Unsaved changes will be automatically saved before publishing</span>
           </div>
         </div>
       )}
       
       {/* Connection warning for governance features */}
-      {!isConnected && workflowState.currentStep === 'governance' && (
+      {!isConnected && editorState.currentStep === 'governance' && (
         <div className="connection-warning">
           <div className="warning-content">
-            <span className="warning-icon">🔐</span>
+            <span className="warning-icon">🔒</span>
             <span>Connect your wallet to submit governance proposals</span>
           </div>
         </div>
       )}
 
       {/* Swarm health warning */}
-      {!serviceStatus.swarmHealthy && workflowState.currentStep === 'publish' && (
+      {!serviceStatus.swarmHealthy && editorState.currentStep === 'publish' && (
         <div className="swarm-warning">
           <div className="warning-content">
             <span className="warning-icon">📡</span>
@@ -339,62 +355,17 @@ export const SimpleEditorPage: React.FC = () => {
 
       <div className="editor-content">
         {/* Workflow Progress - Always visible except on success */}
-        {workflowState.currentStep !== 'success' && (
+        {editorState.currentStep !== 'success' && (
           <EditorWorkflow
-            workflowState={workflowState.workflowState}
-            onStepClick={workflowState.goToStep}
+            workflowState={editorState.workflowState}
+            onStepClick={editorState.goToStep}
           />
-        )}
-
-        {/* Enhanced Asset Toolbar - Available in draft and review steps */}
-        {(workflowState.currentStep === 'draft' || workflowState.currentStep === 'review') && (
-          <div className="unified-asset-toolbar">
-            <div className="toolbar-content">
-              <div className="toolbar-section">
-                <h4>📎 Asset Tools</h4>
-                <div className="toolbar-buttons">
-                  <button 
-                    className="toolbar-btn asset-browser-btn"
-                    onClick={() => setShowAssetBrowser(true)}
-                    disabled={!isConnected}
-                    title={!isConnected ? 'Connect wallet to use assets' : 'Open asset library'}
-                  >
-                    🗂️ Asset Library
-                  </button>
-                  
-                  {serviceStatus.swarmHealthy && (
-                    <span className="toolbar-status healthy">
-                      🟢 Swarm Ready
-                    </span>
-                  )}
-                  
-                  {!serviceStatus.swarmHealthy && (
-                    <span className="toolbar-status warning">
-                      🔴 Local Node Offline
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Status messages */}
-              {(assetBrowserError || assetBrowserSuccess) && (
-                <div className="toolbar-messages">
-                  {assetBrowserError && (
-                    <div className="toolbar-error">{assetBrowserError}</div>
-                  )}
-                  {assetBrowserSuccess && (
-                    <div className="toolbar-success">{assetBrowserSuccess}</div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
         )}
 
         {/* Main Content Area */}
         <div className="editor-main-content">
           {/* Sidebar with Draft Manager - Hidden on success step */}
-          {workflowState.currentStep !== 'success' && (
+          {editorState.currentStep !== 'success' && (
             <aside className="editor-sidebar">
               <DraftManager
                 currentDraft={editorState.currentDraft}
@@ -407,7 +378,7 @@ export const SimpleEditorPage: React.FC = () => {
                 onNewDraft={editorState.createNewDraft}
               />
               
-              {/* FIXED: Enhanced save status indicators */}
+              {/* Save status indicators */}
               {editorState.isAutoSaving && (
                 <div className="auto-save-indicator">
                   <span>💾 Auto-saving current work...</span>
@@ -471,77 +442,25 @@ export const SimpleEditorPage: React.FC = () => {
         onInsertAsset={handleAssetInsertion}
       />
 
-      {/* Enhanced Help section with sync info */}
-      <div className="editor-help-section">
-        <details className="help-accordion">
-          <summary>Need Help? 📚</summary>
-          <div className="help-content">
-            <div className="help-section">
-              <h4>FIXED: Enhanced State Synchronization</h4>
-              <ul>
-                <li><strong>Auto-save:</strong> Your work is automatically saved every 2 seconds</li>
-                <li><strong>Step transitions:</strong> Current changes are saved before moving to next step</li>
-                <li><strong>Publishing:</strong> Always uses your latest content, including unsaved changes</li>
-                <li><strong>Real-time sync:</strong> Status indicators show save progress and sync state</li>
-              </ul>
-            </div>
-            
-            <div className="help-section">
-              <h4>Workflow Improvements</h4>
-              <ul>
-                <li><strong>Draft:</strong> Write and edit with automatic background saving</li>
-                <li><strong>Review:</strong> Preview ensures all content is synced and saved</li>
-                <li><strong>Publish:</strong> Guaranteed to publish your current work, not old drafts</li>
-                <li><strong>Governance:</strong> All form data is preserved through the process</li>
-              </ul>
-            </div>
-            
-            <div className="help-section">
-              <h4>Status Indicators</h4>
-              <ul>
-                <li><strong>🟢 Synced:</strong> All changes are saved</li>
-                <li><strong>🔄 Saving:</strong> Auto-save in progress</li>
-                <li><strong>⚠️ Unsaved:</strong> Changes detected, auto-save will trigger</li>
-                <li><strong>💾 Auto-saving:</strong> Currently saving your work</li>
-              </ul>
-            </div>
-
-            <div className="help-section">
-              <h4>Troubleshooting</h4>
-              <ul>
-                <li>If auto-save fails, you can manually save in the Draft step</li>
-                <li>Step transitions will attempt to save current work automatically</li>
-                <li>Publishing always uses current form data, never old saved drafts</li>
-                <li>Check the sync indicator in sidebar for current save status</li>
-              </ul>
-            </div>
-          </div>
-        </details>
-      </div>
-
       {/* Development info */}
       {process.env.NODE_ENV === 'development' && (
         <div className="dev-info">
           <details>
-            <summary>🔧 Development Info - State Sync</summary>
+            <summary>🔧 Development Info - Unified State</summary>
             <div className="dev-content">
               <h5>Service Status:</h5>
               <pre>{JSON.stringify(serviceStatus, null, 2)}</pre>
-              <h5>Editor State:</h5>
+              <h5>Editor State (Unified):</h5>
               <pre>{JSON.stringify({
-                currentDraftId: editorState.currentDraft?.id || 'None',
+                currentStep: editorState.currentStep,
+                stepStatus: editorState.stepStatus, // Fixed: use stepStatus not stepCompletion
+                canProgress: editorState.workflowState.canProgress,
                 hasUnsavedChanges: editorState.hasUnsavedChanges,
                 isAutoSaving: editorState.isAutoSaving,
                 lastSaved: editorState.lastSaved?.toISOString(),
+                formDataTitle: editorState.formData.title,
                 formDataLength: editorState.formData.content.length,
-                formDataTitle: editorState.formData.title
-              }, null, 2)}</pre>
-              <h5>Workflow State:</h5>
-              <pre>{JSON.stringify({
-                currentStep: workflowState.currentStep,
-                stepStatus: workflowState.workflowState.stepStatus,
-                canProgress: workflowState.canProgress,
-                isLoading: workflowState.isLoading
+                contentReference: editorState.formData.contentReference
               }, null, 2)}</pre>
             </div>
           </details>

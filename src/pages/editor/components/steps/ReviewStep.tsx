@@ -1,5 +1,4 @@
-// src/pages/editor/components/steps/ReviewStep.tsx - MINIMAL COMPATIBILITY UPDATE
-// Preserves all existing functionality, only adds single source of truth compatibility
+// src/pages/editor/components/steps/ReviewStep.tsx
 import React, { useState, useCallback, useEffect } from 'react';
 import { marked } from 'marked';
 import { SimpleMarkdownEditor } from '../SimpleMarkdownEditor';
@@ -15,7 +14,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
 }) => {
   const [showPreview, setShowPreview] = useState(true);
 
-  // MINIMAL COMPATIBILITY ADDITION: Ensure draft status is marked complete when entering review
+  // Ensure draft status is marked complete when entering review
   useEffect(() => {
     const isDraftComplete = Boolean(
       editorState.formData.title?.trim() &&
@@ -23,14 +22,8 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       editorState.formData.category?.trim()
     );
 
-    if (isDraftComplete) {
-      // Use the new single-source-of-truth update method if available
-      if (workflowState.updateDraftStepProgress) {
-        workflowState.updateDraftStepProgress({ draft: true });
-      } else if (workflowState.updateStepStatus) {
-        // Fallback to existing method
-        workflowState.updateStepStatus('draft', true);
-      }
+    if (isDraftComplete && !workflowState.stepStatus?.draft) {
+      workflowState.updateStepStatus('draft', true);
     }
   }, [
     editorState.formData.title,
@@ -48,7 +41,6 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     }
   };
 
-  // FIXED: Use useCallback for event handlers to prevent recreating functions
   const handleBackToDraft = useCallback(() => {
     workflowState.goToStep('draft');
   }, [workflowState]);
@@ -61,7 +53,6 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     editorState.updateContent(value);
   }, [editorState]);
 
-  // FIXED: Check form validity using the new method that doesn't trigger setState during render
   const canContinue = editorState.formValidation.isValidForStep('review');
 
   return (
