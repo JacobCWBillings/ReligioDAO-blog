@@ -1,5 +1,5 @@
 // src/blockchain/services/proposa/ProposalCacheService.ts
-import { Proposal } from '../../../types/blockchain';
+import { Proposal } from '../../../types/blockchainTypes';
 
 export interface CachedProposal extends Proposal {
   cachedAt: number;

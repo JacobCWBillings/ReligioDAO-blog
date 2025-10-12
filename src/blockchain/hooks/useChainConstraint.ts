@@ -1,16 +1,16 @@
 // src/blockchain/hooks/useChainConstraint.ts
 import { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../../contexts/WalletContext';
-import { switchNetwork, isSupportedNetwork } from '../utils/walletUtils';
+import { switchNetwork, isSupportedNetwork } from '../../utils/walletUtils';
 import config from '../../config';
-import { BlockchainError, BlockchainErrorType } from '../../types/blockchain';
+import { BlockchainError, BlockchainErrorType } from '../../types/blockchainTypes';
 
 /**
  * Hook for constraining the app to the correct blockchain chain
  * Handles chain validation and switching
  */
 export const useChainConstraint = () => {
-  const { chainId, provider, isConnected } = useWallet();
+  const { chainId, isConnected } = useWallet();
   const [isCorrectChain, setIsCorrectChain] = useState<boolean>(false);
   const [isSwithcingChain, setIsSwithcingChain] = useState<boolean>(false);
   const [chainError, setChainError] = useState<BlockchainError | null>(null);
@@ -41,17 +41,37 @@ export const useChainConstraint = () => {
 
   /**
    * Switch the wallet to the correct chain
+   * Uses window.ethereum directly for maximum compatibility
    * @returns Promise resolving to true if successful
    */
   const switchToCorrectChain = useCallback(async (): Promise<boolean> => {
-    if (!provider || !provider.provider || !isConnected) {
+    if (!isConnected) {
+      console.warn('Cannot switch chain: wallet not connected');
+      return false;
+    }
+    
+    if (!window.ethereum) {
+      console.warn('Cannot switch chain: window.ethereum not available');
+      setChainError(new BlockchainError(
+        'No Ethereum wallet detected',
+        BlockchainErrorType.NetworkError
+      ));
       return false;
     }
     
     setIsSwithcingChain(true);
+    setChainError(null);
     
     try {
-      const success = await switchNetwork(provider.provider, appChainId);
+      console.log(`Attempting to switch to chain ${appChainId}...`);
+      const success = await switchNetwork(window.ethereum, appChainId);
+      
+      if (success) {
+        console.log(`Successfully switched to chain ${appChainId}`);
+      } else {
+        console.warn(`Failed to switch to chain ${appChainId}`);
+      }
+      
       return success;
     } catch (err) {
       console.error('Error switching network:', err);
@@ -68,7 +88,7 @@ export const useChainConstraint = () => {
     } finally {
       setIsSwithcingChain(false);
     }
-  }, [provider, isConnected, appChainId]);
+  }, [isConnected, appChainId]);
 
   /**
    * Get the correct chain ID for the app regardless of wallet

@@ -7,11 +7,10 @@ import {
   Proposal, 
   ProposalStatus, 
   TransactionStatus 
-} from '../../types/blockchain';
+} from '../../types/blockchainTypes';
 import { IDAOVoting } from '../interfaces/IDAOVoting';
 import { getContractAddresses, getVotingSituationName } from '../../config';
 import { toNumber } from '../utils/blockchainUtils';
-import { extractContentReference } from '../utils/contentHash';
 
 import GeneralDAOVotingABI from '../abis/GeneralDAOVoting.json';
 

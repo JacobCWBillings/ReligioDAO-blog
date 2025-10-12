@@ -7,7 +7,7 @@ import {
   TransactionStatus,
   BlockchainError,
   BlockchainErrorType 
-} from '../../types/blockchain';
+} from '../../types/blockchainTypes';
 
 // Import our new modular services
 import { ProposalCacheService, PaginatedCacheResult } from './proposal/ProposalCacheService';

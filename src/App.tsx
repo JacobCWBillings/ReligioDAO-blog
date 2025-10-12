@@ -1,19 +1,18 @@
-// src/App.tsx - Updated to use SimpleAppContext
+// src/App.tsx - Updated for unified editor
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { WalletProvider } from './contexts/WalletContext';
 import { SimpleAppProvider } from './contexts/SimpleAppContext';
 import { Layout } from './components/Layout';
 
-// Import the new SimpleEditorPage
-import SimpleEditorPage from './pages/SimpleEditorPage';
+// Import the unified SimpleEditorPage
+import { SimpleEditorPage } from './pages/editor/SimpleEditorPage';
 
 // Keep existing pages
 import { BlogListPage } from './pages/viewer/BlogListPage';
 import { BlogDetailPage } from './pages/viewer/BlogDetailPage';
 import { ProposalListPage } from './pages/proposal/ProposalListPage';
 import { ProposalDetailPage } from './pages/proposal/ProposalDetailPage';
-import { ProposalSubmissionPage } from './pages/proposal/ProposalSubmissionPage';
 import DiagnosticPage from './pages/DiagnosticPage';
 
 import './App.css';
@@ -38,12 +37,12 @@ export function App() {
               {/* Make BlogListPage the landing page */}
               <Route index element={<BlogListPage />} />
               
-              {/* New simplified editor routes */}
-              <Route path="editor" element={<SimpleEditorPage mode="draft" />} />
-              <Route path="proposal-editor" element={<SimpleEditorPage mode="proposal" />} />
+              {/* Unified editor route */}
+              <Route path="editor" element={<SimpleEditorPage />} />
               
-              {/* Legacy editor route - redirect to new editor */}
+              {/* Legacy routes - redirect to unified editor */}
               <Route path="editor/:blogId" element={<Navigate to="/editor" replace />} />
+              <Route path="proposal-editor" element={<Navigate to="/editor" replace />} />
               
               {/* Blog Viewer Routes */}
               <Route path="blogs">
@@ -56,7 +55,6 @@ export function App() {
                 <Route index element={<ProposalListPage />} />
                 <Route path=":proposalId" element={<ProposalDetailPage />} />
               </Route>
-              <Route path="submit-proposal" element={<ProposalSubmissionPage />} />
               
               {/* Diagnostic Route */}
               <Route path="diagnostics" element={<DiagnosticPage />} />

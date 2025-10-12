@@ -7,9 +7,11 @@
 
 # testing
 /coverage
+/temp
 
 # production
 /build
+/build_d8504337
 
 # misc
 .DS_Store

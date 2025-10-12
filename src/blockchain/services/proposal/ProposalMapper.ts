@@ -1,6 +1,6 @@
 // src/blockchain/services/proposal/ProposalMapper.ts - FIXED: Don't filter out proposal ID 0
 import { ethers } from 'ethers';
-import { Proposal, ProposalStatus } from '../../../types/blockchain';
+import { Proposal, ProposalStatus } from '../../../types/blockchainTypes';
 
 // Contract data structures (matching the GeneralDAOVoting ABI)
 export interface ContractDAOProposal {
@@ -88,10 +88,33 @@ export class ProposalMapper {
       vetoesCount: BigInt(0)
     };
 
-    // Extract title from remark (first line) and description (rest)
-    const remarkLines = remark.split('\n');
-    const title = remarkLines[0]?.trim() || `Proposal ${contractProposal.id}`;
-    const description = remarkLines.slice(1).join('\n').trim() || remark;
+    // Parse the remark more intelligently
+    const remarkLines = remark.split('\n').filter(line => line.trim());
+
+    // Extract the blog title from the first line if it starts with "Blog:"
+    let title = `Proposal ${contractProposal.id}`;
+    let description = remark;
+
+    if (remarkLines.length > 0 && remarkLines[0].startsWith('Blog:')) {
+      // Extract just the blog title
+      title = remarkLines[0].replace('Blog:', '').trim();
+      
+      // Build a structured description from the metadata
+      const metadataLines = remarkLines.slice(0, 5); // First 5 lines are metadata
+      const actualDescription = remarkLines.slice(6).join(' ').trim(); // Everything after empty line
+      
+      // For BlogDAO display, we want a clean description
+      description = actualDescription || `A blog post about ${title}`;
+      
+      // Store the full metadata separately if needed
+      // We can add this to the Proposal interface
+      const metadata = {
+        author: remarkLines.find(l => l.startsWith('Author:'))?.replace('Author:', '').trim(),
+        category: remarkLines.find(l => l.startsWith('Category:'))?.replace('Category:', '').trim(),
+        tags: remarkLines.find(l => l.startsWith('Tags:'))?.replace('Tags:', '').trim(),
+        contentRef: remarkLines.find(l => l.startsWith('Content Reference:'))?.replace('Content Reference:', '').trim()
+      };
+    }
 
     // Calculate timestamps (convert from seconds to milliseconds)
     // For createdAt, we prioritize votingStartTime as the most reliable creation indicator
@@ -253,35 +276,44 @@ export class ProposalMapper {
     }
 
     try {
-      // Try to decode as string (common case for blog proposals)
-      const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['string'], callData);
-      const decodedString = decoded[0];
-      
-      // Validate that it looks like a Swarm hash (64 hex characters)
-      if (typeof decodedString === 'string' && /^[a-fA-F0-9]{64}$/.test(decodedString)) {
-        return decodedString;
+      // The callData is mintTo(address,string) encoded
+      // Function selector: 0x0075a317
+      if (!callData.startsWith('0x0075a317')) {
+        return undefined; // Not a mintTo call
       }
-    } catch (error) {
-      // If string decoding fails, try other formats
-      try {
-        // Try decoding as bytes32 (another common format)
-        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['bytes32'], callData);
-        const bytes32Value = decoded[0];
-        
-        // Convert bytes32 to hex string without 0x prefix
-        if (bytes32Value && typeof bytes32Value === 'string') {
-          const hexString = bytes32Value.startsWith('0x') ? bytes32Value.slice(2) : bytes32Value;
-          if (/^[a-fA-F0-9]{64}$/.test(hexString)) {
-            return hexString;
-          }
-        }
-      } catch (innerError) {
-        // If all decoding attempts fail, log and continue
-        console.warn('ProposalMapper: Failed to decode callData as content reference:', error);
-      }
-    }
 
-    return undefined;
+      // Decode the mintTo function parameters
+      const iface = new ethers.Interface(['function mintTo(address recipient, string tokenURI)']);
+      const decoded = iface.decodeFunctionData('mintTo', callData);
+      
+      // decoded[1] is the tokenURI (data:application/json;base64,...)
+      const tokenURI = decoded[1];
+      
+      // Extract base64 data from the data URI
+      const base64Match = tokenURI.match(/^data:application\/json;base64,(.+)$/);
+      if (!base64Match) {
+        return undefined;
+      }
+      
+      // Decode base64 to JSON string
+      const jsonString = atob(base64Match[1]);
+      const metadata = JSON.parse(jsonString);
+      
+      // Extract the actual content reference from the metadata
+      if (metadata.properties && metadata.properties.contentReference) {
+        const contentRef = metadata.properties.contentReference;
+        
+        // Validate it looks like a Swarm hash
+        if (/^[a-fA-F0-9]{64}$/.test(contentRef)) {
+          return contentRef;
+        }
+      }
+      
+      return undefined;
+    } catch (error) {
+      console.warn('Failed to extract content reference from callData:', error);
+      return undefined;
+    }
   }
 
   /**

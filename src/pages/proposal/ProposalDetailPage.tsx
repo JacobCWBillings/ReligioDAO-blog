@@ -1,12 +1,12 @@
-// src/pages/proposal/ProposalDetailPage.tsx - Complete component with 0-based indexing fix
+// src/pages/proposal/ProposalDetailPage.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
-import { Proposal, ProposalStatus } from '../../types/blockchain';
-import { BlogProposalMinting } from '../../components/proposal/BlogProposalMinting';
-import swarmContentService from '../../services/SwarmContentService';
-import { formatAddress } from '../../blockchain/utils/walletUtils';
+import { Proposal, ProposalStatus } from '../../types/blockchainTypes';
+import { BlogProposalMinting } from './components/BlogProposalMinting';
+import { services } from '../../swarm/services'; // Use new unified service container
+import { formatAddress } from '../../utils/walletUtils';
 import './ProposalDetailPage.css';
 
 /**
@@ -52,18 +52,21 @@ export const ProposalDetailPage: React.FC = () => {
   const [proposalContent, setProposalContent] = useState<string>('');
   const [contentLoading, setContentLoading] = useState<boolean>(false);
   const [contentError, setContentError] = useState<string | null>(null);
-  const [fetchContentAttempted, setFetchContentAttempted] = useState<boolean>(false);
   
   // NFT token ID after execution
   const [nftTokenId, setNftTokenId] = useState<string | null>(null);
   
   // Content expansion state
   const [showFullContent, setShowFullContent] = useState<boolean>(false);
+  
+  // Execution success notification
+  const [showExecutionSuccess, setShowExecutionSuccess] = useState<boolean>(false);
 
-  // SIMPLIFIED: Use proposal ID directly (0-based like the contract)
   const contractProposalId = proposalId;
 
-  // Load proposal data
+  /**
+   * Load proposal data
+   */
   useEffect(() => {
     const loadProposal = async () => {
       if (!contractProposalId) {
@@ -80,11 +83,11 @@ export const ProposalDetailPage: React.FC = () => {
           
           console.log('Proposal loaded:', {
             proposalId: contractProposalId,
-            dataId: proposalData.id,
             status: proposalData.status,
             statusName: getStatusName(proposalData.status),
-            executed: proposalData.executed
+            hasContentReference: !!proposalData.contentReference
           });
+          
         } else {
           console.warn(`No proposal found for ID ${contractProposalId}`);
         }
@@ -96,43 +99,69 @@ export const ProposalDetailPage: React.FC = () => {
     loadProposal();
   }, [contractProposalId, getProposalById]);
 
-  // Function to fetch content from Swarm
+  /**
+   * Fetch proposal content using new ContentService
+   */
   const fetchProposalContent = async (contentReference: string) => {
-    if (!contentReference || contentReference.trim() === '' || fetchContentAttempted) {
-      if (!contentReference) setContentError('Content reference not found in proposal data');
+    if (!contentReference || contentReference.trim() === '') {
+      setContentError('Content reference not found in proposal data');
       return;
     }
     
-    setFetchContentAttempted(true);
+    setContentLoading(true);
+    setContentError(null);
     
     try {
-      setContentLoading(true);
       console.log(`Fetching proposal content for reference: ${contentReference}`);
       
-      const html = await swarmContentService.getContentAsHtml(contentReference);
+      // Validate content reference format
+      if (!/^[a-fA-F0-9]{64}$/.test(contentReference.trim())) {
+        throw new Error(`Invalid content reference format: ${contentReference}`);
+      }
+      
+      // Use the new ContentService with proper error handling
+      const html = await services.content.getContentAsHtml(contentReference);
       
       if (!html || html.trim() === '') {
-        setContentError('Retrieved empty content');
-      } else {
-        setProposalContent(html);
-        setContentError(null);
+        throw new Error('Retrieved empty content from Swarm');
       }
+      
+      setProposalContent(html);
+      setContentError(null);
+      console.log('Successfully retrieved proposal content');
+      
     } catch (err) {
       console.error('Error fetching proposal content:', err);
-      setContentError(`Failed to load content: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      
+      // Provide user-friendly error messages
+      if (errorMessage.includes('Invalid content reference')) {
+        setContentError('The content reference appears to be invalid. This proposal may have corrupted data.');
+      } else if (errorMessage.includes('Failed to download from all gateways')) {
+        setContentError('Unable to access content. The Swarm network may be unavailable.');
+      } else {
+        setContentError(`Failed to load content: ${errorMessage}`);
+      }
     } finally {
       setContentLoading(false);
     }
   };
 
-  // Fetch content when proposal loads
+  /**
+   * Fetch content when proposal loads
+   */
   useEffect(() => {
-    if (proposal?.contentReference) {
+    if (proposal?.contentReference && !proposalContent) {  // Only fetch if not already fetched
+      console.log('Proposal has content reference, fetching content...');
       fetchProposalContent(proposal.contentReference);
+    } else if (proposal) {
+      console.log('Proposal loaded but no content reference found');
     }
-  }, [proposal]);
+  }, [proposal?.contentReference]); // Only depend on contentReference changing
   
-  // Check if the user has already voted
+  /**
+   * Check if the user has already voted
+   */
   useEffect(() => {
     const checkVoteStatus = async () => {
       if (!contractProposalId || !account || !isConnected) return;
@@ -148,7 +177,9 @@ export const ProposalDetailPage: React.FC = () => {
     checkVoteStatus();
   }, [contractProposalId, account, isConnected, hasVoted]);
   
-  // Handle voting
+  /**
+   * Handle voting
+   */
   const handleVote = async (support: boolean) => {
     if (!contractProposalId || !isConnected) return;
     
@@ -172,109 +203,84 @@ export const ProposalDetailPage: React.FC = () => {
       }
     } catch (err) {
       console.error('Error voting on proposal:', err);
-      setVoteError(err instanceof Error ? err.message : 'Unknown error occurred');
+      setVoteError(err instanceof Error ? err.message : 'Failed to vote on proposal');
     } finally {
       setIsVoting(false);
     }
   };
-  
-  // Handle execution success callback
-  const handleExecuteSuccess = (tokenId: string | null) => {
-    console.log(`Proposal executed successfully with token ID: ${tokenId}`);
-    setNftTokenId(tokenId);
-    
-    // Refresh the proposal data after execution
-    if (contractProposalId) {
-      getProposalById(contractProposalId).then(updatedProposal => {
-        if (updatedProposal) {
-          setProposal(updatedProposal);
-        }
-      }).catch(err => {
-        console.error('Error refreshing proposal after execution:', err);
-      });
-    }
-  };
-  
-  // Format date
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-  
-  // Format relative time
-  const formatRelativeTime = (timestamp: number) => {
-    const now = Date.now();
-    const diffInSeconds = Math.floor((timestamp - now) / 1000);
-    
-    if (diffInSeconds < 0) return 'Ended';
-    
-    const days = Math.floor(diffInSeconds / 86400);
-    const hours = Math.floor((diffInSeconds % 86400) / 3600);
-    const minutes = Math.floor((diffInSeconds % 3600) / 60);
-    
-    if (days > 0) {
-      return `${days}d ${hours}h remaining`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes}m remaining`;
-    } else if (minutes > 0) {
-      return `${minutes}m remaining`;
-    } else {
-      return 'Ending soon';
-    }
-  };
-  
-  // Toggle full content display
-  const toggleContentDisplay = () => {
-    setShowFullContent(!showFullContent);
-  };
-  
-  // Get status color and label
-  const getStatusInfo = (status: ProposalStatus, proposal: Proposal) => {
-    if (status === ProposalStatus.Pending && isActiveVoting(proposal)) {
-      return { 
-        color: 'blue', 
-        label: 'Active Voting', 
-        description: 'Voting in progress' 
-      };
-    }
 
+  /**
+   * Handle content refresh
+   */
+  const handleRefreshContent = async () => {
+    if (!proposal?.contentReference) return;
+    
+    try {
+      setContentLoading(true);
+      setContentError(null);
+      
+      // Force refresh using new service method
+      const html = await services.content.forceRefreshContent(proposal.contentReference);
+      setProposalContent(html);
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setContentError(`Refresh failed: ${errorMessage}`);
+    } finally {
+      setContentLoading(false);
+    }
+  };
+
+  /**
+   * Format relative time
+   */
+  const formatRelativeTime = (timestamp: number): string => {
+    const now = Date.now();
+    const diff = timestamp - now;
+    
+    if (diff < 0) return 'Ended';
+    
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
+  /**
+   * Get status display info
+   */
+  const getStatusInfo = (status: ProposalStatus) => {
     switch (status) {
-      case ProposalStatus.None:
-        return { color: 'gray', label: 'None', description: 'Initial state' };
       case ProposalStatus.Pending:
-        return { color: 'yellow', label: 'Pending', description: 'Awaiting voting period' };
-      case ProposalStatus.Rejected:
-        return { color: 'red', label: 'Rejected', description: 'Rejected by community vote' };
+        return { color: '#2196f3', label: 'Active', description: 'Currently accepting votes' };
       case ProposalStatus.Accepted:
-        return { color: 'green', label: 'Approved', description: 'Ready for execution' };
-      case ProposalStatus.Passed:
-        return { color: 'green', label: 'Passed', description: 'Alternative approval state' };
+        return { color: '#4caf50', label: 'Approved', description: 'Proposal approved, ready for execution' };
       case ProposalStatus.Executed:
-        return { color: 'green', label: 'Executed', description: 'NFT minted successfully' };
+        return { color: '#9c27b0', label: 'Executed', description: 'Proposal has been executed' };
+      case ProposalStatus.Rejected:
+        return { color: '#f44336', label: 'Rejected', description: 'Proposal was rejected by voters' };
       case ProposalStatus.Expired:
-        return { color: 'purple', label: 'Expired', description: 'Voting period expired' };
-      case ProposalStatus.UnderReview:
-        return { color: 'blue', label: 'Under Review', description: 'Proposal under review' };
-      case ProposalStatus.UnderEvaluation:
-        return { color: 'blue', label: 'Under Evaluation', description: 'Proposal under evaluation' };
+        return { color: '#607d8b', label: 'Expired', description: 'Proposal voting period has expired' };
       default:
         return { color: 'gray', label: 'Unknown', description: 'Unknown status' };
     }
   };
   
-  // Calculate voting progress
+  /**
+   * Calculate voting progress
+   */
   const calculateProgress = (votesFor: number, votesAgainst: number) => {
     const total = votesFor + votesAgainst;
     if (total === 0) return 0;
     return (votesFor / total) * 100;
   };
   
-  // Extract blog information from proposal description
+  /**
+   * Extract blog information from proposal description
+   */
   const extractBlogInfo = () => {
     if (!proposal) return { blogTitle: '', category: '', tags: [], authorAddress: '' };
     
@@ -295,19 +301,7 @@ export const ProposalDetailPage: React.FC = () => {
     }
   };
   
-  // Handle retry content loading
-  const handleRetryContentLoad = () => {
-    if (!proposal?.contentReference) return;
-    
-    setContentError(null);
-    setContentLoading(true);
-    setFetchContentAttempted(false);
-    
-    swarmContentService.removeFromCache(proposal.contentReference);
-    fetchProposalContent(proposal.contentReference);
-  };
-  
-  // Handle invalid proposal ID
+  // Handle invalid proposal
   if (!contractProposalId) {
     return (
       <div className="error-container">
@@ -342,105 +336,127 @@ export const ProposalDetailPage: React.FC = () => {
     );
   }
   
-  const statusInfo = getStatusInfo(proposal.status, proposal);
+  const statusInfo = getStatusInfo(proposal.status);
   const progress = calculateProgress(proposal.votesFor, proposal.votesAgainst);
   const isActive = isActiveVoting(proposal);
-  
-  // Can only execute if status is "Accepted"
-  const canExecute = proposal.status === ProposalStatus.Accepted && isConnected;
-  
-  // Proposal is fully complete when status is Executed
-  const isFullyExecuted = proposal.status === ProposalStatus.Executed;
-  
+  const canExecute = proposal.status === ProposalStatus.Accepted && isConnected && !proposal.executed;
   const blogInfo = extractBlogInfo();
 
   return (
     <div className="proposal-detail-page">
-      <div className="proposal-nav-bar">
-        <Link to="/proposals" className="back-to-proposals">
-          ← All Proposals
-        </Link>
-        <div className="proposal-id-display">
-          Proposal #{contractProposalId}
+      {/* Execution Success Notification */}
+      {showExecutionSuccess && (
+        <div className="execution-success-banner">
+          <div className="success-content">
+            <span className="success-icon">🎉</span>
+            <span>Proposal executed successfully!</span>
+            {nftTokenId && (
+              <Link to={`/blog/${nftTokenId}`} className="view-blog-link">
+                View Blog NFT #{nftTokenId}
+              </Link>
+            )}
+            <button 
+              onClick={() => setShowExecutionSuccess(false)}
+              className="close-notification"
+            >
+              ×
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Navigation Bar */}
+      <div className="proposal-nav-bar">
+        <Link to="/proposals" className="back-to-proposals">← Back to Proposals</Link>
+        <div className="proposal-id-display">Proposal #{proposal.id}</div>
       </div>
-      
+
+      {/* Header Section */}
       <div className="proposal-header">
         <div className="proposal-status-banner">
-          <div className={`proposal-status-indicator status-indicator-${statusInfo.color}`}></div>
-          <h1>{blogInfo.blogTitle || proposal.title}</h1>
-          <div className={`proposal-status status-${statusInfo.color}`}>
+          <div 
+            className={`proposal-status-indicator status-indicator-${statusInfo.color === '#2196f3' ? 'blue' : 
+              statusInfo.color === '#4caf50' ? 'green' : 
+              statusInfo.color === '#f44336' ? 'red' : 
+              statusInfo.color === '#9c27b0' ? 'purple' : 'gray'}`}
+          />
+          <h1>{proposal.title}</h1>
+          <div 
+            className={`proposal-status status-${statusInfo.color === '#2196f3' ? 'blue' : 
+              statusInfo.color === '#4caf50' ? 'green' : 
+              statusInfo.color === '#f44336' ? 'red' : 
+              statusInfo.color === '#9c27b0' ? 'purple' : 'gray'}`}
+          >
             {statusInfo.label}
           </div>
         </div>
         
         <div className="proposal-meta">
-          <div className="proposal-date">
-            <div className="meta-label">Created</div>
-            <div className="meta-value">{formatDate(proposal.createdAt)}</div>
-          </div>
-          <div className="proposal-date">
-            <div className="meta-label">Voting Ends</div>
-            <div className="meta-value">
-              {formatDate(proposal.votingEnds)}
-              {isActive && (
-                <span className="voting-time-remaining">
-                  ({formatRelativeTime(proposal.votingEnds)})
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="proposal-proposer">
-            <div className="meta-label">Proposed by</div>
-            <div className="meta-value address">{formatAddress(proposal.proposer, 6, 4)}</div>
-          </div>
-        </div>
-        
-        {(blogInfo.category || blogInfo.tags.length > 0) && (
-          <div className="blog-meta-section">
-            {blogInfo.category && (
-              <div className="blog-category-tag">{blogInfo.category}</div>
-            )}
-            {blogInfo.tags.length > 0 && (
-              <div className="blog-tags-container">
-                {blogInfo.tags.map((tag, index) => (
-                  <span key={index} className="blog-tag">{tag}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      
-      <div className="proposal-content-grid">
-        <div className="proposal-main-content">
-          <div className="proposal-section">
-            <h2>Description</h2>
-            <div className="proposal-description-content">
-              {proposal.description.split('\n').map((line, index) => (
-                <p key={index}>{line}</p>
-              ))}
+          <div className="meta-item">
+            <div className="meta-label">Author</div>
+            <div className="meta-value address">
+              {formatAddress(proposal.metadata?.author || blogInfo.authorAddress || proposal.proposer, 6, 4)}
             </div>
           </div>
           
-          {/* Content Preview Section */}
+          {(proposal.metadata?.category || blogInfo.category) && (
+            <div className="meta-item">
+              <div className="meta-label">Category</div>
+              <div className="meta-value">{proposal.metadata?.category || blogInfo.category}</div>
+            </div>
+          )}
+          
+          <div className="meta-item">
+            <div className="meta-label">Voting Ends</div>
+            <div className="meta-value">
+              {isActive ? formatRelativeTime(proposal.votingEnds) : 'Ended'}
+            </div>
+          </div>
+          
+          <div className="meta-item">
+            <div className="meta-label">Created</div>
+            <div className="meta-value">{new Date(proposal.createdAt).toLocaleDateString()}</div>
+          </div>
+        </div>
+        
+        {/* Tags Section */}
+        {((proposal.metadata?.tags && proposal.metadata.tags.length > 0) || blogInfo.tags.length > 0) && (
+          <div className="blog-meta-section">
+            <div className="blog-tags-container">
+              {(proposal.metadata?.tags || blogInfo.tags).map((tag, index) => (
+                <span key={index} className="blog-tag">{tag}</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="proposal-content-grid">
+        {/* Left Column - Content */}
+        <div className="proposal-main-content">
+          {/* Description Section */}
+          <div className="proposal-section">
+            <h2>Proposal Description</h2>
+            <div className="proposal-description-content">
+              <p>{proposal.description}</p>
+            </div>
+          </div>
+
+          {/* Blog Content Preview */}
           {proposal.contentReference && (
             <div className="proposal-section">
-              <h2>Blog Content Preview</h2>
-              
+              <h2>Blog Content</h2>
               {contentLoading ? (
                 <div className="content-loading">
                   <div className="loading-spinner"></div>
-                  <p>Loading content preview...</p>
+                  <p>Loading blog content...</p>
                 </div>
               ) : contentError ? (
                 <div className="content-error">
                   <p>{contentError}</p>
-                  <button 
-                    onClick={handleRetryContentLoad} 
-                    className="retry-button"
-                  >
-                    Retry Loading Content
+                  <button onClick={handleRefreshContent} className="retry-button">
+                    Retry
                   </button>
                 </div>
               ) : proposalContent ? (
@@ -449,181 +465,174 @@ export const ProposalDetailPage: React.FC = () => {
                     className="proposal-content-preview"
                     dangerouslySetInnerHTML={{ __html: proposalContent }}
                   />
-                  {!showFullContent && <div className="preview-fade"></div>}
+                  {!showFullContent && <div className="preview-fade" />}
                   <button 
                     className="content-toggle-button"
-                    onClick={toggleContentDisplay}
+                    onClick={() => setShowFullContent(!showFullContent)}
                   >
                     {showFullContent ? 'Show Less' : 'Show More'}
                   </button>
                 </div>
               ) : (
-                <p>No content preview available.</p>
+                <p>No content available</p>
               )}
             </div>
           )}
-          
-          {/* Execution section - only show when status is Accepted */}
+
+          {/* Execution Section for Approved Proposals */}
           {canExecute && (
-            <div className="proposal-section">
-              <h2>Execute Proposal</h2>
-              <BlogProposalMinting
-                proposalId={contractProposalId}
-                title={blogInfo.blogTitle || proposal.title}
-                description={proposal.description}
-                contentReference={proposal.contentReference || ''}
-                category={blogInfo.category}
-                tags={blogInfo.tags}
-                authorAddress={blogInfo.authorAddress || proposal.proposer}
-                onExecuteSuccess={handleExecuteSuccess}
+            <div className="proposal-section execution-section">
+              <BlogProposalMinting 
+                proposalId={proposal.id}
+                proposal={proposal}
+                onExecuteSuccess={(tokenId: string | null) => {
+                  setNftTokenId(tokenId);
+                  setShowExecutionSuccess(true);
+                  // Refresh proposal to update status
+                  getProposalById(contractProposalId).then(updated => {
+                    if (updated) setProposal(updated);
+                  });
+                }}
               />
             </div>
           )}
-          
-          {/* Executed proposal section - only show when status is Executed */}
-          {isFullyExecuted && (
+
+          {/* Executed Status */}
+          {proposal.status === ProposalStatus.Executed && (
             <div className="proposal-section executed-section">
-              <h2>Proposal Executed</h2>
               <div className="execution-success-message">
                 <div className="success-icon">✓</div>
-                <p>This proposal has been executed successfully. The NFT has been minted by the Q governance system.</p>
+                <div className="success-text">
+                  <p>This proposal has been executed and the blog NFT has been minted.</p>
+                  {nftTokenId && (
+                    <div className="token-id-info">
+                      <strong>NFT Token ID:</strong>
+                      <span className="token-id">{nftTokenId}</span>
+                    </div>
+                  )}
+                </div>
               </div>
               {nftTokenId && (
-                <div className="token-id-info">
-                  NFT Token ID: <span className="token-id">{nftTokenId}</span>
+                <div className="view-blog-container">
+                  <Link to={`/blog/${nftTokenId}`} className="view-blog-button">
+                    View Blog NFT
+                  </Link>
                 </div>
               )}
             </div>
           )}
         </div>
-        
-        <div className="proposal-sidebar">
-          <div className="proposal-section voting-section">
+
+        {/* Right Column - Voting */}
+        <div className="voting-section">
+          <div className="proposal-section">
             <h2>Voting</h2>
             
-            <div className="voting-info">
-              <div className="voting-stats">
-                <div className="quorum-info">
-                  <span>Quorum 50%</span>
-                  <span>0% left</span>
+            {/* Voting Stats */}
+            <div className="voting-stats">
+              <div className="quorum-info">
+                <span>Progress</span>
+                <span>{progress.toFixed(1)}% For</span>
+              </div>
+              <div className="vote-progress-container">
+                <div className="vote-progress-bar" style={{ width: `${progress}%` }} />
+              </div>
+              <div className="vote-counts">
+                <div className="vote-for">
+                  <span className="vote-label">For:</span>
+                  <span className="vote-value">{proposal.votesFor}</span>
                 </div>
-                
-                <div className="vote-progress-container">
-                  <div 
-                    className="vote-progress-bar" 
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
-                
-                <div className="vote-counts">
-                  <div className="vote-for">
-                    <span className="vote-label">For:</span>
-                    <span className="vote-value">{proposal.votesFor}</span>
-                  </div>
-                  <div className="vote-percent">
-                    <span>{progress.toFixed(1)}%</span>
-                  </div>
-                  <div className="vote-against">
-                    <span className="vote-label">Against:</span>
-                    <span className="vote-value">{proposal.votesAgainst}</span>
-                  </div>
+                <div className="vote-against">
+                  <span className="vote-label">Against:</span>
+                  <span className="vote-value">{proposal.votesAgainst}</span>
                 </div>
               </div>
-              
-              {/* Show voting actions only if proposal is actively accepting votes */}
-              {isActive && isConnected && (
-                <div className="voting-actions">
-                  {userHasVoted ? (
-                    <div className="already-voted">
-                      You have already voted on this proposal
-                    </div>
-                  ) : voteSuccess ? (
-                    <div className="vote-success">
-                      Your vote has been recorded
-                    </div>
-                  ) : (
-                    <>
-                      <button 
-                        className="vote-button vote-for-button"
-                        onClick={() => handleVote(true)}
-                        disabled={isVoting}
-                      >
-                        {isVoting ? 'Voting...' : 'Vote For'}
-                      </button>
-                      <button 
-                        className="vote-button vote-against-button"
-                        onClick={() => handleVote(false)}
-                        disabled={isVoting}
-                      >
-                        {isVoting ? 'Voting...' : 'Vote Against'}
-                      </button>
-                    </>
-                  )}
-                  
+            </div>
+
+            {/* Voting Actions */}
+            <div className="voting-actions">
+              {isActive && isConnected && !userHasVoted && (
+                <>
+                  <button 
+                    className="vote-button vote-for-button"
+                    onClick={() => handleVote(true)}
+                    disabled={isVoting}
+                  >
+                    {isVoting ? 'Voting...' : 'Vote For'}
+                  </button>
+                  <button 
+                    className="vote-button vote-against-button"
+                    onClick={() => handleVote(false)}
+                    disabled={isVoting}
+                  >
+                    {isVoting ? 'Voting...' : 'Vote Against'}
+                  </button>
                   {voteError && <div className="vote-error">{voteError}</div>}
+                </>
+              )}
+              
+              {userHasVoted && (
+                <div className="already-voted">
+                  ✓ You have voted on this proposal
                 </div>
               )}
               
-              {/* Show voting ended message for inactive proposals */}
-              {!isActive && proposal.status !== ProposalStatus.Pending && (
+              {voteSuccess && (
+                <div className="vote-success">
+                  ✓ Vote submitted successfully!
+                </div>
+              )}
+              
+              {!isActive && proposal.status === ProposalStatus.Pending && (
                 <div className="voting-ended-message">
-                  Voting has ended for this proposal
+                  Voting period has ended
                 </div>
               )}
               
-              {/* Show waiting message for pending proposals that aren't active yet */}
-              {proposal.status === ProposalStatus.Pending && !isActive && (
+              {!isConnected && isActive && (
                 <div className="voting-pending-message">
-                  Voting period has not started yet
+                  Connect wallet to vote
                 </div>
               )}
             </div>
           </div>
-          
-          <div className="proposal-section proposal-details-section">
+
+          {/* Proposal Details */}
+          <div className="proposal-section">
             <h2>Details</h2>
             <div className="proposal-details-list">
               <div className="detail-item">
-                <div className="detail-label">Status</div>
-                <div className={`detail-value status-text-${statusInfo.color}`}>
-                  {statusInfo.label}
-                </div>
+                <span className="detail-label">Status</span>
+                <span className="detail-value">{statusInfo.description}</span>
               </div>
+              
               <div className="detail-item">
-                <div className="detail-label">Contract ID</div>
-                <div className="detail-value">{proposal.id}</div>
+                <span className="detail-label">Proposer</span>
+                <span className="detail-value address">{formatAddress(proposal.proposer, 6, 4)}</span>
               </div>
+              
               <div className="detail-item">
-                <div className="detail-label">Created</div>
-                <div className="detail-value">{formatDate(proposal.createdAt)}</div>
+                <span className="detail-label">Total Votes</span>
+                <span className="detail-value">{proposal.votesFor + proposal.votesAgainst}</span>
               </div>
-              <div className="detail-item">
-                <div className="detail-label">Voting Period</div>
-                <div className="detail-value">
-                  {isActive ? (
-                    formatRelativeTime(proposal.votingEnds)
-                  ) : (
-                    'Ended'
-                  )}
-                </div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Proposer</div>
-                <div className="detail-value address">{formatAddress(proposal.proposer, 6, 4)}</div>
-              </div>
-              {blogInfo.authorAddress && blogInfo.authorAddress !== proposal.proposer && (
-                <div className="detail-item">
-                  <div className="detail-label">Blog Author</div>
-                  <div className="detail-value address">{formatAddress(blogInfo.authorAddress, 6, 4)}</div>
-                </div>
-              )}
+              
               {proposal.contentReference && (
                 <div className="detail-item">
-                  <div className="detail-label">Content Ref</div>
-                  <div className="detail-value content-ref">
+                  <span className="detail-label">Content Hash</span>
+                  <span className="detail-value content-ref" title={proposal.contentReference}>
                     {proposal.contentReference.substring(0, 10)}...
-                  </div>
+                  </span>
                 </div>
+              )}
+              
+              {/* Add raw metadata display for debugging/transparency */}
+              {proposal.metadata?.rawRemark && (
+                <details className="raw-metadata-details">
+                  <summary className="detail-label">Raw Metadata</summary>
+                  <pre className="raw-metadata-content">
+                    {proposal.metadata.rawRemark}
+                  </pre>
+                </details>
               )}
             </div>
           </div>

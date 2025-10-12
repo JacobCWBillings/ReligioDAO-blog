@@ -1,6 +1,6 @@
 // src/blockchain/services/BaseContractService.ts
 import { ethers } from 'ethers';
-import { BlockchainError, BlockchainErrorType, TransactionStatus } from '../../types/blockchain';
+import { BlockchainError, BlockchainErrorType, TransactionStatus } from '../../types/blockchainTypes';
 
 /**
  * Base class for contract interaction services

@@ -3,7 +3,7 @@
 import { BigNumberish, BytesLike, AddressLike } from "ethers";
 import { 
   ProposalStatus, 
-} from '../../types/blockchain';
+} from '../../types/blockchainTypes';
 
 // Update the status mapping function
 export function mapContractStatusToEnum(status: number): ProposalStatus {

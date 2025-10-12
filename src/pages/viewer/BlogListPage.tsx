@@ -3,9 +3,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useBlogNFT } from '../../blockchain/hooks/useBlogNFT';
 import { useWallet } from '../../contexts/WalletContext';
-import { BlogCard } from '../../components/BlogCard';
+import { BlogCard } from './components/BlogCard';
 import { BlogListSkeleton } from '../../components/skeletons/Skeleton';
-import { BlogFilter, BlogSort } from '../../types/blockchain';
+import { BlogFilter, BlogSort } from '../../types/blockchainTypes';
 import './BlogListPage.css';
 
 export const BlogListPage: React.FC = () => {
@@ -405,7 +405,7 @@ export const BlogListPage: React.FC = () => {
             : "Connect your wallet to submit blog posts for community review."}
         </p>
         {isConnected ? (
-          <Link to="/submit-proposal" className="submit-blog-button">
+          <Link to="/editor" className="submit-blog-button">
             Submit New Blog
           </Link>
         ) : (

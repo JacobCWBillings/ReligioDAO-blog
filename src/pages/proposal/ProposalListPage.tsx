@@ -3,9 +3,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useProposal } from '../../blockchain/hooks/useProposal';
 import { useWallet } from '../../contexts/WalletContext';
-import { ProposalStatus } from '../../types/blockchain';
+import { ProposalStatus } from '../../types/blockchainTypes';
 import { ProposalListSkeleton } from '../../components/skeletons/Skeleton';
-import { ProposalCard } from '../../components/proposal/ProposalCard';
+import { ProposalCard } from './components/ProposalCard';
 import './ProposalListPage.css';
 
 /**
