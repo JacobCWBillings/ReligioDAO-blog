@@ -119,7 +119,7 @@ export const BlogProposalMinting: React.FC<BlogProposalMintingProps> = ({
         throw new Error('Proposal not found');
       }
 
-      if (currentProposal.status !== ProposalStatus.Accepted) {
+      if (currentProposal.status !== ProposalStatus.Approved) {
         throw new Error('Proposal is not approved for execution');
       }
 

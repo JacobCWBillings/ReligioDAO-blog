@@ -11,7 +11,7 @@ export function mapContractStatusToEnum(status: number): ProposalStatus {
     case 0: return ProposalStatus.None;
     case 1: return ProposalStatus.Pending;
     case 2: return ProposalStatus.Rejected;
-    case 3: return ProposalStatus.Accepted;
+    case 3: return ProposalStatus.Approved;
     case 4: return ProposalStatus.Passed;
     case 5: return ProposalStatus.Executed;
     case 6: return ProposalStatus.Expired;
@@ -29,7 +29,7 @@ export function getProposalStatusName(status: ProposalStatus): string {
     [ProposalStatus.None]: 'None',
     [ProposalStatus.Pending]: 'Pending',
     [ProposalStatus.Rejected]: 'Rejected',
-    [ProposalStatus.Accepted]: 'Approved', // User-friendly name
+    [ProposalStatus.Approved]: 'Approved', // User-friendly name
     [ProposalStatus.Passed]: 'Passed',
     [ProposalStatus.Executed]: 'Executed',
     [ProposalStatus.Expired]: 'Expired',
@@ -48,7 +48,7 @@ export function getProposalStatusColor(status: ProposalStatus): string {
       return 'yellow';
     case ProposalStatus.Rejected:
       return 'red';
-    case ProposalStatus.Accepted:
+    case ProposalStatus.Approved:
       return 'green';
     case ProposalStatus.Passed:
       return 'green';
@@ -69,7 +69,7 @@ export function getProposalStatusColor(status: ProposalStatus): string {
 export function getProposalActionAvailability(status: ProposalStatus) {
   return {
     canVote: status === ProposalStatus.Pending, // Or might be different status for active voting
-    canExecute: status === ProposalStatus.Accepted || status === ProposalStatus.Passed,
+    canExecute: status === ProposalStatus.Approved || status === ProposalStatus.Passed,
     isCompleted: status === ProposalStatus.Executed,
     isFinal: [
       ProposalStatus.Rejected, 

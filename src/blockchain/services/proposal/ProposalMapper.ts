@@ -257,7 +257,7 @@ export class ProposalMapper {
       
       // Determine if proposal passed
       if (currentMajorityScore >= majorityThreshold) {
-        return ProposalStatus.Accepted; // Ready for execution
+        return ProposalStatus.Approved; // Ready for execution
       } else {
         return ProposalStatus.Rejected;
       }
@@ -326,7 +326,7 @@ export class ProposalMapper {
       case 0: return ProposalStatus.None;
       case 1: return ProposalStatus.Pending;
       case 2: return ProposalStatus.Rejected;
-      case 3: return ProposalStatus.Accepted;
+      case 3: return ProposalStatus.Approved;
       case 4: return ProposalStatus.Passed;
       case 5: return ProposalStatus.Executed;
       case 6: return ProposalStatus.Expired;
@@ -352,10 +352,10 @@ export class ProposalMapper {
         return 'Pending';
       case ProposalStatus.Rejected:
         return 'Rejected by voters';
-      case ProposalStatus.Accepted:
+      case ProposalStatus.Approved:
         return 'Approved - ready for execution';
       case ProposalStatus.Passed:
-        return 'Passed - ready for execution';
+        return 'Passed - awaiting veto period';
       case ProposalStatus.Executed:
         return 'Successfully executed';
       case ProposalStatus.Expired:
@@ -384,7 +384,7 @@ export class ProposalMapper {
     
     return {
       canVote: votingActive && !proposal.executed && userAccount !== undefined,
-      canExecute: (proposal.status === ProposalStatus.Accepted || proposal.status === ProposalStatus.Passed) && !proposal.executed,
+      canExecute: (proposal.status === ProposalStatus.Approved || proposal.status === ProposalStatus.Passed) && !proposal.executed,
       canView: true,
       isCompleted: proposal.executed,
       votingTimeRemaining: votingActive ? proposal.votingEnds - now : undefined

@@ -127,7 +127,7 @@ export const ProposalListPage: React.FC = () => {
 
                 // Special handling for proposals ready for execution (approved)
                 if (statusFilter === "approved") {
-                    return p.status === ProposalStatus.Accepted && !p.executed;
+                    return p.status === ProposalStatus.Approved && !p.executed;
                 }
 
                 // Handle other status filters by converting status enum to string and comparing
