@@ -74,7 +74,7 @@ export const chainIdToQNetworkMap: { [key: string]: QNetworkName } = {
  */
 const config: AppConfig = {
   name: 'ReligioDAO',
-  defaultNetworkId: 35441, // Q Mainnet by default
+  defaultNetworkId: 35441, // Choose to default to Q Mainnet or Testnet
   
   networks: {
     // Q Testnet

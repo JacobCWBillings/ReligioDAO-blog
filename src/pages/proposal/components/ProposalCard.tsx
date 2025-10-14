@@ -59,7 +59,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
           label: 'Rejected',
           description: 'Rejected by community vote'
         };
-      case ProposalStatus.Accepted:
+      case ProposalStatus.Approved:
         return { 
           color: 'green', 
           label: 'Approved',
@@ -293,7 +293,7 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
         {isActive && (
           <div className="proposal-card-action-hint">Click to vote</div>
         )}
-        {displayStatus === ProposalStatus.Accepted && !proposal.executed && (
+        {displayStatus === ProposalStatus.Approved && !proposal.executed && (
           <div className="proposal-card-action-hint">Ready to execute</div>
         )}
         {/* {displayStatus === ProposalStatus.Executed && (

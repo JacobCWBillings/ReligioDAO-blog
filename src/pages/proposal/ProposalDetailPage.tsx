@@ -17,7 +17,7 @@ const getStatusName = (status: ProposalStatus): string => {
     [ProposalStatus.None]: 'None',
     [ProposalStatus.Pending]: 'Pending',
     [ProposalStatus.Rejected]: 'Rejected',
-    [ProposalStatus.Accepted]: 'Approved',
+    [ProposalStatus.Approved]: 'Approved',
     [ProposalStatus.Passed]: 'Passed',
     [ProposalStatus.Executed]: 'Executed',
     [ProposalStatus.Expired]: 'Expired',
@@ -256,7 +256,7 @@ export const ProposalDetailPage: React.FC = () => {
     switch (status) {
       case ProposalStatus.Pending:
         return { color: '#2196f3', label: 'Active', description: 'Currently accepting votes' };
-      case ProposalStatus.Accepted:
+      case ProposalStatus.Approved:
         return { color: '#4caf50', label: 'Approved', description: 'Proposal approved, ready for execution' };
       case ProposalStatus.Executed:
         return { color: '#9c27b0', label: 'Executed', description: 'Proposal has been executed' };
@@ -339,7 +339,7 @@ export const ProposalDetailPage: React.FC = () => {
   const statusInfo = getStatusInfo(proposal.status);
   const progress = calculateProgress(proposal.votesFor, proposal.votesAgainst);
   const isActive = isActiveVoting(proposal);
-  const canExecute = proposal.status === ProposalStatus.Accepted && isConnected && !proposal.executed;
+  const canExecute = proposal.status === ProposalStatus.Approved && isConnected && !proposal.executed;
   const blogInfo = extractBlogInfo();
 
   return (

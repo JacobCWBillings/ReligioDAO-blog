@@ -13,7 +13,7 @@ export enum ProposalStatus {
   None = 0,              // Initial/empty state
   Pending = 1,           // Created but voting hasn't started yet
   Rejected = 2,          // Voting finished with rejection
-  Accepted = 3,          // Voting finished with approval - ready for execution
+  Approved = 3,          // Voting finished with approval - ready for execution
   Passed = 4,            // Alternative approval state (need to clarify difference with Accepted)
   Executed = 5,          // Proposal has been executed
   Expired = 6,           // Proposal voting period expired
