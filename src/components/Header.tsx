@@ -113,8 +113,14 @@ export const Header: React.FC<HeaderProps> = () => {
                 </div>
                 
                 <div className="menu-content">
+                  {/* Wallet Section */}
+                  <div className="wallet-section">
+                    <h4>Wallet</h4>
+                    <WalletConnect />
+                  </div>
+                  
                   {/* Access Mode Indicator */}
-                  <div className="access-mode-section">
+                  {/* <div className="access-mode-section">
                     <div className={`access-indicator ${isLocalMode ? 'local' : 'remote'}`}>
                       <span className="mode-icon">{isLocalMode ? '🏠' : '🌐'}</span>
                       <span className="mode-text">
@@ -134,7 +140,7 @@ export const Header: React.FC<HeaderProps> = () => {
                         </a>
                       </div>
                     )}
-                  </div>
+                  </div> */}
 
                   {/* Editor Info Section (only in local mode) */}
                   {isLocalMode && (
@@ -197,11 +203,7 @@ export const Header: React.FC<HeaderProps> = () => {
                     </Link>
                   </div>
 
-                  {/* Wallet Section */}
-                  <div className="wallet-section">
-                    <h4>Wallet</h4>
-                    <WalletConnect />
-                  </div>
+                  
                 </div>
               </div>
             </>

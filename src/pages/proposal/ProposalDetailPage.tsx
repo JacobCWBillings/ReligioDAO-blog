@@ -503,7 +503,7 @@ export const ProposalDetailPage: React.FC = () => {
               <div className="execution-success-message">
                 <div className="success-icon">✓</div>
                 <div className="success-text">
-                  <p>This proposal has been executed and the blog NFT has been minted.</p>
+                  <p>This proposal has been executed.</p>
                   {nftTokenId && (
                     <div className="token-id-info">
                       <strong>NFT Token ID:</strong>

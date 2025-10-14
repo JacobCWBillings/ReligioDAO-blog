@@ -1,8 +1,8 @@
 {
-    "name": "religiodao-blogger",
-    "version": "0.2.0",
+    "name": "@religiodao/invoke-blogger",
+    "version": "1.0.0",
     "author": "Jacob Billings",
-    "private": true,
+    "private": false,
     "homepage": ".",
     "dependencies": {
         "@ethersphere/bee-js": "^7.1.0",

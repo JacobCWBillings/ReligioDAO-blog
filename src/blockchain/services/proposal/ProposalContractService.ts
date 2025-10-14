@@ -151,7 +151,7 @@ export class ProposalContractService extends BaseContractService {
       }
       
       const fetchedProposals = await Promise.all(proposalPromises);
-      
+
       // Filter out null results (invalid/empty proposals)
       const validProposals = fetchedProposals.filter((p): p is ContractDAOProposal => p !== null);
       
@@ -183,7 +183,7 @@ export class ProposalContractService extends BaseContractService {
       const contractProposal: ContractDAOProposal = await this.generalDAOVoting.getProposal(id);
       
       // Check if proposal exists (basic validation)
-      if (!contractProposal || contractProposal.id === createBigInt(0)) {
+      if (!contractProposal) {
         return null;
       }
 

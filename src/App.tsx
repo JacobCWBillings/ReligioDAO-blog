@@ -40,10 +40,12 @@ export function App() {
               {/* Unified editor route */}
               <Route path="editor" element={<SimpleEditorPage />} />
               
+                            
               {/* Legacy routes - redirect to unified editor */}
               <Route path="editor/:blogId" element={<Navigate to="/editor" replace />} />
               <Route path="proposal-editor" element={<Navigate to="/editor" replace />} />
-              
+
+
               {/* Blog Viewer Routes */}
               <Route path="blogs">
                 <Route index element={<BlogListPage />} />
