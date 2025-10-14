@@ -74,7 +74,7 @@ export const chainIdToQNetworkMap: { [key: string]: QNetworkName } = {
  */
 const config: AppConfig = {
   name: 'ReligioDAO',
-  defaultNetworkId: 35443, // Q Testnet by default
+  defaultNetworkId: 35441, // Q Mainnet by default
   
   networks: {
     // Q Testnet
@@ -98,11 +98,11 @@ const config: AppConfig = {
       rpcUrl: 'https://rpc.q.org',
       blockExplorer: 'https://explorer.q.org',
       contracts: {
-        blogNFT: '0x0000000000000000000000000000000000000000', // Replace with actual QRC721Plus contract address
-        generalDAOVoting: '0x536061A4A6633d5A1AF99DE29B7cE82439e1e5c0', // Q Mainnet voting contract
-        nftMintingModule: '0xc6E9F942fA51921e21eaE4DcF859944719D90A63', // NFT minting module on Q Mainnet
+        blogNFT: '0x60D569bCcA4Dd8990c67c849b8bE421c95188e11', // Replace with actual QRC721Plus contract address
+        generalDAOVoting: '0x994c14e640Af04014542cC5585ac86ac47E54bce', // Q Mainnet voting contract
+        nftMintingModule: '0xCE6D89F5846a35BEb0D69b6410D7ce767e4fE944', // NFT minting module on Q Mainnet
       },
-      votingSituationName: 'None Voting'
+      votingSituationName: 'EvokeRitual Voting'
     },
     
     // Q Devnet
@@ -236,7 +236,7 @@ export const getContractAddresses = (chainId?: number) => {
   return network.contracts;
 };
 
-// Helper function to get votin situation name
+// Helper function to get voting situation name
 export const getVotingSituationName = (chainId?: number) => {
   const network = getCurrentNetworkConfig(chainId);
   return network.votingSituationName;
