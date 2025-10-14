@@ -321,7 +321,7 @@ export const SimpleEditorPage: React.FC = () => {
       <PlatformStatusBanner />
       
       {/* Service status indicator */}
-      <ServiceStatusIndicator />
+      {/* <ServiceStatusIndicator /> */}
       
       {/* State sync status indicators */}
       {editorState.hasUnsavedChanges && editorState.currentStep !== 'draft' && (

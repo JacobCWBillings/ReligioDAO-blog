@@ -296,9 +296,9 @@ export const ProposalCard: React.FC<ProposalCardProps> = ({
         {displayStatus === ProposalStatus.Accepted && !proposal.executed && (
           <div className="proposal-card-action-hint">Ready to execute</div>
         )}
-        {displayStatus === ProposalStatus.Executed && (
+        {/* {displayStatus === ProposalStatus.Executed && (
           <div className="proposal-card-action-hint">NFT minted</div>
-        )}
+        )} */}
       </div>
     </Link>
   );
